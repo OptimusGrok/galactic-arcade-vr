@@ -16,11 +16,15 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
 const SIGN_MAX = 30, TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
-const KEYNAME = { ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift' };
-const KEYCODE = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16 };
+const KEYNAME = { KeyL: 'l', KeyB: 'b', KeyO: 'o', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift' };
+const KEYCODE = { KeyL: 76, KeyB: 66, KeyO: 79, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16 };
 // what each cabinet's buttons send into its game iframe (a = A/X, b = B/Y; trig: 'a' = same as A, 'ptr' = tap the screen where the ray points)
 const MAPS = {
   strike: { a: ['KeyZ'], b: ['KeyX'], trig: 'a', help: 'STICK FLY · A/X/TRIGGER FIRE · B/Y BOMB' },
+  // t353u: Berserker's power-ups are HTML buttons on the right that appear when ready (THOR at 100 energy, BERSERK and ODIN after their timers).
+  // VR: A/B/trigger only on the RIGHT controller (attack / dash); each power-up gets its own free button, shown on a button beside the screen on the right.
+  berserker: { a: ['KeyJ'], b: ['Space'], trig: 'a', handAB: 'right', help: 'STICK MOVE · A/TRIGGER ATTACK · B DASH',
+    pw: [{ id: 'thor', name: 'THOR', code: 'KeyL', btn: 'X', el: 'thor' }, { id: 'rage', name: 'BERSERK', code: 'KeyB', btn: 'Y', el: 'bRg' }, { id: 'odin', name: 'ODIN', code: 'KeyO', btn: 'R-GRIP TAP', el: 'bOd' }] },
   ghost: { a: ['Space'], b: [], trig: 'a', help: 'STICK STEER · A START' },
   claw: { a: ['Enter', 'Space'], b: [], trig: 'ptr', help: 'STICK MOVE · A DROP · TRIGGER TAPS' },
   orc: { a: [], b: [], trig: 'ptr', help: 'POINT + TRIGGER TO TAP THE SCREEN' },
@@ -34,7 +38,7 @@ const MAPS = {
 export function setupVR(A) {
   const { renderer, scene, camera, monkey, st, play } = A;
   const S = window.__gaVR = {
-    presenting: false, supported: false, starts: 0, ends: 0, frames: 0, snaps: 0, turnRate: 0, turnSum: 0, turnTime: 0, turnMaxStep: 0, beams: 0, ticketBuys: 0, collected: 0, shopBuys: 0, nbStarts: 0, nbRot: 0, nbDrops: 0, nbExits: 0, panels: {}, teleports: 0, launches: 0, exits: 0, keysSent: 0, ptrSent: 0, texUploads: 0, pumps: 0,
+    presenting: false, supported: false, pwFired: {}, pwShown: {}, mirrorKicks: 0, wardPicks: 0, wardBuys: 0, starts: 0, ends: 0, frames: 0, snaps: 0, turnRate: 0, turnSum: 0, turnTime: 0, turnMaxStep: 0, beams: 0, ticketBuys: 0, collected: 0, shopBuys: 0, nbStarts: 0, nbRot: 0, nbDrops: 0, nbExits: 0, panels: {}, teleports: 0, launches: 0, exits: 0, keysSent: 0, ptrSent: 0, texUploads: 0, pumps: 0,
     rig: { x: 0, y: 0, z: 0, yaw: 0 }, head: null, hover: null, held: {}, maps: MAPS, lastKey: null, msg: '', msgT: 0,
   };
   const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _ray = new THREE.Ray(), _hit = new THREE.Vector3();
@@ -106,11 +110,14 @@ export function setupVR(A) {
   const face = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: scrTex, fog: false, toneMapped: false, depthTest: false, depthWrite: false })); face.renderOrder = 999; face.name = 'vrGameFace'; scr.add(face);
   const bar = panel(1.2, 0.16, 1024, 136); bar.name = 'vrStatus'; scr.add(bar);
   const G = { layoutT: 0, cvs: [], rect: null, aspect: 1, placed: false, w: 1, h: 1, ptrDown: false };
+  const pwM = {};   // power-up buttons (right of the screen), one per power-up of the current game
+  function pwMesh(p, i) { let m = pwM[p.id]; if (!m) { m = pwM[p.id] = panel(0.5, 0.17, 512, 174); m.name = 'vrPower_' + p.id; m.renderOrder = 1001; scr.add(m); drawPanel(m, [p.name, 'PRESS ' + p.btn], { c0: '#ffe14a', border: '#ffe14a' }); }
+    m.position.set(G.w / 2 + 0.33, G.h / 2 - 0.1 - i * 0.21, 0.002); return m; }
   S.screen = scr; S.comp = comp;
   function placeScreen() {
     const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 1.55;
     scr.position.set(h.x - Math.sin(h.yaw) * d, Math.max(1.0, h.y - 0.08), h.z - Math.cos(h.yaw) * d); scr.rotation.set(0, h.yaw, 0); G.placed = true; }
-  function sizeScreen(aspect) { const maxW = 1.9, maxH = 1.25; let hh = maxH, ww = hh * aspect; if (ww > maxW) { ww = maxW; hh = ww / aspect; }
+  function sizeScreen(aspect) { const maxW = 1.7, maxH = 1.25; let hh = maxH, ww = hh * aspect; if (ww > maxW) { ww = maxW; hh = ww / aspect; }
     G.w = ww; G.h = hh; face.scale.set(ww, hh, 1); back.scale.set(ww + 0.04, hh + 0.04, 1); edge.scale.set(ww + 0.07, hh + 0.07, 1); bar.position.set(0, -hh / 2 - 0.12, 0); }
   sizeScreen(9 / 16);
   function gameWin() { try { return play.frame && play.frame.contentWindow; } catch (e) { return null; } }
@@ -226,10 +233,24 @@ export function setupVR(A) {
         sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
         items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
         add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
+    else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'ACCESSORIES';
+      if (!gp || !gp.allOpts) sub = 'NOT READY'; else {
+        const cats = ['hat', 'glasses', 'back', 'hand', 'hoodie', 'suit', 'fur', 'shoes'].filter(k => gp.allOpts[k] && gp.allOpts[k].length); if (!cats.includes(UI.cat)) UI.cat = cats[0];
+        const k = UI.cat, L = gp.allOpts[k], per = 6, pages = Math.max(1, Math.ceil(L.length / per)), bal = gp.balance(); UI.page = Math.min(UI.page, pages - 1);
+        sub = 'YOU HAVE ' + bal + ' TICKETS  ·  ' + k.toUpperCase() + ' ' + (UI.page + 1) + '/' + pages;
+        cats.forEach((c, i) => add('cat_' + c, c === k ? '> ' + c.toUpperCase() + ' <' : c.toUpperCase(), 40 + (i % 4) * 240, 165 + Math.floor(i / 4) * 70, 224, 60, true, () => { UI.cat = c; UI.page = 0; }));
+        const nm = v => String(v).replace(/^suit(?=.)/, 'suit ').toUpperCase();
+        L.slice(UI.page * per, UI.page * per + per).forEach(([v], i) => { const own = gp.has(k, v), on = gp.p[k] === v, pr = gp.priceOf(k, v);
+          add('w_' + k + '_' + v, nm(v) + (on ? '  ·  ON' : own ? '' : '  ·  ' + pr + ' TICKETS'), 40 + (i % 2) * 484, 345 + Math.floor(i / 2) * 95, 460, 85, own || bal >= pr, () => {
+            if (own) { gp.pick(k, v); S.wardPicks++; say(v === 'none' ? 'REMOVED' : 'WEARING ' + nm(v)); }
+            else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } }); });
+        if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 640, 564, 96, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
+        add('prev', '<', 40, 640, 170, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 640, 170, 96, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU';
       add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 160, 800, 100, !!tp && tp.state === 'idle', beam);
       if (!inShop) { add('tickets', 'BUY TICKETS', 112, 275, 800, 100, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 390, 800, 100, !!nbApi(), nbStart); }
       else add('shop', 'PRIZE SHOP', 112, 275, 800, 100, !!A.shop, () => uiOpen('shop'));
+      add('ward', 'ACCESSORIES', 112, inShop ? 390 : 505, 800, 100, !!window.__gaPlayer, () => uiOpen('ward'));
       add('close2', 'CLOSE', 112, 620, 800, 100, true, uiClose); }
     return { title, sub, B }; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
@@ -241,7 +262,7 @@ export function setupVR(A) {
     for (const b of sp.B) { const hv = UI.hover === b.id && b.on; g.fillStyle = !b.on ? 'rgba(60,60,80,0.6)' : hv ? '#ff3fd2' : 'rgba(0,229,255,0.22)'; g.strokeStyle = b.on ? (hv ? '#ffffff' : '#3ff3ff') : '#555a70'; g.lineWidth = 6;
       g.beginPath(); g.roundRect ? g.roundRect(b.x, b.y, b.w, b.h, 24) : g.rect(b.x, b.y, b.w, b.h); g.fill(); g.stroke();
       g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24); }
-    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'shop' ? 688 : 715, 640); }
+    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'ward' ? 318 : UI.open === 'shop' ? 688 : 715, UI.open === 'ward' ? 940 : 640); }
     tex.needsUpdate = true; }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
     const n = _v.set(0, 0, 1).applyQuaternion(uiM.getWorldQuaternion(_q)), den = n.dot(ray.direction); if (Math.abs(den) < 1e-4) return null;
@@ -250,6 +271,14 @@ export function setupVR(A) {
     if (x < 0 || x > 1024 || y < 0 || y > 768) return null;
     return { t, p, btn: UI.btns.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null }; }
 
+  // exact ray hit on a flat panel (PlaneGeometry w x h, any scale / parent): distance or null
+  const _rn = new THREE.Vector3(), _rp = new THREE.Vector3(), _rq = new THREE.Quaternion(), _rs = new THREE.Vector3();
+  function rectHit(ray, m, max = SIGN_MAX) { if (!m.visible) return null; for (let o = m.parent; o; o = o.parent) if (!o.visible) return null;
+    m.updateMatrixWorld(true); m.matrixWorld.decompose(_rp, _rq, _rs); _rn.set(0, 0, 1).applyQuaternion(_rq); const den = _rn.dot(ray.direction); if (Math.abs(den) < 1e-5) return null;
+    const t = _hit.copy(_rp).sub(ray.origin).dot(_rn) / den; if (t <= 0 || t > max) return null;
+    const lp = m.worldToLocal(ray.at(t, new THREE.Vector3())), gp = m.geometry.parameters || { width: 1, height: 1 };
+    return Math.abs(lp.x) <= gp.width / 2 && Math.abs(lp.y) <= gp.height / 2 ? t : null; }
+  S.rectHit = rectHit;
   // ---------- in-world signs (VR only): point + trigger ----------
   function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
   const signs = [];
@@ -259,6 +288,8 @@ export function setupVR(A) {
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
   addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
+  const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
+  addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
   S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
   const _sph = new THREE.Sphere(); let kioskBox = null;
@@ -266,7 +297,7 @@ export function setupVR(A) {
     return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
   function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
-    for (const g of signs) { if (!g.m.visible) continue; _sph.set(g.m.position, 0.42 * g.m.scale.x); const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, g.act, g.id, SIGN_MAX); }
+    for (const g of signs) { if (!g.m.visible) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
     const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
     const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
@@ -336,6 +367,11 @@ export function setupVR(A) {
     // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
     if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; } if (UI.open) uiClose(); }
     monkey.visible = false;
+    if (S.head) monkey.rotation.y = S.head.yaw + Math.PI;   // the avatar (seen in the mirror / by other players) faces where you look
+    // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
+    // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
+    // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
+    { const mr = mirrorMesh(); if (mr && mr.onBeforeRender && S.head) { camera.updateMatrixWorld(true); const n0 = A.shop.wardrobe.mirror.renders; try { mr.onBeforeRender(renderer, scene, camera); } catch (e) { S.lastError = 'mirror ' + e; } if (A.shop.wardrobe.mirror.renders > n0) S.mirrorKicks++; } }
     signsUpdate(); UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -381,8 +417,13 @@ export function setupVR(A) {
     if (inGame) {
       pump();
       if (w) { try { if (!G.rect || S.frames - G.layoutT > 30) { G.layoutT = S.frames; layout(w); } drawGame(w); } catch (e) {} }
-      scr.updateMatrixWorld(true);
+      // power-up buttons beside the screen (only the ready ones)
+      const map0 = MAPS[play.cur && play.cur.key] || MAPS.default; for (const id in pwM) pwM[id].visible = false;
+      if (map0.pw && w) map0.pw.forEach((p, i) => { const r = pwReady(w, p), m = pwMesh(p, i); m.visible = r; if (r && !S.pwShown[p.id]) { S.pwShown[p.id] = 1; const P = R || L; if (P) pulse(P.src, 0.4, 40); } if (!r) S.pwShown[p.id] = 0; });
+      scr.updateMatrixWorld(true); S.trigOnPw = false;
       for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
+        if (map0.pw) { let hitPw = null; for (const p of map0.pw) { const m = pwM[p.id]; if (!m || !m.visible) continue; const t = rectHit(ray, m); if (t != null && (!hitPw || t < hitPw.t)) hitPw = { p, t }; }
+          if (hitPw) { c.userData.ray.scale.z = hitPw.t; c.userData.ray.material.color.setHex(0xffe14a); dot.position.copy(ray.at(hitPw.t, _hit)); dot.visible = true; if (P.trig) S.trigOnPw = true; if (P.trigDown) { pwFire(w, hitPw.p); pulse(P.src, 0.6, 50); } continue; } }
         const n = _v.set(0, 0, 1).applyQuaternion(scr.getWorldQuaternion(_q)), denom = n.dot(ray.direction); if (Math.abs(denom) < 1e-4) continue;
         const t = _hit.copy(scr.position).sub(ray.origin).dot(n) / denom; if (t <= 0 || t > RAY_MAX) continue;
         const p = ray.at(t, new THREE.Vector3()), lp = scr.worldToLocal(p.clone()), u = lp.x / G.w + 0.5, v = lp.y / G.h + 0.5;
@@ -390,13 +431,17 @@ export function setupVR(A) {
         c.userData.ray.scale.z = t; c.userData.ray.material.color.setHex(0xff3fd2); if (!aimScreen) { aimScreen = { hand, u, v }; dot.position.copy(p); dot.visible = true; } }
       gameInput(w, aimScreen, dt);
     } else { if (Object.keys(S.held).length || G.ptrDown) releaseAll(); G.placed = false; G.rect = null; S.gripT = 0; }
+    // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
+    const surf = [uiM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)];
+    for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
+      for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; }
     // HUD on the left controller (or under your view when there is none)
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
     if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0))); }
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS' };
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS' };
     const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2]);
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
@@ -411,7 +456,7 @@ export function setupVR(A) {
     const grip = (L && L.grip) || (R && R.grip); S.gripT = grip ? (S.gripT || 0) + dt : 0;
     if (S.gripT >= GRIP_EXIT_S) { S.gripT = 0; releaseAll(); pulse((L && L.grip ? L : R).src, 0.8, 60); play.exit('vr'); S.exits++; return; }
     if (!w || play.mode !== 'game') return;
-    const any = k => !!((L && L[k]) || (R && R[k]));
+    const any = k => !!((L && L[k]) || (R && R[k])), anyAB = map.handAB === 'right' ? (k => !!(R && R[k])) : any;
     if (play.sub === 'demo') {   // attract screen: A / X / trigger = insert the ticket price, then start
       if (any('aDown') || any('trigDown')) { const before = m.credits; if (m.credits < 1) play.insertTicket(); else play.tryPlay(); if (m.credits !== before || play.sub === 'play') pulse(((R && (R.aDown || R.trigDown)) ? R : L).src, 0.5, 40); }
       if (Object.keys(S.held).length) releaseAll(); return; }
@@ -423,16 +468,28 @@ export function setupVR(A) {
     // B / Y: CONTINUE when the game offers it, otherwise the game's secondary button
     const canC = contCan(w);
     if (canC && any('bDown')) play.tryContinue();
-    for (const k of map.b) hold(k, !canC && any('b'), w);
+    for (const k of map.b) hold(k, !canC && anyAB('b'), w);
+    if (map.pw) pwInput(w, map, L, R, dt);
     // trigger: tap the screen where you point (pointer games) or the primary button
     let trigAsA = map.trig === 'a';
     if (map.trig === 'ptr') { const tr = (R && R.trig) || (L && L.trig);
       if (aim && tr) { if (!G.ptrDown) { sendPtr(w, 'pointerdown', aim.u, aim.v); G.ptrDown = true; } else sendPtr(w, 'pointermove', aim.u, aim.v); }
       else if (G.ptrDown) { sendPtr(w, 'pointerup', aim ? aim.u : G.pu, aim ? aim.v : G.pv); G.ptrDown = false; }
       if (!aim) trigAsA = true; }
-    const prim = any('a') || (trigAsA && any('trig'));
+    const prim = anyAB('a') || (trigAsA && !S.trigOnPw && any('trig'));
     for (const k of map.a) hold(k, prim, w);
   }
+  // ---- power-ups: ready = the game's own button is showing; fire = tap its key for a few frames ----
+  const pwRel = {};
+  function pwReady(w, p) { try { const e = w.document.getElementById(p.el); return !!(e && e.style.display === 'flex'); } catch (e) { return false; } }
+  function pwFire(w, p) { if (!w || !pwReady(w, p)) return false; hold(p.code, true, w); pwRel[p.code] = 0.15; S.pwFired[p.id] = (S.pwFired[p.id] || 0) + 1; S.lastPw = p.id; return true; }
+  function pwInput(w, map, L, R, dt) {
+    for (const c in pwRel) { pwRel[c] -= dt; if (pwRel[c] <= 0) { delete pwRel[c]; hold(c, false, w); } }
+    // right grip: a short tap (< 0.35 s) = ODIN; holding it 0.6 s still leaves the machine
+    const rg = !!(R && R.grip); if (rg) S.rgT = (S.rgT || 0) + dt; let rgTap = false; if (!rg && S.rgWas) rgTap = (S.rgT || 0) < 0.35; if (!rg) S.rgT = 0; S.rgWas = rg;
+    for (const p of map.pw) { const go = (p.btn === 'X' && L && L.aDown) || (p.btn === 'Y' && L && L.bDown) || (p.btn === 'R-GRIP TAP' && rgTap); if (go) { if (pwFire(w, p)) pulse((p.btn === 'R-GRIP TAP' ? R : L).src, 0.6, 50); } } }
+  S.pw = { fire: id => { const m = MAPS[play.cur && play.cur.key] || {}, p = (m.pw || []).find(q => q.id === id); return p ? pwFire(gameWin(), p) : false; }, ready: () => { const m = MAPS[play.cur && play.cur.key] || {}, w = gameWin(); return (m.pw || []).filter(p => w && pwReady(w, p)).map(p => p.id); },
+    world: id => { const m = pwM[id]; if (!m || !m.visible) return null; m.updateMatrixWorld(true); return m.getWorldPosition(new THREE.Vector3()).toArray(); } };
   S.sendKey = (code, type) => { const w = gameWin(); if (w) sendKey(w, type, code); };
   S.state = () => ({ presenting: S.presenting, rig: { ...S.rig }, head: S.head && { ...S.head }, mode: play.mode, sub: play.sub, cur: play.cur && play.cur.key, screen: scr.visible, held: Object.keys(S.held), keysSent: S.keysSent, ptrSent: S.ptrSent, texUploads: S.texUploads, launches: S.launches, exits: S.exits, teleports: S.teleports, snaps: S.snaps, turnRate: S.turnRate, turnSum: S.turnSum, turnTime: S.turnTime, turnMaxStep: S.turnMaxStep, panel: UI.open, beams: S.beams, tpWhere: A.tp && A.tp.where, tpState: A.tp && A.tp.state, nb: !!(A.nb && A.nb.playing), pumps: S.pumps, hover: S.hover && S.hover.m && S.hover.m.key, monkey: [monkey.position.x, monkey.position.y, monkey.position.z], comp: [comp.width, comp.height], err: S.lastError || null });
   return { pre, post, S, rtCheck };
