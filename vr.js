@@ -278,7 +278,7 @@ export function setupVR(A) {
     const t = _hit.copy(_rp).sub(ray.origin).dot(_rn) / den; if (t <= 0 || t > max) return null;
     const lp = m.worldToLocal(ray.at(t, new THREE.Vector3())), gp = m.geometry.parameters || { width: 1, height: 1 };
     return Math.abs(lp.x) <= gp.width / 2 && Math.abs(lp.y) <= gp.height / 2 ? t : null; }
-  S.rectHit = rectHit;
+  S.rectHit = rectHit; S.rayLens = () => { const o = {}; for (const c of ctrls) if (c.userData.hand) o[c.userData.hand] = { len: c.userData.rayLen, o: c.userData.rayO }; return o; };
   // ---------- in-world signs (VR only): point + trigger ----------
   function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
   const signs = [];
@@ -303,7 +303,8 @@ export function setupVR(A) {
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
     return best; }
   function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
-    if (w) { g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6))); } } } }   // far signs grow so they stay readable / easy to point at
+    if (w) { const hv = S.hoverTarget === g.id || (g.id === 'tickets' && S.hoverTarget === 'kiosk') || (g.id === 'nb' && S.hoverTarget === 'nbWindow') || (g.id === 'shop' && S.hoverTarget === 'shop'); g.m.material.color.setHex(hv ? 0xffffff : 0xb8b8c8); g.m.userData.hl = hv;
+      g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6)) * (hv ? 1.12 : 1)); } } } }   // far signs grow so they stay readable / easy to point at
 
   // ---------- never pitch black (t349u) ----------
   // A soft sky/ground fill light while in VR, so the room is always visible even if a tier drops lights or the room's own lights are culled.
@@ -372,7 +373,7 @@ export function setupVR(A) {
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
     { const mr = mirrorMesh(); if (mr && mr.onBeforeRender && S.head) { camera.updateMatrixWorld(true); const n0 = A.shop.wardrobe.mirror.renders; try { mr.onBeforeRender(renderer, scene, camera); } catch (e) { S.lastError = 'mirror ' + e; } if (A.shop.wardrobe.mirror.renders > n0) S.mirrorKicks++; } }
-    signsUpdate(); UI.msgT = Math.max(0, UI.msgT - dt);
+    signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
     const mode = play.mode, inGame = mode === 'game', L = IN.left, R = IN.right;
@@ -397,7 +398,7 @@ export function setupVR(A) {
           if (u) { c.userData.ray.scale.z = u.t; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(u.p); dot.visible = true; if (u.btn && !UI.hover) UI.hover = u.btn.id;
             if (P.trigDown && u.btn && u.btn.on) { pulse(P.src, 0.5, 30); S.lastPress = u.btn.id; u.btn.act(); UI.key = ''; } continue; } }
         const tg = pickTarget(ray), hit = pickCab(ray);
-        if (tg && (!hit || tg.d <= hit.d)) { c.userData.ray.scale.z = tg.d; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(tg.p); dot.visible = true; if (!S.hover) S.hover = { target: tg.id, hand };
+        if (tg && (!hit || tg.d <= hit.d)) { c.userData.ray.scale.z = tg.d; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(tg.p); dot.visible = true; if (!S.hover) S.hover = { target: tg.id, hand }; S.hoverTarget = tg.id;
           if (P.trigDown) { pulse(P.src, 0.5, 30); S.lastPress = tg.id; tg.act(); } continue; }
         if (UI.open) continue;   // no floor teleports while a panel is open
         if (hit) { c.userData.ray.scale.z = hit.d; c.userData.ray.material.color.setHex(0xffe14a); if (!S.hover) S.hover = { cab: hit.cab, m: machineOf(hit.cab), hand }; dot.position.copy(hit.p); dot.visible = true;
@@ -418,12 +419,12 @@ export function setupVR(A) {
       pump();
       if (w) { try { if (!G.rect || S.frames - G.layoutT > 30) { G.layoutT = S.frames; layout(w); } drawGame(w); } catch (e) {} }
       // power-up buttons beside the screen (only the ready ones)
-      const map0 = MAPS[play.cur && play.cur.key] || MAPS.default; for (const id in pwM) pwM[id].visible = false;
+      const map0 = MAPS[play.cur && play.cur.key] || MAPS.default; for (const id in pwM) { pwM[id].visible = false; pwM[id].scale.setScalar(1); }
       if (map0.pw && w) map0.pw.forEach((p, i) => { const r = pwReady(w, p), m = pwMesh(p, i); m.visible = r; if (r && !S.pwShown[p.id]) { S.pwShown[p.id] = 1; const P = R || L; if (P) pulse(P.src, 0.4, 40); } if (!r) S.pwShown[p.id] = 0; });
       scr.updateMatrixWorld(true); S.trigOnPw = false;
       for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
         if (map0.pw) { let hitPw = null; for (const p of map0.pw) { const m = pwM[p.id]; if (!m || !m.visible) continue; const t = rectHit(ray, m); if (t != null && (!hitPw || t < hitPw.t)) hitPw = { p, t }; }
-          if (hitPw) { c.userData.ray.scale.z = hitPw.t; c.userData.ray.material.color.setHex(0xffe14a); dot.position.copy(ray.at(hitPw.t, _hit)); dot.visible = true; if (P.trig) S.trigOnPw = true; if (P.trigDown) { pwFire(w, hitPw.p); pulse(P.src, 0.6, 50); } continue; } }
+          if (hitPw) { pwM[hitPw.p.id].scale.setScalar(1.12); c.userData.ray.scale.z = hitPw.t; c.userData.ray.material.color.setHex(0xffe14a); dot.position.copy(ray.at(hitPw.t, _hit)); dot.visible = true; if (P.trig) S.trigOnPw = true; if (P.trigDown) { pwFire(w, hitPw.p); pulse(P.src, 0.6, 50); } continue; } }
         const n = _v.set(0, 0, 1).applyQuaternion(scr.getWorldQuaternion(_q)), denom = n.dot(ray.direction); if (Math.abs(denom) < 1e-4) continue;
         const t = _hit.copy(scr.position).sub(ray.origin).dot(n) / denom; if (t <= 0 || t > RAY_MAX) continue;
         const p = ray.at(t, new THREE.Vector3()), lp = scr.worldToLocal(p.clone()), u = lp.x / G.w + 0.5, v = lp.y / G.h + 0.5;
@@ -434,7 +435,7 @@ export function setupVR(A) {
     // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
     const surf = [uiM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)];
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
-      for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; }
+      for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
     // HUD on the left controller (or under your view when there is none)
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
     if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0))); }
