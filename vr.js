@@ -15,7 +15,7 @@ import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
-const TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
+const SIGN_MAX = 30, TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
 const KEYNAME = { ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift' };
 const KEYCODE = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16 };
 // what each cabinet's buttons send into its game iframe (a = A/X, b = B/Y; trig: 'a' = same as A, 'ptr' = tap the screen where the ray points)
@@ -209,7 +209,7 @@ export function setupVR(A) {
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
     K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
   function nbStart() { const n = nbApi(); if (!n || n.playing || play.mode !== 'walk' || (A.tp && A.tp.locked)) return false; uiClose(); n.start(); if (n.playing) { S.nbStarts++; try { n.setZoomAmt(0); } catch (e) {} } return n.playing; }
-  S.ui = { open: k => uiOpen(k), close: uiClose, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
+  S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
     // world point of a button (tests aim the ray at it)
     btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
   function uiSpec() {
@@ -258,20 +258,21 @@ export function setupVR(A) {
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
-  addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const tp = A.tp; if (!tp || !A.shop) return null; return [tp.whiteRoom.position.x + 4.45, 2.45, -1.95]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
+  addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
   S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
   const _sph = new THREE.Sphere(); let kioskBox = null;
   function nbBox() { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()), z = n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0;
     return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
-  function pickTarget(ray) { let best = null; const take = (d, p, act, id) => { if (d < RAY_MAX && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
-    for (const g of signs) { if (!g.m.visible) continue; _sph.set(g.m.position, 0.42); const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, g.act, g.id); }
+  function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
+    for (const g of signs) { if (!g.m.visible) continue; _sph.set(g.m.position, 0.42 * g.m.scale.x); const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, g.act, g.id, SIGN_MAX); }
     const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
+    const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
     return best; }
   function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
-    if (w) { g.m.position.set(w[0], w[1], w[2]); if (h) g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); } } }
+    if (w) { g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6))); } } } }   // far signs grow so they stay readable / easy to point at
 
   // ---------- never pitch black (t349u) ----------
   // A soft sky/ground fill light while in VR, so the room is always visible even if a tier drops lights or the room's own lights are culled.

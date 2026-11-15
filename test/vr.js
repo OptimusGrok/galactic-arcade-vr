@@ -1,5 +1,5 @@
 // Galactic Arcade VR: emulated Meta Quest 3 (IWER) in headless Chromium.
-// ENTER VR -> head tracking -> thumbstick walk + collision -> snap turn -> teleport -> point + trigger at STRIKE ->
+// ENTER VR -> head tracking -> thumbstick walk + collision -> smooth turn -> teleport -> point + trigger at STRIKE ->
 // tickets / start via A -> game texture updates and reacts to mapped controller input -> grip exit -> GHOST 256 the same -> leave VR.
 const { openVR, H } = require('./vrlib');
 (async () => {
@@ -44,12 +44,13 @@ const { openVR, H } = require('./vrlib');
     chk(s.monkey[2] > -12 + 1.45 + 0.29 - 0.05, 'real-world step into the cabinets is blocked (z ' + s.monkey[2].toFixed(2) + ')');
     await page.evaluate(() => window.__xrd.position.set(0, 1.6, 0)); await H.frames(page, 6);
 
-    // ---- right stick: snap turn ----
-    s = await st(); const y0 = s.rig.yaw;
-    await H.axes(page, 'right', 1, 0); await H.frames(page, 4); await H.axes(page, 'right', 0, 0); await H.frames(page, 4);
-    s = await st(); chk(Math.abs((s.rig.yaw - y0) + Math.PI / 6) < 0.01 && s.snaps === 1, 'right stick right = one 30 deg snap turn (' + ((s.rig.yaw - y0) * 180 / Math.PI).toFixed(1) + ')');
-    await H.axes(page, 'right', -1, 0); await H.frames(page, 4); await H.axes(page, 'right', 0, 0); await H.frames(page, 4);
-    s = await st(); chk(Math.abs(s.rig.yaw - y0) < 0.01, 'snap back left');
+    // ---- right stick: smooth turn (t350u; the rate tests are in vr_ui.js) ----
+    s = await st(); const y0 = s.rig.yaw, ts0 = s.turnSum;
+    await H.axes(page, 'right', 1, 0); await H.frames(page, 6); await H.axes(page, 'right', 0, 0); await H.frames(page, 4);
+    s = await st(); const dTurn = s.rig.yaw - y0;
+    chk(dTurn < -0.01 && Math.abs(-dTurn - (s.turnSum - ts0)) < 1e-6 && s.snaps === 0 && s.turnMaxStep <= Math.PI / 2 * 0.05 + 1e-9, 'right stick right = smooth turn right (' + (dTurn * 180 / Math.PI).toFixed(1) + ' deg, no snap)');
+    await page.evaluate(a => window.__gaVR.turn(a), y0 - s.rig.yaw); await H.frames(page, 4);
+    s = await st(); chk(Math.abs(s.rig.yaw - y0) < 0.01, 'turned back');
 
     // ---- teleport: right trigger at the floor ----
     await page.evaluate(() => { const S = window.__gaVR; S.rig = { x: 2, y: 0, z: 4, yaw: 0 }; S.applyRig(); window.__arcade.monkey.position.set(2, 0, 4); }); await H.frames(page, 6);   // open floor (the claw machine is at x -5..-4, z -1..0)

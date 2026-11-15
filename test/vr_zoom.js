@@ -1,5 +1,5 @@
 // t346u: on a Quest the controller thumbsticks zoomed the camera (Quest Browser sends them as wheel events).
-// VR edition: in XR the sticks only move (left) and snap-turn (right); wheel / zoom never change the camera distance.
+// VR edition: in XR the sticks only move (left) and turn (right, smooth); wheel / zoom never change the camera distance.
 // Also flat mode with a Quest browser user agent: wheel does not zoom. A desktop browser still wheel-zooms (unchanged).
 const fs = require('fs'), path = require('path');
 const { open } = require('./lib');
@@ -25,7 +25,7 @@ const QUEST_UA = 'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 (K
       const z1 = await zoomState(page), s1 = await page.evaluate(() => window.__gaVR.state());
       const moved = Math.hypot(s1.monkey[0] - s0.monkey[0], s1.monkey[2] - s0.monkey[2]);
       chk(moved > 0.8, 'left stick moves the player (' + moved.toFixed(2) + ' m)');
-      chk(Math.abs(s1.rig.yaw - s0.rig.yaw + Math.PI / 6) < 0.01, 'right stick snap-turns 30 deg (' + ((s1.rig.yaw - s0.rig.yaw) * 180 / Math.PI).toFixed(1) + ')');
+      chk(s1.rig.yaw - s0.rig.yaw < -0.01 && s1.snaps === 0, 'right stick turns (smoothly) (' + ((s1.rig.yaw - s0.rig.yaw) * 180 / Math.PI).toFixed(1) + ' deg)');
       chk(z1.dist === z0.dist, 'camera distance unchanged in VR (' + z0.dist + ' -> ' + z1.dist + ')');
       chk(z1.key === z0.key, 'saved zoom unchanged (' + z0.key + ' -> ' + z1.key + ')');
       chk(!z1.hold.on && !z1.hold.lock && z1.hold.k === 0, 'hold-to-zoom never engaged ' + JSON.stringify(z1.hold));
