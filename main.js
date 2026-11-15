@@ -2087,7 +2087,7 @@ window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHo
 // ---------- Galactic Arcade VR (vr.js): ENTER VR, head tracking, thumbstick / teleport movement, cabinet games on an in-world screen ----------
 VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playables, collide, frame, TIER, QUEST,
   resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
-  get shop() { return shop; }, get tp() { return tp; }, get golf() { return golf; } });
+  get shop() { return shop; }, get tp() { return tp; }, get golf() { return golf; }, get nb() { return nb; } });
 Object.assign(window.__arcade, { vr: VRH, collide, schedule });
 const mp = setupMP({ scene, camera, monkey, makeMonkey, makeAlien, st, play, getTp: () => tp, HALF, Z2, HALL_L, WX: 80 }); window.__arcade.mp = mp;   // multiplayer step 1: public room, 10 players
 // after the first room frames: pull in the shop, then the window scenery, off the critical path

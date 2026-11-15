@@ -1,8 +1,11 @@
 // Galactic Arcade VR - WebXR for Meta Quest Browser (and any WebXR headset).
 // ENTER VR on the arcade floor -> the headset is the camera at real-world scale (1 unit = 1 m; cabinets are life size).
 //   LEFT STICK   smooth walk where you look (same wall / cabinet collision as the flat game)
-//   RIGHT STICK  left/right = 30 degree snap turn
-//   TRIGGER      point at a cabinet = play it; point at the floor = teleport there
+//   RIGHT STICK  left/right = smooth turn; the further you push, the faster (deadzone 0.15, x^2 curve, max 90 deg/s) (t350u)
+//   TRIGGER      point at a cabinet = play it; point at the floor = teleport there; point at a sign / menu button = press it
+//   Y / B        MENU: BEAM TO SHOP / ARCADE (teleporter), BUY TICKETS (ticket exchange), PRIZE SHOP, NEON BRICKS
+//   signs        BUY TICKETS over the kiosk, BEAM TO SHOP / ARCADE over each teleporter pad, PRIZE SHOP over the shop counter,
+//                NEON BRICKS by the window game (point at the window + trigger = play; sticks move, A/X/trigger rotate, B/Y drop, hold grip = leave)
 //   in a game    the cabinet's game shows on a big screen in front of you. A/X = insert tickets / start, then the
 //                game's buttons (sticks = arrows, A/X = fire / primary, B/Y = secondary or CONTINUE, trigger = fire or tap
 //                the screen where you point), HOLD GRIP = leave the machine.
@@ -12,7 +15,7 @@ import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
-const SNAP = Math.PI / 6, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
+const TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
 const KEYNAME = { ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift' };
 const KEYCODE = { ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16 };
 // what each cabinet's buttons send into its game iframe (a = A/X, b = B/Y; trig: 'a' = same as A, 'ptr' = tap the screen where the ray points)
@@ -31,7 +34,7 @@ const MAPS = {
 export function setupVR(A) {
   const { renderer, scene, camera, monkey, st, play } = A;
   const S = window.__gaVR = {
-    presenting: false, supported: false, starts: 0, ends: 0, frames: 0, snaps: 0, teleports: 0, launches: 0, exits: 0, keysSent: 0, ptrSent: 0, texUploads: 0, pumps: 0,
+    presenting: false, supported: false, starts: 0, ends: 0, frames: 0, snaps: 0, turnRate: 0, turnSum: 0, turnTime: 0, turnMaxStep: 0, beams: 0, ticketBuys: 0, collected: 0, shopBuys: 0, nbStarts: 0, nbRot: 0, nbDrops: 0, nbExits: 0, panels: {}, teleports: 0, launches: 0, exits: 0, keysSent: 0, ptrSent: 0, texUploads: 0, pumps: 0,
     rig: { x: 0, y: 0, z: 0, yaw: 0 }, head: null, hover: null, held: {}, maps: MAPS, lastKey: null, msg: '', msgT: 0,
   };
   const _v = new THREE.Vector3(), _q = new THREE.Quaternion(), _e = new THREE.Euler(0, 0, 0, 'YXZ'), _o = new THREE.Vector3(), _d = new THREE.Vector3(), _ray = new THREE.Ray(), _hit = new THREE.Vector3();
@@ -190,6 +193,86 @@ export function setupVR(A) {
     const h = S.head || { x: monkey.position.x, z: monkey.position.z }; moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z; st.vel.set(0, 0, 0); S.teleports++; return true; }
   S.teleport = tryTeleport;
 
+  // ---------- t350u: VR panels (ticket exchange, prize shop, menu) pressed with the ray + trigger ----------
+  // The flat game uses HTML overlays for these (VR can't click them), so VR draws its own panel and calls the SAME functions:
+  // kiosk.buy(i) / collect the dispensed tickets (play.addTickets), shop.buy(id), tp.go() (teleporter).
+  const UI = { open: null, page: 0, msg: '', msgT: 0, btns: [], hover: null, key: '' };
+  const uiM = panel(1.0, 0.75, 1024, 768); uiM.name = 'vrMenu'; uiM.renderOrder = 1003; uiM.visible = false; scene.add(uiM);
+  const kiosk = () => window.__kiosk || null, nbApi = () => A.nb || null;
+  function uiOpen(kind) { const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 0.9;
+    UI.open = kind; UI.page = 0; UI.msg = ''; UI.msgT = 0; UI.key = '';
+    uiM.position.set(h.x - Math.sin(h.yaw) * d, Math.max(0.9, h.y - 0.12), h.z - Math.cos(h.yaw) * d); uiM.rotation.set(0, h.yaw, 0); uiM.visible = true; uiM.updateMatrixWorld(true);
+    S.panels[kind] = (S.panels[kind] || 0) + 1; }
+  function uiClose() { UI.open = null; uiM.visible = false; UI.btns = []; }
+  function say(m) { UI.msg = m; UI.msgT = 3; }
+  function beam() { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(); S.beams++; return true; }
+  function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
+    K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
+  function nbStart() { const n = nbApi(); if (!n || n.playing || play.mode !== 'walk' || (A.tp && A.tp.locked)) return false; uiClose(); n.start(); if (n.playing) { S.nbStarts++; try { n.setZoomAmt(0); } catch (e) {} } return n.playing; }
+  S.ui = { open: k => uiOpen(k), close: uiClose, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
+    // world point of a button (tests aim the ray at it)
+    btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
+  function uiSpec() {
+    const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
+    let title = '', sub = '';
+    add('close', 'X', 900, 22, 100, 90, true, uiClose);
+    if (UI.open === 'tickets') { const K = kiosk(); title = 'TICKET EXCHANGE';
+      if (!K) sub = 'NOT READY'; else { const bal = K.C.bal, left = Math.max(0, Math.ceil((K.C.at + 36e5 - Date.now()) / 6e4));
+        sub = 'CASH $' + bal + (bal < 5 ? '  ·  +$' + (5 - bal) + ' IN ' + left + ' MIN' : '');
+        (K.offers || []).forEach(([d, t], i) => add('offer' + i, '$' + d + '  =  ' + t + ' TICKETS', 112, 190 + i * 118, 800, 100, bal >= d, () => { if (K.buy(i)) { S.ticketBuys++; say('+' + t + ' TICKETS · DISPENSING...'); } else say('NOT ENOUGH CASH'); }));
+        if (K.pending) add('collect', K.dispK >= 1 ? 'COLLECT ' + K.pending + ' TICKETS' : 'DISPENSING ' + K.pending + ' TICKETS...', 112, 548, 800, 100, K.dispK >= 1, collect); } }
+    else if (UI.open === 'shop') { const sh = A.shop; title = 'GROK PRIZE SHOP';
+      if (!sh) sub = 'THE SHOP IS LOADING'; else { const b = sh.balance(), per = 4, items = sh.ITEMS || [], pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
+        sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
+        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
+        add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
+    else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU';
+      add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 160, 800, 100, !!tp && tp.state === 'idle', beam);
+      if (!inShop) { add('tickets', 'BUY TICKETS', 112, 275, 800, 100, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 390, 800, 100, !!nbApi(), nbStart); }
+      else add('shop', 'PRIZE SHOP', 112, 275, 800, 100, !!A.shop, () => uiOpen('shop'));
+      add('close2', 'CLOSE', 112, 620, 800, 100, true, uiClose); }
+    return { title, sub, B }; }
+  function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
+    const key = sp.title + '|' + sp.sub + '|' + msg + '|' + UI.hover + '|' + sp.B.map(b => b.id + b.label + b.on).join(','); if (key === UI.key) return; UI.key = key;
+    const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
+    g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, 470, 70, 820);
+    g.fillStyle = '#9ff8ff'; g.font = '900 34px "Arial Black", Arial, sans-serif'; g.fillText(sp.sub, 512, 140, 960);
+    for (const b of sp.B) { const hv = UI.hover === b.id && b.on; g.fillStyle = !b.on ? 'rgba(60,60,80,0.6)' : hv ? '#ff3fd2' : 'rgba(0,229,255,0.22)'; g.strokeStyle = b.on ? (hv ? '#ffffff' : '#3ff3ff') : '#555a70'; g.lineWidth = 6;
+      g.beginPath(); g.roundRect ? g.roundRect(b.x, b.y, b.w, b.h, 24) : g.rect(b.x, b.y, b.w, b.h); g.fill(); g.stroke();
+      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24); }
+    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'shop' ? 688 : 715, 640); }
+    tex.needsUpdate = true; }
+  function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
+    const n = _v.set(0, 0, 1).applyQuaternion(uiM.getWorldQuaternion(_q)), den = n.dot(ray.direction); if (Math.abs(den) < 1e-4) return null;
+    const t = _hit.copy(uiM.position).sub(ray.origin).dot(n) / den; if (t <= 0 || t > RAY_MAX) return null;
+    const p = ray.at(t, new THREE.Vector3()), lp = uiM.worldToLocal(p.clone()), x = (lp.x / 1.0 + 0.5) * 1024, y = (0.5 - lp.y / 0.75) * 768;
+    if (x < 0 || x > 1024 || y < 0 || y > 768) return null;
+    return { t, p, btn: UI.btns.find(b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) || null }; }
+
+  // ---------- in-world signs (VR only): point + trigger ----------
+  function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
+  const signs = [];
+  function addSign(id, text, color, where, act, show) { const m = makeSign(text, color); m.name = 'vrSign_' + id; signs.push({ id, m, where, act, show }); return m; }
+  const padTop = w => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : tp.PAD2; return [P.x, 2.05, P.z]; };
+  addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
+  addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
+  addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
+  addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const tp = A.tp; if (!tp || !A.shop) return null; return [tp.whiteRoom.position.x + 4.45, 2.45, -1.95]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
+  addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
+  S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
+  const _sph = new THREE.Sphere(); let kioskBox = null;
+  function nbBox() { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()), z = n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0;
+    return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
+  // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
+  function pickTarget(ray) { let best = null; const take = (d, p, act, id) => { if (d < RAY_MAX && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
+    for (const g of signs) { if (!g.m.visible) continue; _sph.set(g.m.position, 0.42); const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, g.act, g.id); }
+    const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
+    const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
+    return best; }
+  function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
+    if (w) { g.m.position.set(w[0], w[1], w[2]); if (h) g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); } } }
+
   // ---------- never pitch black (t349u) ----------
   // A soft sky/ground fill light while in VR, so the room is always visible even if a tier drops lights or the room's own lights are culled.
   const fill = new THREE.HemisphereLight(0xc8d8ff, 0x403050, 0.9); fill.name = 'vrFill'; fill.visible = false; scene.add(fill); S.fill = fill;
@@ -205,7 +288,8 @@ export function setupVR(A) {
     for (const k in A.keys) A.keys[k] = false; st.joy.on = false; st.joy.x = st.joy.y = 0;
     S.rig = { x: monkey.position.x, y: monkey.position.y, z: monkey.position.z, yaw: st.yaw }; applyRig();
     try { renderer.xr.setFoveation(1); } catch (e) {}
-    document.body.classList.add('vr'); hud.visible = true; fill.visible = true;
+    document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
+    try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
   });
   renderer.xr.addEventListener('sessionend', () => {
@@ -214,7 +298,7 @@ export function setupVR(A) {
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
-    document.body.classList.remove('vr'); fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
+    document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
     A.resumeFlat();
   });
@@ -228,28 +312,57 @@ export function setupVR(A) {
     const ref = renderer.xr.getReferenceSpace(), vp = xf && ref ? xf.getViewerPose(ref) : null;
     if (vp) { const p = vp.transform.position, o = vp.transform.orientation; _e.setFromQuaternion(_q.set(o.x, o.y, o.z, o.w), 'YXZ'); S.head = { x: p.x, y: p.y, z: p.z, yaw: _e.y, pitch: _e.x }; S.posed = true; }
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
+    S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
     const h = S.head, q = _v.set(h.x, monkey.position.y, h.z); A.collide(q); moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z;
     const L = IN.left, R = IN.right;
-    if (R) { if (Math.abs(R.x) > 0.7 && S.snapArmed !== false) { turnRig(R.x > 0 ? -SNAP : SNAP); S.snapArmed = false; S.snaps++; pulse(R.src, 0.25, 20); } else if (Math.abs(R.x) < 0.3) S.snapArmed = true; }
-    st.yaw = S.head.yaw; st.vrMove = L ? { x: L.x, y: L.y, speed: SPEED } : null;
+    const nbOn = !!(A.nb && A.nb.playing);
+    // t350u smooth turn: rate = 90 deg/s * ((|x| - 0.15) / 0.85)^2, nothing inside the deadzone, no snapping. Off while Neon Bricks takes the sticks.
+    if (R && !nbOn) { const ax = Math.abs(R.x);
+      if (ax > TURN_DZ) { const k = Math.min(1, (ax - TURN_DZ) / (1 - TURN_DZ)), rate = -Math.sign(R.x) * TURN_MAX * k * k, a = rate * dt;
+        turnRig(a); S.turnRate = rate; S.turnSum += Math.abs(a); S.turnTime += dt; S.turnMaxStep = Math.max(S.turnMaxStep, Math.abs(a)); } }
+    st.yaw = S.head.yaw;
+    if (nbOn) { const P = [L, R].reduce((b, q) => q && Math.hypot(q.x, q.y) > Math.hypot(b.x, b.y) ? q : b, { x: 0, y: 0 }); st.vrMove = { x: P.x, y: P.y, speed: SPEED }; }   // either stick moves the blocks
+    else st.vrMove = L ? { x: L.x, y: L.y, speed: SPEED } : null;
     S.walkStart = { x: monkey.position.x, z: monkey.position.z };
   }
 
   // ---------- per frame: after the arcade step (follow the player, rays, the game screen, HUD) ----------
   function post(dt) {
     if (S.walkStart) { moveRig(monkey.position.x - S.walkStart.x, monkey.position.z - S.walkStart.z, monkey.position.y - S.rig.y); }
+    // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
+    if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; } if (UI.open) uiClose(); }
     monkey.visible = false;
+    signsUpdate(); UI.msgT = Math.max(0, UI.msgT - dt);
+    if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
+    const nbOn = !!(nbApi() && nbApi().playing);
     const mode = play.mode, inGame = mode === 'game', L = IN.left, R = IN.right;
     dot.visible = false; tpRing.visible = false; S.hover = null;
     // rays
     let aimScreen = null;
     for (const c of ctrls) { const ray = c.userData.ray; if (!c.userData.src) { ray.visible = false; continue; } ray.visible = true; ray.scale.z = 3; ray.material.color.setHex(0x3ff3ff); }
     const order = [['right', R], ['left', L]];
-    if (mode === 'walk') {
-      for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c), hit = pickCab(ray);
+    const anyP = k => !!((L && L[k]) || (R && R[k]));
+    if (mode === 'walk' && nbOn) {   // NEON BRICKS: sticks move (step() -> nb.joy), A/X/trigger rotate, B/Y hard drop, hold grip = leave
+      const n = nbApi(); if (UI.open) uiClose();
+      if (anyP('aDown') || anyP('trigDown')) { n.rotate(); S.nbRot++; }
+      if (anyP('bDown')) { n.hardDrop(); S.nbDrops++; }
+      const grip = (L && L.grip) || (R && R.grip); S.gripT = grip ? (S.gripT || 0) + dt : 0;
+      if (S.gripT >= GRIP_EXIT_S) { S.gripT = 0; n.stop('exit'); S.nbExits++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
+      if (n.zoomAmt) n.setZoomAmt(0);
+    } else if (mode === 'walk') {
+      if (anyP('bDown') && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu
+      UI.hover = null;
+      for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
+        if (UI.open) { const u = uiHit(ray);
+          if (u) { c.userData.ray.scale.z = u.t; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(u.p); dot.visible = true; if (u.btn && !UI.hover) UI.hover = u.btn.id;
+            if (P.trigDown && u.btn && u.btn.on) { pulse(P.src, 0.5, 30); S.lastPress = u.btn.id; u.btn.act(); UI.key = ''; } continue; } }
+        const tg = pickTarget(ray), hit = pickCab(ray);
+        if (tg && (!hit || tg.d <= hit.d)) { c.userData.ray.scale.z = tg.d; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(tg.p); dot.visible = true; if (!S.hover) S.hover = { target: tg.id, hand };
+          if (P.trigDown) { pulse(P.src, 0.5, 30); S.lastPress = tg.id; tg.act(); } continue; }
+        if (UI.open) continue;   // no floor teleports while a panel is open
         if (hit) { c.userData.ray.scale.z = hit.d; c.userData.ray.material.color.setHex(0xffe14a); if (!S.hover) S.hover = { cab: hit.cab, m: machineOf(hit.cab), hand }; dot.position.copy(hit.p); dot.visible = true;
           if (P.trigDown) { pulse(P.src, 0.6, 40); startCab(hit.cab, hit.p); } continue; }
         const gy = monkey.position.y; if (ray.direction.y < -0.05) { const t = (gy - ray.origin.y) / ray.direction.y; if (t > 0 && t < RAY_MAX) { const p = ray.at(t, _hit); c.userData.ray.scale.z = t;
@@ -259,6 +372,7 @@ export function setupVR(A) {
           if (P.trigDown && ok) { tryTeleport(p); pulse(P.src, 0.3, 25); } } }
       }
     }
+    if (UI.open) uiDraw();
     // the game screen
     if (inGame && !G.placed) placeScreen();
     scr.visible = inGame;
@@ -281,8 +395,9 @@ export function setupVR(A) {
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0;
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), S.msgT > 0 ? S.msg : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY']);
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS' };
+    const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
+    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2]);
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
@@ -318,6 +433,6 @@ export function setupVR(A) {
     for (const k of map.a) hold(k, prim, w);
   }
   S.sendKey = (code, type) => { const w = gameWin(); if (w) sendKey(w, type, code); };
-  S.state = () => ({ presenting: S.presenting, rig: { ...S.rig }, head: S.head && { ...S.head }, mode: play.mode, sub: play.sub, cur: play.cur && play.cur.key, screen: scr.visible, held: Object.keys(S.held), keysSent: S.keysSent, ptrSent: S.ptrSent, texUploads: S.texUploads, launches: S.launches, exits: S.exits, teleports: S.teleports, snaps: S.snaps, pumps: S.pumps, hover: S.hover && S.hover.m && S.hover.m.key, monkey: [monkey.position.x, monkey.position.y, monkey.position.z], comp: [comp.width, comp.height], err: S.lastError || null });
+  S.state = () => ({ presenting: S.presenting, rig: { ...S.rig }, head: S.head && { ...S.head }, mode: play.mode, sub: play.sub, cur: play.cur && play.cur.key, screen: scr.visible, held: Object.keys(S.held), keysSent: S.keysSent, ptrSent: S.ptrSent, texUploads: S.texUploads, launches: S.launches, exits: S.exits, teleports: S.teleports, snaps: S.snaps, turnRate: S.turnRate, turnSum: S.turnSum, turnTime: S.turnTime, turnMaxStep: S.turnMaxStep, panel: UI.open, beams: S.beams, tpWhere: A.tp && A.tp.where, tpState: A.tp && A.tp.state, nb: !!(A.nb && A.nb.playing), pumps: S.pumps, hover: S.hover && S.hover.m && S.hover.m.key, monkey: [monkey.position.x, monkey.position.y, monkey.position.z], comp: [comp.width, comp.height], err: S.lastError || null });
   return { pre, post, S, rtCheck };
 }
