@@ -1899,7 +1899,8 @@ function frame(now, xrFrame) {
   }
   if (spaceWin) spaceWin.update(now);
   if (window.__neonSigns && window.__neonSigns.userData.tick) window.__neonSigns.userData.tick(now / 1000);   // t850u: claw icon prongs
-  if (draw && (XRP || (warm.done && !warm.drawn) || !document.getElementById('start') || (window.__start && window.__start.dismissed))) { if (warm.done) warm.drawn = true; if (composer && usePost && !XRP) composer.render(); else { if (XRP) renderer.setRenderTarget(null); renderer.render(scene, camera); } PS.lastDraw = now; PS.draws++; stats.draws = PS.draws; }   // t295u: the opaque start screen hides the room; let its shaders compile in slices first
+  // t349u: in VR, draw into the XR framebuffer three bound for this frame. NEVER setRenderTarget(null) before it: on a real Quest that draws to the hidden page canvas = pitch-black headset.
+  if (draw && (XRP || (warm.done && !warm.drawn) || !document.getElementById('start') || (window.__start && window.__start.dismissed))) { if (warm.done) warm.drawn = true; if (composer && usePost && !XRP) composer.render(); else { if (XRP) { const rt = renderer.getRenderTarget(); VRH && VRH.rtCheck && VRH.rtCheck(rt); } renderer.render(scene, camera); } PS.lastDraw = now; PS.draws++; stats.draws = PS.draws; }   // t295u: the opaque start screen hides the room; let its shaders compile in slices first
   else if (!draw) { PS.skipped++; stats.skipped = PS.skipped; }
   const cpu = performance.now() - t0;
   stats.frames++; stats.cpu = cpu; stats.cpuAvg += (cpu - stats.cpuAvg) * 0.05; stats.gapAvg += (gap - stats.gapAvg) * 0.05;
@@ -2065,7 +2066,8 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
         // floors: golf.js cuts the shop floor (4 clip planes) out of whichever floor material is on, and renderer.compile() can't build that clipped
         // variant, so give every floor the same planes and draw ONE 1x1 off-screen frame per floor (one per task, ~20 s in) = the real programs, ready for the swap
         RR.clipFloors(); const rt = new THREE.WebGLRenderTarget(1, 1), fl = FLOORS.filter(f => f !== f0); let i = 0;
-        const next = () => { if (i >= fl.length || play.mode !== 'walk') { rt.dispose(); RR.floorsWarm = true; return; }
+        const next = () => { if (renderer.xr.isPresenting) { setTimeout(next, 1000); return; }   // VR: wait until the headset is off
+          if (i >= fl.length || play.mode !== 'walk') { rt.dispose(); RR.floorsWarm = true; return; }
           const fm = floorMode, prev = renderer.getRenderTarget(); let sv = null; try { sv = localStorage.getItem(FLOOR_KEY); } catch (e) {}
           try { setFloor(fl[i++]); RR.clipFloors(); renderer.setRenderTarget(rt); renderer.render(scene, camera); } catch (e) {} finally { renderer.setRenderTarget(prev); setFloor(fm); try { if (sv == null) localStorage.removeItem(FLOOR_KEY); else localStorage.setItem(FLOOR_KEY, sv); } catch (e) {} }
           setTimeout(next, 250); };

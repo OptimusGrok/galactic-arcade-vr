@@ -77,8 +77,8 @@ export function setupSpaceWindow({ scene, room, renderer, HALF, H, isMobile, get
       vcam.fov = cam.fov; vcam.aspect = cam.aspect; vcam.near = cam.near; vcam.far = 30; vcam.updateProjectionMatrix(); vcam.updateMatrixWorld();
       texMat.copy(bias).multiply(vcam.projectionMatrix).multiply(vcam.matrixWorldInverse);
       const was = renderer.getRenderTarget(), bg = scene.background, fog = scene.fog, cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(), xr = renderer.shadowMap.autoUpdate;
-      scene.background = null; renderer.shadowMap.autoUpdate = false; renderer.setClearColor(0x000000, 0); renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, vcam);
-      renderer.setRenderTarget(was); renderer.setClearColor(cc, ca); scene.background = bg; scene.fog = fog; renderer.shadowMap.autoUpdate = xr; api.renders++; },
+      scene.background = null; renderer.shadowMap.autoUpdate = false; renderer.setClearColor(0x000000, 0); const xrOn = renderer.xr.enabled; renderer.xr.enabled = false; renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, vcam);
+      renderer.xr.enabled = xrOn; renderer.setRenderTarget(was); renderer.setClearColor(cc, ca); scene.background = bg; scene.fog = fog; renderer.shadowMap.autoUpdate = xr; api.renders++; },
   };
   return api;
 }

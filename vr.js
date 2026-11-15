@@ -190,6 +190,13 @@ export function setupVR(A) {
     const h = S.head || { x: monkey.position.x, z: monkey.position.z }; moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z; st.vel.set(0, 0, 0); S.teleports++; return true; }
   S.teleport = tryTeleport;
 
+  // ---------- never pitch black (t349u) ----------
+  // A soft sky/ground fill light while in VR, so the room is always visible even if a tier drops lights or the room's own lights are culled.
+  const fill = new THREE.HemisphereLight(0xc8d8ff, 0x403050, 0.9); fill.name = 'vrFill'; fill.visible = false; scene.add(fill); S.fill = fill;
+  // Render-target probe: in VR every room draw must go into three's XR framebuffer, never the page canvas (that is what made the Quest black).
+  S.rt = { xr: 0, bad: 0, last: '' };
+  function rtCheck(rt) { if (rt && rt.isXRRenderTarget) S.rt.xr++; else { S.rt.bad++; S.rt.last = rt ? 'other' : 'null'; } }
+
   // ---------- session ----------
   renderer.xr.addEventListener('sessionstart', () => {
     session = renderer.xr.getSession(); renderer.xr.setReferenceSpace(null); baseRef = renderer.xr.getReferenceSpace();
@@ -198,7 +205,7 @@ export function setupVR(A) {
     for (const k in A.keys) A.keys[k] = false; st.joy.on = false; st.joy.x = st.joy.y = 0;
     S.rig = { x: monkey.position.x, y: monkey.position.y, z: monkey.position.z, yaw: st.yaw }; applyRig();
     try { renderer.xr.setFoveation(1); } catch (e) {}
-    document.body.classList.add('vr'); hud.visible = true;
+    document.body.classList.add('vr'); hud.visible = true; fill.visible = true;
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
   });
   renderer.xr.addEventListener('sessionend', () => {
@@ -207,7 +214,7 @@ export function setupVR(A) {
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
-    document.body.classList.remove('vr'); hud.visible = scr.visible = dot.visible = tpRing.visible = false;
+    document.body.classList.remove('vr'); fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
     A.resumeFlat();
   });
@@ -312,5 +319,5 @@ export function setupVR(A) {
   }
   S.sendKey = (code, type) => { const w = gameWin(); if (w) sendKey(w, type, code); };
   S.state = () => ({ presenting: S.presenting, rig: { ...S.rig }, head: S.head && { ...S.head }, mode: play.mode, sub: play.sub, cur: play.cur && play.cur.key, screen: scr.visible, held: Object.keys(S.held), keysSent: S.keysSent, ptrSent: S.ptrSent, texUploads: S.texUploads, launches: S.launches, exits: S.exits, teleports: S.teleports, snaps: S.snaps, pumps: S.pumps, hover: S.hover && S.hover.m && S.hover.m.key, monkey: [monkey.position.x, monkey.position.y, monkey.position.z], comp: [comp.width, comp.height], err: S.lastError || null });
-  return { pre, post, S };
+  return { pre, post, S, rtCheck };
 }
