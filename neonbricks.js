@@ -1,0 +1,279 @@
+// t776u-t779u NEON BRICKS in room 1's big window (Dave): the Tetris-style game with LEGO-style bricks that Dave's Tower Defence bot made
+// (/workspace/lego-tetris, "Neon Bricks 3D"). Its RULES ENGINE (SRS rotation + kicks, 7-bag, lock delay, guideline scoring, T-spins,
+// levels) and its BRICK GEOMETRY (rounded body + one stud facing you) are copied verbatim below; the rendering is new: only the
+// falling-block playfield sits in the middle section of the window (no backdrop, so the window's space / jungle / beach view shows
+// through and on both sides), score + level float in the right-hand section. Walk up to the middle of the window -> PLAY.
+// While playing: D-pad left/right moves (down = soft drop, up = rotate), the MOVE button (in the backpack's place) still rotates, ZOOM once = the
+// playfield fills the screen (again = back), swipes still turn the camera. Free play, no tickets (like the room's other free toys).
+// Cheap: 3 instanced meshes + 1 canvas panel (redrawn only when the numbers change), no lights added, all compiled by the warm-up.
+// v216: bigger/closer score panel with a live high score; line-clear beam + sound; Level 2 door opens after 3 tetrises in one game;
+// the playfield frame and the panel neon change colour every 30 s, always different colours from each other (t826u).
+// t827u: pinch-to-zoom anywhere while playing (two-finger pinch in/out, clamped; single-touch controls stay the same).
+import { tierQuality, flagTex } from './tier.js';
+export function setupNeonBricks({ THREE, room, HALF, getMonkey, st, canStart, onState }) {
+const HI_KEY = 'neonarcade.neonbricks.hi';
+const TETRIS_LINES = 4;          // a tetris. 5 lines at once is impossible with standard tetrominoes (the I piece spans at most 4).
+const TETRISES_TO_OPEN = 3;      // Level 2 door opens after this many tetrises in one Neon Bricks game
+const NEON_PERIOD = 30;          // seconds between frame / panel colour changes
+const ZOOM_MIN = 0, ZOOM_MAX = 1.4;  // t827u: pinch-to-zoom the playfield (0 = normal view, 1 = fills the screen, >1 = closer)
+const NEON_PALETTE = ['#3ff3ff', '#ff3fd2', '#ffe14a', '#7d5cff', '#39ff14', '#ff6a1a'];
+// ================= RULES ENGINE (verbatim from Neon Bricks 3D) =================
+const W=10,H=22,HID=2;
+const TYPES=['I','O','T','S','Z','J','L'];
+const HEX={I:'#1fb6e8',O:'#ffcd03',T:'#a040c8',S:'#14b04a',Z:'#ff4a52',J:'#0a5ad6',L:'#ff7a1a'};   // t796u: Z was the darkest (#e3000b); brighter red stays readable on the window themes
+const SHAPES={I:[[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],O:[[1,1],[1,1]],T:[[0,1,0],[1,1,1],[0,0,0]],S:[[0,1,1],[1,1,0],[0,0,0]],Z:[[1,1,0],[0,1,1],[0,0,0]],J:[[1,0,0],[1,1,1],[0,0,0]],L:[[0,0,1],[1,1,1],[0,0,0]]};
+const rotCW=m=>m.map((row,i)=>row.map((_,j)=>m[m.length-1-j][i]));
+const CELLS={};
+for(const t of TYPES){CELLS[t]=[];let m=SHAPES[t];for(let r=0;r<4;r++){const c=[];m.forEach((row,y)=>row.forEach((v,x)=>{if(v)c.push([x,y]);}));CELLS[t].push(c);m=rotCW(m);}}
+// SRS kicks, (x, y-up) as in the guideline tables
+const KJ={'01':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],'10':[[0,0],[1,0],[1,-1],[0,2],[1,2]],'12':[[0,0],[1,0],[1,-1],[0,2],[1,2]],'21':[[0,0],[-1,0],[-1,1],[0,-2],[-1,-2]],'23':[[0,0],[1,0],[1,1],[0,-2],[1,-2]],'32':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],'30':[[0,0],[-1,0],[-1,-1],[0,2],[-1,2]],'03':[[0,0],[1,0],[1,1],[0,-2],[1,-2]]};
+const KI={'01':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],'10':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],'12':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]],'21':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],'23':[[0,0],[2,0],[-1,0],[2,1],[-1,-2]],'32':[[0,0],[-2,0],[1,0],[-2,-1],[1,2]],'30':[[0,0],[1,0],[-2,0],[1,-2],[-2,1]],'03':[[0,0],[-1,0],[2,0],[-1,2],[2,-1]]};
+function mulberry(seed){let a=seed>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+let hiStore=0;try{hiStore=+localStorage.getItem(HI_KEY)||0;}catch(e){}
+const G={state:'title',board:emptyBoard(),cur:null,hold:null,holdUsed:false,queue:[],score:0,lines:0,level:1,startLevel:1,combo:-1,b2b:false,hi:hiStore,events:[],grav:0,lockT:0,resets:0,lowest:0,lastRot:false,lastKick:0,soft:false,rand:Math.random,overT:0,newHi:false,stats:{pieces:0,tetrises:0,tspins:0,maxCombo:0}};
+const LOCK_DELAY=0.5,MAX_RESETS=15;
+function emptyBoard(){return Array.from({length:H},()=>new Array(W).fill(0));}
+function emit(type,d){G.events.push(Object.assign({type},d||{}));}
+function addScore(n){G.score+=n;if(G.score>G.hi){G.hi=G.score;G.newHi=true;try{localStorage.setItem(HI_KEY,String(G.hi));}catch(e){}}}
+function refill(){while(G.queue.length<7){const b=TYPES.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(G.rand()*(i+1));const t=b[i];b[i]=b[j];b[j]=t;}G.queue.push(...b);}}
+function fits(t,r,x,y){for(const c of CELLS[t][r]){const cx=x+c[0],cy=y+c[1];if(cx<0||cx>=W||cy>=H)return false;if(cy>=0&&G.board[cy][cx])return false;}return true;}
+function gravInterval(lv){lv=Math.min(lv,20);return Math.pow(0.8-(lv-1)*0.007,lv-1);}
+function newGame(seed,startLevel){
+ G.rand=mulberry(seed==null?(Math.random()*4294967296)>>>0:seed);
+ G.board=emptyBoard();G.queue=[];refill();G.hold=null;G.holdUsed=false;G.score=0;G.lines=0;G.startLevel=startLevel||1;G.level=G.startLevel;G.combo=-1;G.b2b=false;G.overT=0;G.newHi=false;G.soft=false;
+ G.stats={pieces:0,tetrises:0,tspins:0,maxCombo:0};G.state='play';emit('newgame');spawn();}
+function spawn(t){
+ if(!t){t=G.queue.shift();refill();}
+ const x=t==='O'?4:3;G.cur={t,r:0,x,y:0};
+ G.grav=0;G.lockT=0;G.resets=0;G.lastRot=false;G.lastKick=0;
+ if(!fits(t,0,x,0)){gameOver('blockout');return false;}
+ if(fits(t,0,x,1))G.cur.y=1;
+ G.lowest=G.cur.y;emit('spawn',{t});emit('queue');return true;}
+function grounded(){const c=G.cur;return !fits(c.t,c.r,c.x,c.y+1);}
+function moveReset(){if((G.lockT>0||grounded())&&G.resets<MAX_RESETS){G.lockT=0;G.resets++;}}
+function checkLowest(){if(G.cur.y>G.lowest){G.lowest=G.cur.y;G.resets=0;}}
+function move(dx){if(G.state!=='play'||!G.cur)return false;const c=G.cur;if(fits(c.t,c.r,c.x+dx,c.y)){c.x+=dx;G.lastRot=false;moveReset();emit('move');return true;}emit('bump');return false;}
+function rotate(dir){
+ if(G.state!=='play'||!G.cur)return false;const c=G.cur;if(c.t==='O'){emit('rotate',{kick:0});return true;}
+ const nr=(c.r+dir+4)%4,ks=(c.t==='I'?KI:KJ)[''+c.r+nr];
+ for(let i=0;i<ks.length;i++){const nx=c.x+ks[i][0],ny=c.y-ks[i][1];if(fits(c.t,nr,nx,ny)){c.x=nx;c.y=ny;c.r=nr;G.lastRot=true;G.lastKick=i;moveReset();checkLowest();emit('rotate',{kick:i});return true;}}
+ return false;}
+function softDrop(){if(G.state!=='play'||!G.cur)return false;const c=G.cur;if(fits(c.t,c.r,c.x,c.y+1)){c.y++;addScore(1);G.grav=0;G.lastRot=false;checkLowest();emit('soft');return true;}return false;}
+function ghostY(){const c=G.cur;let y=c.y;while(fits(c.t,c.r,c.x,y+1))y++;return y;}
+function hardDrop(){if(G.state!=='play'||!G.cur)return false;const c=G.cur;const y0=c.y,y1=ghostY();const d=y1-y0;if(d>0)G.lastRot=false;c.y=y1;addScore(2*d);
+ emit('hard',{d,t:c.t,cells:CELLS[c.t][c.r].map(([dx,dy])=>[c.x+dx,y0+dy,y1+dy])});lock();return true;}
+function hold(){if(G.state!=='play'||!G.cur||G.holdUsed)return false;const t=G.cur.t,h=G.hold;G.hold=t;G.holdUsed=true;emit('hold',{t});spawn(h||undefined);return true;}
+function tspinType(){
+ const c=G.cur;if(c.t!=='T'||!G.lastRot)return 0;
+ const cx=c.x+1,cy=c.y+1,occ=(dx,dy)=>{const x=cx+dx,y=cy+dy;if(x<0||x>=W||y>=H)return true;return y>=0&&!!G.board[y][x];};
+ const C=[[-1,-1],[1,-1],[1,1],[-1,1]];const filled=C.map(([a,b])=>occ(a,b));const n=filled.filter(Boolean).length;if(n<3)return 0;
+ const front=[[0,1],[1,2],[2,3],[3,0]][c.r];const f=filled[front[0]]&&filled[front[1]];return (f||G.lastKick===4)?2:1;}
+function lock(){
+ const c=G.cur;const ts=tspinType();let allHidden=true;const placed=[];const v=TYPES.indexOf(c.t)+1;
+ for(const [dx,dy] of CELLS[c.t][c.r]){const x=c.x+dx,y=c.y+dy;if(y>=0)G.board[y][x]=v;if(y>=HID)allHidden=false;placed.push([x,y]);}
+ G.stats.pieces++;emit('lock',{cells:placed,t:c.t});G.cur=null;
+ if(allHidden){gameOver('lockout');return;}
+ const rows=[];for(let y=0;y<H;y++)if(G.board[y].every(Boolean))rows.push(y);
+ const n=rows.length,cleared=rows.map(y=>G.board[y].slice());
+ if(n){rows.slice().sort((a,b)=>b-a).forEach(y=>G.board.splice(y,1));for(let i=0;i<n;i++)G.board.unshift(new Array(W).fill(0));}
+ let base,diff;
+ if(ts===2){base=[400,800,1200,1600][n];diff=n>0;}else if(ts===1){base=[100,200,400,400][n];diff=n>0;}else{base=[0,100,300,500,800][n];diff=n===4;}
+ let b2bHit=false;
+ if(n>0){if(diff&&G.b2b){base*=1.5;b2bHit=true;}G.b2b=diff;G.combo++;}else G.combo=-1;
+ let pts=base*G.level;if(n>0&&G.combo>0)pts+=50*G.combo*G.level;
+ let perfect=n>0&&G.board.every(r=>r.every(x=>!x));if(perfect)pts+=[0,800,1200,1800,2000][n]*G.level;
+ addScore(pts);G.lines+=n;if(n===TETRIS_LINES)G.stats.tetrises++;if(ts&&n)G.stats.tspins++;G.stats.maxCombo=Math.max(G.stats.maxCombo,G.combo);
+ const oldLv=G.level;G.level=Math.floor(G.lines/10)+G.startLevel;
+ if(n||ts)emit('clear',{rows,n,cleared,ts,b2b:b2bHit,combo:G.combo,pts,perfect});
+ if(G.level>oldLv)emit('levelup',{level:G.level});
+ G.holdUsed=false;spawn();}
+function gameOver(why){G.state='over';G.overT=0;G.cur=G.cur||null;G.newHi=false;if(G.score>G.hi){G.hi=G.score;G.newHi=true;try{localStorage.setItem(HI_KEY,String(G.hi));}catch(e){}}emit('gameover',{why});}
+function update(dt){
+ if(G.state!=='play'||!G.cur)return;
+ const g=gravInterval(G.level),iv=G.soft?Math.max(g/20,0.02):g;
+ G.grav+=dt;
+ while(G.grav>=iv&&G.cur){G.grav-=iv;const c=G.cur;if(fits(c.t,c.r,c.x,c.y+1)){c.y++;if(G.soft){addScore(1);emit('soft');}G.lastRot=false;checkLowest();}else{G.grav=0;break;}}
+ if(G.cur&&grounded()){G.lockT+=dt;if(G.lockT>=LOCK_DELAY)lock();}else G.lockT=0;}
+// ================= BRICK GEOMETRY (verbatim) =================
+function brickGeometry(){
+ const s=0.9,r=0.13,h=s/2,sh=new THREE.Shape();
+ sh.moveTo(-h+r,-h);sh.lineTo(h-r,-h);sh.quadraticCurveTo(h,-h,h,-h+r);sh.lineTo(h,h-r);sh.quadraticCurveTo(h,h,h-r,h);sh.lineTo(-h+r,h);sh.quadraticCurveTo(-h,h,-h,h-r);sh.lineTo(-h,-h+r);sh.quadraticCurveTo(-h,-h,-h+r,-h);
+ const body=new THREE.ExtrudeGeometry(sh,{depth:0.62,bevelEnabled:true,bevelThickness:0.05,bevelSize:0.04,bevelSegments:2,curveSegments:3});body.translate(0,0,-0.36);
+ const stud=new THREE.CylinderGeometry(0.255,0.275,0.17,16,1,false);stud.rotateX(Math.PI/2);stud.translate(0,0,0.31+0.085);
+ const top=new THREE.CylinderGeometry(0.22,0.255,0.03,16,1,false);top.rotateX(Math.PI/2);top.translate(0,0,0.31+0.17+0.015);
+ const parts=[body,stud,top].map(g=>g.index?g.toNonIndexed():g);
+ let n=0;parts.forEach(g=>n+=g.attributes.position.count);const P=new Float32Array(n*3),N=new Float32Array(n*3);let o=0;
+ parts.forEach(g=>{P.set(g.attributes.position.array,o*3);N.set(g.attributes.normal.array,o*3);o+=g.attributes.position.count;});
+ const out=new THREE.BufferGeometry();out.setAttribute('position',new THREE.BufferAttribute(P,3));out.setAttribute('normal',new THREE.BufferAttribute(N,3));return out;}
+// ================= ARCADE WINDOW RENDERING =================
+const CELL = 0.355, X0 = HALF - 0.32, ZC = 0, YB = 0.55;          // board 10 x 20 visible rows = 3.55 x 7.1 m, centred in the middle window pane (z -4..4)
+const VIS = H - HID;
+const grp = new THREE.Group(); grp.name = 'neonBricks'; grp.position.set(X0, YB, ZC - W * CELL / 2 + CELL / 2); grp.rotation.y = -Math.PI / 2; grp.scale.setScalar(CELL); room.add(grp);
+// local x = column (-> world +z, left to right as you face the window), local y = row up from the bottom, studs face the room
+const BRICK = brickGeometry();
+const brickMat = new THREE.MeshPhongMaterial({ color: 0xffffff, specular: 0xb0b0b0, shininess: 120, emissive: 0x2a2a2a }); brickMat.name = 'neonBricks';
+const ghostMat = new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35, transparent: true, opacity: 0.26, depthWrite: false, shininess: 30 }); ghostMat.name = 'neonBricksGhost';
+const HEXC = {}; TYPES.forEach(t => HEXC[t] = new THREE.Color(HEX[t]));
+function inst(n, mat, name) { const m = new THREE.InstancedMesh(BRICK, mat, n); m.name = name; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); const w = new THREE.Color(1, 1, 1);
+  for (let i = 0; i < n; i++) m.setColorAt(i, w); m.count = 0; m.frustumCulled = false; grp.add(m); return m; }
+const boardM = inst(W * VIS, brickMat, 'nbBoard'), curM = inst(4, brickMat, 'nbCur'), ghostM = inst(4, ghostMat, 'nbGhost');
+// neon well outline (sides + floor), so the empty playfield reads against the sky
+const tubeC = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x3ff3ff).multiplyScalar(1.6), fog: false }), tubeM = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff3fd2).multiplyScalar(1.6), fog: false });
+tubeC.name = 'nbFrame'; tubeM.name = 'nbFrame';
+for (const [w, h, x, y, m] of [[0.12, VIS + 0.4, -0.62, (VIS - 1) / 2, tubeC], [0.12, VIS + 0.4, W - 0.38, (VIS - 1) / 2, tubeC], [W + 0.36, 0.14, (W - 1) / 2, -0.62, tubeM]]) {
+  const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.12), m); b.position.set(x, y, 0); b.name = 'nbWell'; grp.add(b); }
+const M4 = new THREE.Matrix4(), V3 = new THREE.Vector3(), camBase = { on: false, p: new THREE.Vector3(), q: new THREE.Quaternion() };
+const put = (m, i, x, y, col) => { M4.makeTranslation(x, VIS - 1 - (y - HID), 0); m.setMatrixAt(i, M4); m.setColorAt(i, col); };
+// ---- score / level panel in the right-hand window section ----
+let msg = '', msgT = 0;
+const qNb = tierQuality(); const pc = document.createElement('canvas'); pc.width = qNb.nbW || 512; pc.height = qNb.nbH || 640; const px = pc.getContext('2d');
+const ptex = new THREE.CanvasTexture(pc); ptex.colorSpace = THREE.SRGBColorSpace; flagTex(ptex, THREE);
+const panel = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 5.25), new THREE.MeshBasicMaterial({ map: ptex, transparent: true, depthWrite: false, fog: false }));
+panel.name = 'nbPanel'; panel.position.set(HALF - 0.55, 4.15, 5.15); panel.rotation.y = -Math.PI / 2; panel.renderOrder = 3; room.add(panel);
+let panelKey = '';
+let neonNow = () => performance.now() / 1000, neonIdx = -1, frameHex = NEON_PALETTE[0], panelHex = NEON_PALETTE[2];
+function neonPair(i) { const n = NEON_PALETTE.length, a = ((i % n) + n) % n, b = (a + 2) % n; return { i: a, frame: NEON_PALETTE[a], panel: NEON_PALETTE[b] }; }
+function applyNeon(force) {
+  const p = neonPair(Math.floor(neonNow() / NEON_PERIOD)); if (!force && p.i === neonIdx) return false;
+  neonIdx = p.i; frameHex = p.frame; panelHex = p.panel;
+  const fc = new THREE.Color(frameHex).multiplyScalar(1.6); tubeC.color.copy(fc); tubeM.color.copy(fc);
+  panelKey = ''; return true;
+}
+function drawPanel(msg) {
+  const nx = G.queue && G.queue[0], key = [G.state, G.score, G.level, G.lines, G.hi, nx, msg || '', panelHex].join('|'); if (key === panelKey) return; panelKey = key;
+  const g = px, w = 512, h = 640; g.setTransform(pc.width / 512, 0, 0, pc.height / 640, 0, 0); g.clearRect(0, 0, w, h);
+  g.fillStyle = 'rgba(8,4,20,0.45)'; g.beginPath(); g.roundRect(8, 8, w - 16, h - 16, 26); g.fill(); g.lineWidth = 6; g.strokeStyle = panelHex; g.shadowColor = panelHex; g.shadowBlur = 18; g.stroke(); g.shadowBlur = 0;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  const neonT = (t, y, size, col, glow) => { g.font = `900 ${size}px "Arial Black", Arial, sans-serif`; g.shadowColor = glow || col; g.shadowBlur = 16; g.fillStyle = col; g.fillText(t, w / 2, y); g.shadowBlur = 0; };
+  neonT('NEON', 54, 58, panelHex, panelHex); neonT('BRICKS', 108, 58, panelHex, panelHex);
+  const row = (lab, val, y, col) => { g.font = '700 28px "Courier New", monospace'; g.fillStyle = '#c8b8ff'; g.fillText(lab, w / 2, y); neonT(String(val), y + 40, 48, '#ffffff', col || panelHex); };
+  row('SCORE', G.score, 160); row('HIGH SCORE', G.hi, 258); row('LEVEL', G.level, 356); row('LINES', G.lines, 454);
+  if (G.state === 'play' && nx) { g.font = '700 22px "Courier New", monospace'; g.fillStyle = '#c8b8ff'; g.fillText('NEXT', w / 2, 548);
+    const cs = CELLS[nx][0], s = 22, minx = Math.min(...cs.map(c => c[0])), maxx = Math.max(...cs.map(c => c[0])), miny = Math.min(...cs.map(c => c[1])), maxy = Math.max(...cs.map(c => c[1]));
+    const ox = w / 2 - (maxx - minx + 1) * s / 2, oy = 580 - (maxy - miny + 1) * s / 2 + 16;
+    for (const [cx, cy] of cs) { const x = ox + (cx - minx) * s, y = oy + (cy - miny) * s; g.fillStyle = HEX[nx]; g.fillRect(x + 1, y + 1, s - 2, s - 2); g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.arc(x + s / 2, y + s / 2, s * 0.28, 0, 7); g.fill(); }
+    if (msg) neonT(msg, 624, msg.length > 10 ? 24 : 30, '#fff6b0', panelHex); }
+  else { neonT(msg || (G.state === 'over' ? 'GAME OVER' : 'WALK UP + PLAY'), 580, msg && msg.length > 10 ? 30 : 36, panelHex); }
+  ptex.needsUpdate = true; }
+// ---- render the board state into the instanced meshes ----
+let boardDirty = true;
+function sync() {
+  if (boardDirty) { let n = 0; for (let y = HID; y < H; y++) for (let x = 0; x < W; x++) { const v = G.board[y][x]; if (v) put(boardM, n++, x, y, HEXC[TYPES[v - 1]]); }
+    boardM.count = n; boardM.instanceMatrix.needsUpdate = true; if (boardM.instanceColor) boardM.instanceColor.needsUpdate = true; boardDirty = false; }
+  const c = G.state === 'play' && G.cur; let n = 0, ng = 0;
+  if (c) { const gy = ghostY(); for (const [dx, dy] of CELLS[c.t][c.r]) { if (c.y + dy >= HID) put(curM, n++, c.x + dx, c.y + dy, HEXC[c.t]); if (gy !== c.y && gy + dy >= HID) put(ghostM, ng++, c.x + dx, gy + dy, HEXC[c.t]); } }
+  curM.count = n; ghostM.count = ng; curM.instanceMatrix.needsUpdate = ghostM.instanceMatrix.needsUpdate = true; if (curM.instanceColor) curM.instanceColor.needsUpdate = true; if (ghostM.instanceColor) ghostM.instanceColor.needsUpdate = true; }
+// ---- little sounds (shared arcade audio context, respects mute) ----
+function blip(f0, f1, dur, vol, type) { try { const ac = window.__unlockAC; if (!ac || window.__muted || (window.__mute && window.__mute.muted)) return; const t = ac.currentTime, o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'square'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), t + dur); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g).connect(ac.destination); o.start(t); o.stop(t + dur + 0.02); } catch (e) {} }
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, fog: false, depthWrite: false, blending: THREE.AdditiveBlending });
+beamMat.name = 'nbBeam';
+const beams = [];
+function spawnBeams(rows) {
+  for (const y of rows) {
+    const ly = VIS - 1 - (y - HID);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(W + 0.8, 0.55, 0.22), beamMat.clone());
+    bar.position.set((W - 1) / 2, ly, 0.2); bar.name = 'nbBeam'; bar.userData = { t: 0, life: 0.45, kind: 'bar', y };
+    const shard = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, 0.18, 0.08), beamMat.clone());
+    shard.position.set((W - 1) / 2, ly, 0.35); shard.name = 'nbBeamShard'; shard.userData = { t: 0, life: 0.45, kind: 'shard', y };
+    grp.add(bar, shard); beams.push(bar, shard);
+  }
+  api.beams = beams.length;
+}
+function tickBeams(dt) {
+  const col = new THREE.Color(frameHex);
+  for (let i = beams.length - 1; i >= 0; i--) {
+    const m = beams[i], u = m.userData; u.t += dt; const k = Math.min(1, u.t / u.life);
+    if (m.material && m.material.color) m.material.color.copy(col);
+    if (m.material) m.material.opacity = 0.95 * (1 - k) * (1 - k);
+    if (u.kind === 'bar') { m.scale.set(1 + k * 0.15, Math.max(0.08, 1 - k * 0.7), 1 + k * 4); m.position.z = 0.2 + k * 1.6; }
+    else { m.scale.set(1.1 + k * 0.4, 1, 1); m.position.z = 0.35 + k * 3.2; }
+    if (k >= 1) { grp.remove(m); if (m.geometry) m.geometry.dispose(); if (m.material && m.material !== beamMat) m.material.dispose(); beams.splice(i, 1); }
+  }
+  api.beams = beams.length;
+}
+function clearBeamSnd(n) {
+  try {
+    const ac = window.__unlockAC; if (!ac || window.__muted || (window.__mute && window.__mute.muted)) return;
+    const t0 = ac.currentTime;
+    const beep = (type, f0, f1, dur, vol, delay) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t0 + delay); o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + delay + dur);
+      g.gain.setValueAtTime(0.0001, t0 + delay); g.gain.exponentialRampToValueAtTime(vol, t0 + delay + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + dur);
+      o.connect(g).connect(ac.destination); o.start(t0 + delay); o.stop(t0 + delay + dur + 0.02);
+    };
+    beep('sawtooth', 180, 1640, 0.32, 0.08, 0);
+    beep('sine', 720, 2200, 0.4, 0.055, 0.03);
+    beep('triangle', 420, 90, 0.45, 0.04, 0.1);
+    if (n >= TETRIS_LINES) beep('square', 1280, 2600, 0.22, 0.035, 0.06);
+  } catch (e) {}
+}
+function tryOpenDoor() {
+  const D = window.__level2Door; if (D && D.open) D.open();
+}
+function closeDoorOnExit() {
+  const D = window.__level2Door; if (!D || !D.close) return;
+  // Leaving a game that earned the door keeps it open so the player can walk through.
+  // A later unsaved new game closes it again. Saved unlocks persist.
+  if (D.saved || G.stats.tetrises >= TETRISES_TO_OPEN) return;
+  D.close();
+}
+function resetDoorForNewGame() {
+  const D = window.__level2Door; if (!D || !D.close || D.saved) return;
+  D.close({ snap: true });
+}
+function drain() { for (const e of G.events) {
+  if (e.type === 'lock' || e.type === 'clear' || e.type === 'newgame' || e.type === 'hard') boardDirty = true;
+  if (e.type === 'rotate') blip(660, 880, 0.05, 0.05); else if (e.type === 'move') blip(330, 300, 0.03, 0.03); else if (e.type === 'lock') blip(180, 90, 0.08, 0.07, 'triangle');
+  else if (e.type === 'clear' && e.n) { clearBeamSnd(e.n); if (e.rows && e.rows.length) spawnBeams(e.rows); msg = e.n === TETRIS_LINES ? 'NEON BRICKS!' : ['', 'SINGLE', 'DOUBLE', 'TRIPLE'][e.n]; if (e.ts) msg = 'T-SPIN ' + msg; msgT = 1.4; api.clears++; if (G.stats.tetrises >= TETRISES_TO_OPEN) tryOpenDoor(); }
+  else if (e.type === 'levelup') { msg = 'LEVEL ' + e.level; msgT = 1.4; }
+  else if (e.type === 'gameover') { blip(400, 60, 0.9, 0.08, 'sawtooth'); stop('over'); } }
+  G.events.length = 0; }
+// ---- input ----
+const rep = { dir: 0, t: 0 }, DAS = 0.2, ARR = 0.07;
+function joy(jx, jy, dt) {   // joystick / keys: left-right auto-repeat, down = soft drop
+  const d = jx > 0.45 ? 1 : jx < -0.45 ? -1 : 0;
+  if (d !== rep.dir) { rep.dir = d; rep.t = 0; if (d) move(d); } else if (d) { rep.t += dt; while (rep.t >= DAS) { move(d); rep.t -= ARR; } }
+  G.soft = jy > 0.6 && Math.abs(jy) > Math.abs(jx); }
+const api = { G, grp, panel, HEX, TETRIS_LINES, TETRISES_TO_OPEN, NEON_PERIOD, NEON_PALETTE, ZOOM_MIN, ZOOM_MAX, beams: 0,
+  get shown() { return grp.visible; }, playing: false, zoom: false, zoomAmt: 0, zoomK: 0, pinches: 0, near: false, clears: 0, starts: 0, rotates: 0, moves: 0,
+  get frameColor() { return frameHex; }, get panelColor() { return panelHex; }, get neonIndex() { return neonIdx; },
+  setNeonNow(fn) { neonNow = fn; applyNeon(true); drawPanel(msg); },
+  get mats() { return [brickMat, ghostMat]; },
+  start() { if (api.playing) return; hideT = 0; show(true); resetDoorForNewGame(); newGame(); api.playing = true; api.zoom = false; api.zoomAmt = 0; api.starts++; boardDirty = true; G.events.length = 0; boardDirty = true; msg = ''; drawPanel(); onState && onState(true); },
+  stop, rotate() { if (api.playing && rotate(1)) api.rotates++; }, hardDrop() { if (api.playing) hardDrop(); },
+  move(d) { if (api.playing && move(d)) api.moves++; },
+  joy, toggleZoom() { if (!api.playing) return; api.zoomAmt = api.zoomAmt >= 0.85 ? 0 : 1; api.zoom = api.zoomAmt >= 0.85; },
+  setZoomAmt(k) { if (!api.playing) return api.zoomAmt; api.zoomAmt = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, +k || 0)); api.zoom = api.zoomAmt >= 0.85; return api.zoomAmt; },
+  pinchBy(scale) { if (!api.playing || !(scale > 0)) return api.zoomAmt; api.pinches++; return api.setZoomAmt((1 + (api.zoomAmt || 0)) * scale - 1); },
+  debugClear(n) {   // test hook: fill n complete rows at the bottom and run the real clear path (beam, sound, tetris count, door)
+    if (G.state !== 'play') newGame();
+    const rows = []; for (let i = 0; i < n; i++) { const y = H - 1 - i; for (let x = 0; x < W; x++) G.board[y][x] = 1; rows.push(y); }
+    const cleared = rows.map(y => G.board[y].slice());
+    rows.slice().sort((a, b) => b - a).forEach(y => G.board.splice(y, 1)); for (let i = 0; i < n; i++) G.board.unshift(new Array(W).fill(0));
+    if (n === TETRIS_LINES) G.stats.tetrises++;
+    G.lines += n; addScore(([0, 100, 300, 500, 800][n] || 0) * G.level);
+    emit('clear', { rows, n, cleared, ts: 0, b2b: false, combo: 0, pts: 0, perfect: false }); boardDirty = true; drain(); return { n, tetrises: G.stats.tetrises, hi: G.hi, score: G.score }; },
+  update(dt) {
+    const m = getMonkey(); api.near = !!(m && !api.playing && m.position.x > HALF - 4.2 && Math.abs(m.position.z - ZC) < 2.4 && m.position.y < 1);
+    if (api.playing) { update(Math.min(dt, 0.1)); drain(); }
+    if (msgT > 0) { msgT -= dt; if (msgT <= 0) msg = ''; }
+    if (hideT > 0 && !api.playing) { hideT -= dt; if (hideT <= 0) { hideT = 0; show(false); } }
+    const zGoal = api.playing ? api.zoomAmt : 0; api.zoomK += (zGoal - api.zoomK) * (1 - Math.exp(-dt * 10)); if (Math.abs(api.zoomK) < 0.002) api.zoomK = 0;
+    applyNeon(); tickBeams(dt); sync(); drawPanel(msg); },
+  // ZOOM: frame the 10 x 20 playfield so it fills the screen, eased with zoomK
+  restoreCam(cam) { if (camBase.on) { cam.position.copy(camBase.p); cam.quaternion.copy(camBase.q); camBase.on = false; } },   // undo last frame's zoom before the follow camera runs
+  camera(cam) { if (api.zoomK <= 0) return false;
+    camBase.p.copy(cam.position); camBase.q.copy(cam.quaternion); camBase.on = true;
+    const hh = VIS * CELL / 2 + 0.35, hw = W * CELL / 2 + 0.3, yc = YB + (VIS - 1) * CELL / 2, t = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2);
+    const extra = Math.max(0, api.zoomK - 1), fill = Math.min(1, api.zoomK);
+    const d = Math.max(hh / t, hw / (t * cam.aspect)) * (1 - extra * 0.4), zx = X0 - 0.3 - d;
+    const k = fill * fill * (3 - 2 * fill);
+    V3.copy(cam.position); cam.position.lerp(V3.set(zx, yc, ZC), k);
+    const look = new THREE.Vector3(); cam.getWorldDirection(look); look.multiplyScalar(10).add(V3.copy(cam.position));
+    cam.lookAt(look.lerp(new THREE.Vector3(X0, yc, ZC), k)); return k > 0.35; } };
+function stop(why) { if (!api.playing) return; api.playing = false; api.zoom = false; api.zoomAmt = 0; rep.dir = 0; G.soft = false; if (why !== 'over') G.state = 'title'; msg = ''; panelKey = ''; closeDoorOnExit(); drawPanel(); if (why === 'over') hideT = 1.6; else show(false); onState && onState(false); }
+// t781u: nothing in the window until PLAY is tapped; hidden again after game over (a short GAME OVER beat first) or exit
+let hideT = 0; function show(on) { grp.visible = panel.visible = on; } show(false);
+applyNeon(true); drawPanel(); sync();
+return api; }
