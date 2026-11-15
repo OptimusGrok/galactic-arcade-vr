@@ -12,18 +12,20 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
   const btnAt = id => page.evaluate(id => window.__gaVR.ui.btnWorld(id), id);
   const sign = id => page.evaluate(id => { const s = window.__gaVR.signs().find(q => q.id === id); return s ? s.at : null; }, id);
   // ray length vs the distance from the controller to the thing it points at
-  const rayCut = async (target, hand = 'right') => page.evaluate(([hand, target]) => { const r = window.__gaVR.rayLens()[hand]; if (!r || !r.o) return { len: null, dist: -1 };
+  const rayCut = async (target, hand = 'right') => page.evaluate(([hand, target]) => { const r = window.__gaVR.rayLens ? window.__gaVR.rayLens()[hand] : null; if (!r || !r.o) return { len: null, dist: -1 };
     return { len: r.len, dist: Math.hypot(r.o[0] - target[0], r.o[1] - target[1], r.o[2] - target[2]) }; }, [hand, target]);
   try {
     await page.waitForFunction(() => document.getElementById('vrBtn').classList.contains('on'), null, { timeout: 20000 });
     await page.click('#vrBtn'); await page.waitForFunction(() => window.__gaVR.presenting && window.__gaVR.posed, null, { timeout: 30000 });
     await place(2, 4, 0);
     // ---- laser stops at a menu button (and highlights it) ----
+    if (!process.env.MIRROR_ONLY) {
     await H.press(page, 'right', 'b-button'); const bw = await btnAt('beam'); await aim(bw);
     let rc = await rayCut(bw); const hov = await page.evaluate(() => window.__gaVR.ui.kind === 'menu');
     chk(Math.abs(rc.len - rc.dist) < 0.06, 'ray stops at the menu button: ray ' + rc.len.toFixed(2) + ' m, button ' + rc.dist.toFixed(2) + ' m away');
     chk(hov, 'B opened the menu');
     await aimPress(await btnAt('close2'));
+    }
     // ---- beam to the shop ----
     await page.evaluate(() => { window.__tpTimeScale = 3; window.__arcade.play.addTickets(60); window.__gaVR.ui.beam(); });
     await page.waitForFunction(() => { const s = window.__gaVR.state(); return s.tpWhere === 2 && s.tpState === 'idle' && window.__gaVR.ui.shop() && window.__gaVR.ui.shop().wardrobe; }, null, { timeout: 90000 });
@@ -37,6 +39,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     chk(mir.renders > r0 + 3 && mir.kicks > 3, 'the mirror renders in VR (' + r0 + ' -> ' + mir.renders + ' renders)');
     const hs = await page.evaluate(() => window.__hsRead(0.3, 0.3, 0.7, 0.7));
     chk(hs && hs.left.lit > 30 && hs.right.lit > 30 && hs.left.mean > 25 && hs.right.mean > 25, 'the headset sees a lit (not black) mirror where you look ' + JSON.stringify(hs && { l: hs.left, r: hs.right }));
+    if (process.env.MIRROR_ONLY) { await close(); process.exit(ok ? 0 : 1); }
     // ---- accessories ----
     await place(M.p[0] + M.n[0] * 2.2, M.p[2] + M.n[2] * 2.2, yaw);
     const ws = await sign('ward'); chk(!!ws, 'ACCESSORIES sign over the mirror');

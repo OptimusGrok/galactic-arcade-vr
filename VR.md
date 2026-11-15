@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v3`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v4`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -38,7 +38,7 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - Fix: draw straight into the XR framebuffer three binds for the frame. The space-window reflection and the floor warm-up never render into or with the XR camera.
 - Safety net: a soft fill light (hemisphere) is on while in VR so the room is never fully dark.
 - Test: `test/vr_dark.js` gives the emulated headset its own framebuffer like real hardware and reads the pixels the headset shows (at entry, four directions, after 3 s, after walking). It fails on the old build (0% lit) and passes on the fix.
-- Cache bumped to `galactic-arcade_vr-v3` so headsets pick up the fix.
+- Cache bumped to `galactic-arcade_vr-v4` so headsets pick up the fix.
 
 ## Tickets, shop, teleporter, smooth turn, Neon Bricks (Dave, t350u / t351u)
 - **Smooth turn:** the right stick turns smoothly. The further you push, the faster: nothing inside 0.15, then a x² curve up to 90°/s at full push. No snapping.
@@ -49,4 +49,12 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - **Neon Bricks:** point at the window game (or its sign) and pull the trigger. Either stick moves the brick (down = soft drop), A/X/trigger rotates, B/Y hard-drops, and holding grip leaves. No zoom in VR.
 - **Signs:** they only show in VR, always face you, and grow with distance so they stay readable (ray range for signs is 30 m).
 - **Tests:** `test/vr_ui.js` (turn rates, ticket buying, beam to the shop and back, a prize purchase, Neon Bricks).
-- Cache: `galactic-arcade_vr-v3`.
+- Cache: `galactic-arcade_vr-v4`.
+
+## Accessories, mirror, Berserker power-ups, laser (Dave, t353u)
+- **Accessories:** point at the ACCESSORIES sign over the shop mirror (or use MENU > ACCESSORIES). The panel has tabs (HAT, GLASSES, BACK, HAND, HOODIE, SUIT, FUR, SHOES) and six items per page. Press an item to wear it, or to buy and wear it if you don't own it yet (same price and ticket rules as the flat wardrobe, using player.js's own pick / tryOn / buy). REMOVE takes the item off where the category has a "none" option.
+- **Mirror:** it was black because the shop's mirror only renders for the main camera, and in VR three passes it the per-eye XR cameras, so it never rendered. vr.js now triggers it once per frame with the main camera (the Reflector turns XR off for its own pass and restores the render target). Your avatar faces where you look, so you see yourself in it.
+- **Berserker:** right A or trigger attacks, right B dashes. Power-ups appear as yellow buttons to the right of the game screen when they're ready, each labelled with its button: **X = THOR**, **Y = BERSERK**, **short right-grip tap = ODIN** (holding grip still leaves the game). You can also point at a power-up button and pull the trigger.
+- **Laser:** every ray stops at the first VR button, panel, sign or screen it reaches (exact rectangle test), and hovered signs and power-up buttons light up.
+- **Tests:** `test/vr_v4.js`. Against the old build the mirror check fails (0 renders, 0.5% lit).
+- Cache: `galactic-arcade_vr-v4`.
