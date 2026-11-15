@@ -20,7 +20,7 @@ const { open } = require('./lib');
       window.__gaSwSoon = 1;   // register the delayed SW immediately after first frames
       if (n !== 1) return;
       const put = k => caches.open(k).then(c => c.put(new Request('/__ga_stale__'), new Response('old', { headers: { 'content-type': 'text/plain' } })));
-      return Promise.all(['galactic-arcade_vr-v0', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].map(put));
+      return Promise.all(['galactic-arcade_vr-v0', 'galactic-arcade_vr-v1', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].map(put));
     },
   });
 
