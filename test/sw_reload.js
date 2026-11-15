@@ -10,6 +10,7 @@ const { open } = require('./lib');
   // 1) Seed an old cache on the first document only. Expect exactly one reload, then a stable arcade.
   const { page, errors, close } = await open({
     w: 800, h: 450,
+    supa: r => (/^http:\/\/localhost/.test(r.request().url()) ? r.continue() : r.abort()),   // let the local vendor/supabase.js through so sw.js can precache (only the remote host is blocked)
     start: true,   // start screen stays up so we can see it wasn't dismissed mid-boot
     init: () => {
       if (window !== window.top) return;   // cabinet demo iframes share sessionStorage

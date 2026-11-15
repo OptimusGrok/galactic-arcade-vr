@@ -702,7 +702,27 @@ let lightsIn = 1;
 // the floor reflection skips the far room (it is only a slit through the doorway): saves a second draw of it in the mirror pass
 const skipFar = (m, far) => { const orig = m.onBeforeRender; m.onBeforeRender = function (...args) { const v = far.visible; far.visible = false; try { orig.apply(this, args); } finally { far.visible = v; } }; };
 skipFar(mirror, room2); skipFar(room2.userData.mirror, room);
+let nbHold = null;   // t854u / v235: while Neon Bricks is zoomed full-screen, don't draw the rest of the arcade
 function cullRooms(fr) {
+  const nbZoom = !!(typeof nb !== 'undefined' && nb && nb.playing && (nb.zoomK || 0) > 0.85);
+  if (nbZoom) {
+    if (!nbHold) {
+      if (nb.grp && nb.grp.parent !== scene) scene.add(nb.grp);
+      if (nb.panel && nb.panel.parent !== scene) scene.add(nb.panel);
+      nbHold = [];
+      for (const c of scene.children) {
+        if (c === nb.grp || c === nb.panel || c.isLight || c.isCamera) continue;
+        nbHold.push([c, c.visible]); c.visible = false;
+      }
+      if (nb.grp) nb.grp.visible = true; if (nb.panel) nb.panel.visible = true;
+    }
+    return;
+  }
+  if (nbHold) {
+    try { if (nb && room) { if (nb.grp) room.add(nb.grp); if (nb.panel) room.add(nb.panel); } } catch (e) {}
+    for (const [c, v] of nbHold) c.visible = v;
+    nbHold = null;
+  }
   const inW = camera.position.x > WX / 2; if (tp) tp.whiteRoom.visible = inW;
   hall.visible = !inW;
   if (inW) { room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }
@@ -1092,7 +1112,9 @@ function loadZoom() {
   return false;
 }
 if (!MOBILE) loadZoom();   // desktop wheel zoom may persist; the hold-to-zoom button never writes this key
-cv.addEventListener('wheel', e => { setDist(st.dist + e.deltaY * 0.004); e.preventDefault(); }, { passive: false });
+// VR edition (t346u): Quest Browser turns a controller thumbstick into wheel events, which zoomed the camera instead of moving.
+// No wheel zoom while in XR or anywhere on a Quest headset browser; in VR the sticks only move / snap-turn (vr.js).
+cv.addEventListener('wheel', e => { e.preventDefault(); if (renderer.xr.isPresenting || QUEST) { st.wheelBlocked = (st.wheelBlocked || 0) + 1; return; } setDist(st.dist + e.deltaY * 0.004); }, { passive: false });
 const PITCH_MIN = -0.6, PITCH_MAX = 1.25, NB_PITCH_MIN = -1.35;   // t791u: while Neon Bricks is playing, allow looking further up so the top of the playfield is on screen
 function lookPitchRange() { const n = window.__neonBricks; return (n && n.playing && !n.zoom) ? [NB_PITCH_MIN, PITCH_MAX] : [PITCH_MIN, PITCH_MAX]; }
 function look(dx, dy) { st.lookT = st.t; st.yaw -= dx * 0.005; const r = lookPitchRange(); st.pitch = THREE.MathUtils.clamp(st.pitch + dy * 0.004, r[0], r[1]); }
@@ -1839,7 +1861,8 @@ function frame(now, xrFrame) {
   const gap = Math.max(0, Math.min(100, now - last)); last = now;   // rAF time can be a hair before a resume timestamp
   if (paused && !XRP) { rafOn = false; return; }   // full-screen game running: arcade render loop stopped (VR keeps drawing the room around the game screen)
   if (document.hidden && !XRP) { PS.hiddenSkips++; schedule(); return; }   // pause GPU work while the tab is in the background
-  syncZoomBtn(); tickZoom(gap / 1000); if (nb) nb.restoreCam(camera);
+  if (XRP) { if (zoomHold.on || zoomHold.lock) zoomRelease(); } else { syncZoomBtn(); tickZoom(gap / 1000); }   // VR: no hold-to-zoom (camera distance is unused and never changes in XR)
+  if (nb) nb.restoreCam(camera);
   const t0 = performance.now();
   if (XRP && VRH) VRH.pre(Math.min(gap / 1000, 0.05), xrFrame);
   { const dtc = Math.min(gap / 1000, 0.05); if (play.update(dtc, kiosk && kiosk.mode !== 'walk' && kiosk.mode !== 'pick' ? null : nearCab) || (kiosk && kiosk.update(dtc))) { flyGuard(); stepClock(dtc); } else step(dtc); }
@@ -1861,6 +1884,7 @@ function frame(now, xrFrame) {
   { // run each cabinet screen only when that cabinet is near and in view
     _frus.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     cullRooms(_frus);
+    if (!nbHold) {   // Neon Bricks fullscreen: room is hidden, skip cabinet attract work
     const vis = c => { const sc = c.userData.centre, maxD = PS.on ? PS.cabFar : 18; return (_frus.intersectsSphere(_sph.set(_v.copy(sc).setY(1.2), 1.4)) && camera.position.distanceTo(sc) < maxD) || !!window.__forceDemo; };
     const dts = Math.min(gap / 1000, 0.1);
     if (draw) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
@@ -1871,6 +1895,7 @@ function frame(now, xrFrame) {
       c.userData._psTick = now; c.userData.tick(now / 1000); liveBadge(c); } }
     strikeCab.userData.glow.intensity = demo.running ? 1.2 + Math.sin(now * 0.013) * 0.08 + Math.sin(now * 0.031) * 0.06 : 0.6;
     ghostCab.userData.glow.intensity = ghostDemo.running ? 1.1 + Math.sin(now * 0.017) * 0.08 : 0.5;
+    }
   }
   if (spaceWin) spaceWin.update(now);
   if (window.__neonSigns && window.__neonSigns.userData.tick) window.__neonSigns.userData.tick(now / 1000);   // t850u: claw icon prongs
@@ -1997,7 +2022,7 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
   const NBP = { on: false, d0: 1, z0: 0 };
   function nbPinchDist(list) { if (!list || list.length < 2) return 0; return Math.hypot(list[0].clientX - list[1].clientX, list[0].clientY - list[1].clientY) || 1; }
   function nbPinchStart(e) {
-    if (!nb || !nb.playing || !e.touches || e.touches.length < 2) return false;
+    if (!nb || !nb.playing || !e.touches || e.touches.length < 2 || renderer.xr.isPresenting) return false;   // VR: no pinch zoom
     const d = nbPinchDist(e.touches);
     if (!NBP.on) { NBP.on = true; NBP.d0 = d; NBP.z0 = nb.zoomAmt || 0; try { padOff(); } catch (err) {} }
     for (const t of e.touches) {
@@ -2007,7 +2032,7 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
     return true;
   }
   function nbPinchMove(e) {
-    if (!nb || !nb.playing || !NBP.on || !e.touches || e.touches.length < 2) return false;
+    if (!nb || !nb.playing || !NBP.on || !e.touches || e.touches.length < 2 || renderer.xr.isPresenting) return false;
     nb.setZoomAmt((1 + NBP.z0) * (nbPinchDist(e.touches) / NBP.d0) - 1);
     bZoom.classList.toggle('locked', nb.zoom);
     return true;
@@ -2056,7 +2081,7 @@ const opts = setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor: ()
 schedule();
 
 // hooks for tests / future art work
-window.__arcade = { powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow) };
+window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHold.lock, k: zoomHold.k }; }, powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow) };
 // ---------- Galactic Arcade VR (vr.js): ENTER VR, head tracking, thumbstick / teleport movement, cabinet games on an in-world screen ----------
 VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playables, collide, frame, TIER, QUEST,
   resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
