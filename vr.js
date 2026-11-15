@@ -350,8 +350,8 @@ export function setupVR(A) {
       const n = nbApi(); if (UI.open) uiClose();
       if (anyP('aDown') || anyP('trigDown')) { n.rotate(); S.nbRot++; }
       if (anyP('bDown')) { n.hardDrop(); S.nbDrops++; }
-      const grip = (L && L.grip) || (R && R.grip); S.gripT = grip ? (S.gripT || 0) + dt : 0;
-      if (S.gripT >= GRIP_EXIT_S) { S.gripT = 0; n.stop('exit'); S.nbExits++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
+      const grip = (L && L.grip) || (R && R.grip); S.nbGripT = grip ? (S.nbGripT || 0) + dt : 0;   // own timer (S.gripT is reset outside cabinet games)
+      if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
       if (anyP('bDown') && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu

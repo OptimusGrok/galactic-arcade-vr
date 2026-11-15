@@ -60,7 +60,7 @@ const { openVR, H } = require('./vrlib');
     // prize shop with the ray
     await page.waitForFunction(() => !!window.__gaVR.ui.shop(), null, { timeout: 30000 }); await H.frames(page, 4);
     const ss = await sign('shop'); chk(!!ss, 'PRIZE SHOP sign over the counter');
-    if (process.env.DBG) { await H.aim(page, 'right', [0.2, 1.3, -0.2], ss); await H.frames(page, 4); console.log('DBG', JSON.stringify(await page.evaluate(() => ({ head: window.__gaVR.head, sign: window.__gaVR.signs(), hover: window.__gaVR.hover, grok: window.__gaVR.ui.shop().grok.getWorldPosition(new window.__arcade.THREE.Vector3()).toArray() })))); }
+    if (0 && process.env.DBG) { await H.aim(page, 'right', [0.2, 1.3, -0.2], ss); await H.frames(page, 4); console.log('DBG', JSON.stringify(await page.evaluate(() => ({ head: window.__gaVR.head, sign: window.__gaVR.signs(), hover: window.__gaVR.hover, grok: window.__gaVR.ui.shop().grok.getWorldPosition(new window.__arcade.THREE.Vector3()).toArray() })))); }
     await aimPress(ss); chk((await st()).panel === 'shop', 'point at PRIZE SHOP + trigger opens the prize shop');
     const items = await page.evaluate(() => window.__gaVR.ui.btns.filter(b => /^item_/.test(b.id)));
     const it = items.find(b => b.on), B0 = await page.evaluate(() => window.__gaVR.ui.shop().balance());
@@ -80,12 +80,13 @@ const { openVR, H } = require('./vrlib');
     let nb = await page.evaluate(() => { const n = window.__gaVR.ui.nb(); return { playing: n.playing, moves: n.moves, rot: n.rotates, zoomK: n.zoomK, state: n.G.state }; });
     chk(nb.playing && nb.state === 'play', 'point at the Neon Bricks window + trigger starts the game');
     const mp0 = (await st()).monkey;
-    await H.axes(page, 'left', 1, 0); await H.frames(page, 14); await H.axes(page, 'left', 0, 0); await H.frames(page, 3);
-    await H.axes(page, 'right', -1, 0); await H.frames(page, 14); await H.axes(page, 'right', 0, 0); await H.frames(page, 3);
+    const px = () => page.evaluate(() => { const c = window.__gaVR.ui.nb().G.cur; return c ? c.x : null; });
+    const x0 = await px(); await H.axes(page, 'left', 1, 0); await H.frames(page, 3); const x1 = await px(); await H.axes(page, 'left', 0, 0); await H.frames(page, 3);
+    const x2 = await px(); await H.axes(page, 'right', -1, 0); await H.frames(page, 3); const x3 = await px(); await H.axes(page, 'right', 0, 0); await H.frames(page, 3);
     await H.press(page, 'right', 'a-button'); await H.press(page, 'right', 'trigger');
     let nb2 = await page.evaluate(() => { const n = window.__gaVR.ui.nb(); return { moves: n.moves, rot: n.rotates, zoomK: n.zoomK, zoom: n.zoomAmt }; });
     const s2 = await st();
-    chk(nb2.moves >= nb.moves + 2, 'sticks move the bricks (' + nb.moves + ' -> ' + nb2.moves + ' moves)');
+    chk(x1 > x0 && x3 < x2, 'left stick right / right stick left move the falling brick (x ' + x0 + ' -> ' + x1 + ', ' + x2 + ' -> ' + x3 + ')');
     chk(nb2.rot >= nb.rot + 2, 'A and trigger rotate (' + nb.rot + ' -> ' + nb2.rot + ')');
     chk(Math.hypot(s2.monkey[0] - mp0[0], s2.monkey[2] - mp0[2]) < 0.05 && Math.abs(s2.rig.yaw - (-Math.PI / 2)) < 0.01, 'while playing, the sticks do not walk or turn you');
     chk(nb2.zoomK === 0 && !nb2.zoom, 'no zoom in VR');
