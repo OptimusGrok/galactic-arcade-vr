@@ -17,4 +17,4 @@ const H = {
       const ql = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 1, 0), -r.yaw).multiply(qw);
       const C = window.__xrd.controllers[hand]; C.position.set(...local); C.quaternion.set(ql.x, ql.y, ql.z, ql.w); }, [hand, local, target]); },
 };
-module.exports = { openVR, H };
+module.exports = { openVR, H, IWER_SRC, SETUP };

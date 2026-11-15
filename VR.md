@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v1`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v2`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -32,3 +32,10 @@ In this edition:
 - Wheel zoom is ignored while in XR **and** on any Quest headset browser (flat mode too). Desktop mouse-wheel zoom is unchanged.
 - Neon Bricks pinch zoom and hold-to-zoom are off while in XR; a held zoom is released.
 - Test: `test/vr_zoom.js` checks that the sticks move and turn the player while the camera distance and saved zoom stay the same (VR and flat Quest), and that desktop wheel zoom still works.
+
+## Pitch-black headset fix (Dave, t349u)
+On a real Quest the room was pitch black after ENTER VR. Cause: before drawing each VR frame the arcade unbound the headset's framebuffer (`setRenderTarget(null)`), so the room was drawn onto the hidden page canvas and the headset got nothing. The emulator missed it because its headset framebuffer *is* the page canvas.
+- Fix: draw straight into the XR framebuffer three binds for the frame. The space-window reflection and the floor warm-up never render into or with the XR camera.
+- Safety net: a soft fill light (hemisphere) is on while in VR so the room is never fully dark.
+- Test: `test/vr_dark.js` gives the emulated headset its own framebuffer like real hardware and reads the pixels the headset shows (at entry, four directions, after 3 s, after walking). It fails on the old build (0% lit) and passes on the fix.
+- Cache bumped to `galactic-arcade_vr-v2` so headsets pick up the fix.
