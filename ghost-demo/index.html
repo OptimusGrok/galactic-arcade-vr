@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-<head><script>
+<head><script src="../vr-frame-shim.js"></script><script>
 // DEMO GUARD: no network, no storage, no audio, no self-driven loop (the host page steps and renders us).
 (function(){const m={};window.__memLS={getItem:k=>k in m?m[k]:null,setItem:(k,v)=>{m[k]=String(v)},removeItem:k=>{delete m[k]}};
 const no=()=>Promise.reject(new Error('demo: network disabled'));window.fetch=no;window.XMLHttpRequest=function(){throw new Error('demo: network disabled')};

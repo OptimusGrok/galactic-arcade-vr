@@ -34,6 +34,7 @@ import { setupOpts } from './opts.js';
 import { setupTeleport, WX } from './teleport.js';
 import { lavaPaths, PATH_HW } from './lavapaths.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { setupVR } from './vr.js';   // Galactic Arcade VR: WebXR (Meta Quest Browser)
 import { detectTier, probeGPU, qualityForTier, persistTier, installContextLossHandler, memSnapshot, ensureLostOverlay, isSoftwareGL, capLoadedTexture, cabWH, flagTex, tierQuality } from './tier.js';
 
 const MOBILE = matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && matchMedia('(hover: none)').matches);
@@ -44,6 +45,9 @@ window.__isIPad = IPAD;
 // starts in the low tier (no bloom, no live demo iframes, dpr 1) instead of crashing.
 const _gpu = probeGPU();
 const TIER = window.__gaTier = detectTier({ renderer: _gpu.renderer, maxTex: _gpu.maxTex, mobile: MOBILE });
+// VR edition: a Quest headset renders every frame twice (one per eye) at 72-90 Hz, so it never runs the high tier (not persisted)
+const QUEST = window.__gaQuest = /OculusBrowser|Quest|Pacific/i.test(navigator.userAgent);
+if (QUEST && TIER.name === 'high') { TIER.name = 'mid'; TIER.why = [].concat(TIER.why || [], ['quest-vr']); }
 // Phone power-save (Dave: cooler-running mode). On by default on touch/mobile. Caps draws at ~30fps
 // (physics still uses real dt), clamps pixel ratio, uses a cheaper bloom/reflection budget, and
 // throttles far cabinet screen updates. Toggle lives in OPTIONS (neonarcade.powersave).
@@ -67,6 +71,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.9;
 document.body.prepend(renderer.domElement);
 renderer.domElement.tabIndex = 0;
+renderer.xr.enabled = true; renderer.xr.setReferenceSpaceType('local-floor');   // VR edition (vr.js); flat play is unchanged until ENTER VR
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05030a);
@@ -707,6 +712,7 @@ function cullRooms(fr) {
   const deep = !in1; room2.userData.mirror.visible = deep; room2.userData.base.visible = !deep; // far room seen through the door: no second reflector pass
   mirror.visible = !in2; floorBase1.visible = in2;
   if (floorMode !== 'neon' || !Q.refl) mirror.visible = floorBase1.visible = room2.userData.mirror.visible = room2.userData.base.visible = false;   // carpet / low-tier: no reflector passes
+  if (renderer.xr.isPresenting && floorMode === 'neon') { if (mirror.visible) { mirror.visible = false; floorBase1.visible = true; } if (room2.userData.mirror.visible) { room2.userData.mirror.visible = false; room2.userData.base.visible = true; } }   // VR: no Reflector passes in XR (stereo breaks them); the plain glossy base instead
   const want = monkey.position.z < -HALF - HALL_L / 2 ? 2 : 1; // the 6 room lights follow the monkey (constant light count: no shader recompiles)
   if (want !== lightsIn) { lightsIn = want; for (const l of roomLights) { const [x, y, zz] = l.userData.p1; if (want === 1) l.position.set(x, y, zz); else l.position.set(-x, y, Z2 - zz); } }
 }
@@ -1308,6 +1314,7 @@ function viewSize() {
   return [Math.max(1, Math.round(c.clientWidth || innerWidth)), Math.max(1, Math.round(c.clientHeight || innerHeight))];
 }
 function resize(force) {
+  if (renderer.xr.isPresenting) return;   // VR: the XR session owns the framebuffer size
   const [W, H] = viewSize();
   if (force !== true && W === vw0 && H === vh0 && renderer.getPixelRatio() === dpr) return;
   vw0 = W; vh0 = H;
@@ -1612,6 +1619,8 @@ function step(dt) {
     if (h > 0.12) { ix = st.joy.x / h; iz = st.joy.y / h; mag = Math.min(1, h); if (st.joy.vmax > 0) joyV = st.joy.vmax; else run = h > 0.85; }
     else { ix = iz = mag = 0; run = false; }
   }
+  if (st.vr && st.vrMove) { const v = st.vrMove, h = Math.hypot(v.x, v.y);   // VR: left thumbstick, relative to where the head looks (st.yaw = head yaw)
+    if (h > 0.15) { ix = v.x / h; iz = v.y / h; mag = Math.min(1, h); joyV = (v.speed || 2.2) * Math.min(1, (h - 0.15) / 0.75); run = false; } }
   if (tp && tp.locked) { ix = iz = mag = 0; run = false; if (!shop) loadShop(); }   // teleporting: input locked
   if (nb && nb.playing) { nb.joy(ix * (mag || 0), iz * (mag || 0), dt); ix = iz = mag = 0; run = false; joyV = null; }   // NEON BRICKS: the joystick / keys move the blocks, not the player
   st.inMag = mag; st.lastStep = st.t;
@@ -1659,6 +1668,7 @@ function step(dt) {
   animateMonkey(dt);
   monkeyFill.position.set(monkey.position.x + Math.sin(st.yaw) * 1.2, 1.9, monkey.position.z + Math.cos(st.yaw) * 1.2);
   monkeyRim.position.set(monkey.position.x - Math.sin(st.yaw) * 1.0, 1.6, monkey.position.z - Math.cos(st.yaw) * 1.0);
+  if (st.vr) { monkey.visible = false; return; }   // VR: the headset is the camera (vr.js moves the rig with the player)
   // camera
   camTarget.set(monkey.position.x, monkey.position.y + (st.fp ? 1.42 : 1.25), monkey.position.z);
   if (st.fp) {
@@ -1819,13 +1829,19 @@ function compileForPlay(o, cam, sc, sync) {
   try { if (sync) { renderer.compile(o, cam, sc); return Promise.resolve(); } return renderer.compileAsync ? renderer.compileAsync(o, cam, sc) : (renderer.compile(o, cam, sc), Promise.resolve()); }
   catch (e) { return Promise.reject(e); } finally { if (t) renderer.setRenderTarget(prev); } }
 window.__compileForPlay = compileForPlay;
-function frame(now) {
+let VRH = null;   // vr.js hooks (pre / post), set once the arcade exists
+let rafId = 0;
+function schedule() { if (!rafId) rafId = requestAnimationFrame(t => { rafId = 0; frame(t); }); }   // one rAF chain at a time (VR hands frames back and forth)
+function frame(now, xrFrame) {
+  const XRP = renderer.xr.isPresenting;
+  if (XRP && !xrFrame) return;   // VR: renderer.setAnimationLoop drives frames while the headset is on; this rAF chain stops
   syncJoyArm();
   const gap = Math.max(0, Math.min(100, now - last)); last = now;   // rAF time can be a hair before a resume timestamp
-  if (paused) { rafOn = false; return; }   // full-screen game running: arcade render loop stopped
-  if (document.hidden) { PS.hiddenSkips++; requestAnimationFrame(frame); return; }   // pause GPU work while the tab is in the background
+  if (paused && !XRP) { rafOn = false; return; }   // full-screen game running: arcade render loop stopped (VR keeps drawing the room around the game screen)
+  if (document.hidden && !XRP) { PS.hiddenSkips++; schedule(); return; }   // pause GPU work while the tab is in the background
   syncZoomBtn(); tickZoom(gap / 1000); if (nb) nb.restoreCam(camera);
   const t0 = performance.now();
+  if (XRP && VRH) VRH.pre(Math.min(gap / 1000, 0.05), xrFrame);
   { const dtc = Math.min(gap / 1000, 0.05); if (play.update(dtc, kiosk && kiosk.mode !== 'walk' && kiosk.mode !== 'pick' ? null : nearCab) || (kiosk && kiosk.update(dtc))) { flyGuard(); stepClock(dtc); } else step(dtc); }
   shield.update(Math.min(gap / 1000, 0.05));
   if (golf) { golf.update(Math.min(gap / 1000, 0.05)); golf.cam(camera, Math.min(gap / 1000, 0.05)); }   // t275u: putting camera
@@ -1839,7 +1855,8 @@ function frame(now) {
   if (nb) { nb.update(Math.min(gap / 1000, 0.05)); nbHud(); nbFade(Math.min(gap / 1000, 0.05)); if (nb.camera(camera)) monkey.visible = false; }   // t779u: ZOOM = full-screen playfield
   if (window.__camOverride) { const o = window.__camOverride; camera.position.set(...o.pos); camera.lookAt(...o.at); if (!o.showMonkey) monkey.visible = false; } // screenshots / tests
   if (window.__roomFire) window.__roomFire.update(Math.min(gap / 1000, 0.05));   // t741u laser pistol: arm pose + lasers, after the walk animation
-  const draw = !PS.on || (now - PS.lastDraw) >= (1000 / Math.max(1, PS.fps)) - 0.75;   // power-save: skip GPU frames; movement above already used real dt
+  if (XRP && VRH) VRH.post(Math.min(gap / 1000, 0.05), xrFrame);
+  const draw = XRP || !PS.on || (now - PS.lastDraw) >= (1000 / Math.max(1, PS.fps)) - 0.75;   // VR: every headset frame is drawn   // power-save: skip GPU frames; movement above already used real dt
   camera.updateMatrixWorld();
   { // run each cabinet screen only when that cabinet is near and in view
     _frus.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
@@ -1857,11 +1874,11 @@ function frame(now) {
   }
   if (spaceWin) spaceWin.update(now);
   if (window.__neonSigns && window.__neonSigns.userData.tick) window.__neonSigns.userData.tick(now / 1000);   // t850u: claw icon prongs
-  if (draw && ((warm.done && !warm.drawn) || !document.getElementById('start') || (window.__start && window.__start.dismissed))) { if (warm.done) warm.drawn = true; if (composer && usePost) composer.render(); else renderer.render(scene, camera); PS.lastDraw = now; PS.draws++; stats.draws = PS.draws; }   // t295u: the opaque start screen hides the room; let its shaders compile in slices first
+  if (draw && (XRP || (warm.done && !warm.drawn) || !document.getElementById('start') || (window.__start && window.__start.dismissed))) { if (warm.done) warm.drawn = true; if (composer && usePost && !XRP) composer.render(); else { if (XRP) renderer.setRenderTarget(null); renderer.render(scene, camera); } PS.lastDraw = now; PS.draws++; stats.draws = PS.draws; }   // t295u: the opaque start screen hides the room; let its shaders compile in slices first
   else if (!draw) { PS.skipped++; stats.skipped = PS.skipped; }
   const cpu = performance.now() - t0;
   stats.frames++; stats.cpu = cpu; stats.cpuAvg += (cpu - stats.cpuAvg) * 0.05; stats.gapAvg += (gap - stats.gapAvg) * 0.05;
-  if (!window.__noAdapt) {
+  if (!window.__noAdapt && !XRP) {   // VR: no dpr / tier changes mid-session (the XR layer size is fixed)
     if (stats.gapAvg > 24) { if (++slow > 90 && dpr > 0.75) { dpr = Math.max(0.75, dpr - 0.25); resize(); slow = 0; } } else slow = 0;
     if (!PS.on && TIER.name === 'high' && stats.gapAvg < 14) { if (++fast > 400 && dpr < Math.min(devicePixelRatio || 1, Q.dpr)) { dpr += 0.25; resize(); fast = 0; } } else fast = 0;
     // t854u: real weak devices (not SwiftShader test boxes) that stay slow drop to the low tier and stay there.
@@ -1871,7 +1888,7 @@ function frame(now) {
     } else TIER._slow = 0;
     stats.quality = dpr;
   }
-  requestAnimationFrame(frame);
+  if (!XRP) schedule();
 }
 function stepClock(dt) { st.t += dt; }
 // t754u: someone else is playing this machine. Sky Tower draws their climb live (skytowercab.js); the other cabinets'
@@ -1888,8 +1905,8 @@ function liveBadge(c) {
   g.fillStyle = '#ffe14a'; g.font = 'bold ' + Math.round(h * 0.62) + 'px "Courier New", monospace'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(txt, h * 0.9, h * 0.54, W - h * 1.2); g.restore();
   map.needsUpdate = true; u.liveBadge = txt;
 }
-function arcadePause(on) { paused = on; if (!on && !rafOn) { rafOn = true; last = performance.now(); requestAnimationFrame(frame); } }
-const play = setupPlay({ camera, monkey, dsCab, roadsterCab, strikeCab, ghostCab, berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, st, pause(on) { paused = on; if (!on && !rafOn) { rafOn = true; last = performance.now(); requestAnimationFrame(frame); } } });
+function arcadePause(on) { paused = on; if (!on && !rafOn) { rafOn = true; last = performance.now(); schedule(); } }
+const play = setupPlay({ camera, monkey, dsCab, roadsterCab, strikeCab, ghostCab, berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, st, pause(on) { paused = on; if (!on && !rafOn) { rafOn = true; last = performance.now(); schedule(); } } });
 shield = setupShield({ scene, play, st, monkey, HALF, DOOR_W, DOOR_H });
 tp = setupTeleport({ scene, monkey, st, HALF, H, Z2 }); window.__tp = tp;
 // t341u default: missing or unknown neonarcade.floor -> COBBLE. A saved neon / carpet / checkers / lava / cobble / ice is kept (neon is not in floorMats).
@@ -2036,10 +2053,15 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
       RR.t += dt; if (Q.warm && !RR.warmed && RR.t > 20) RR.warm(); if (TIER.name !== 'low' && RR.t >= RR.period) RR.tick(); } };
   rrStep = dt => RR.step(dt); }
 const opts = setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor: () => floorMode, setWalls, getWalls: () => wallsMode, setWindow, getWindow: () => windowMode, HALF, Z2 });
-requestAnimationFrame(frame);
+schedule();
 
 // hooks for tests / future art work
 window.__arcade = { powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow) };
+// ---------- Galactic Arcade VR (vr.js): ENTER VR, head tracking, thumbstick / teleport movement, cabinet games on an in-world screen ----------
+VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playables, collide, frame, TIER, QUEST,
+  resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
+  get shop() { return shop; }, get tp() { return tp; }, get golf() { return golf; } });
+Object.assign(window.__arcade, { vr: VRH, collide, schedule });
 const mp = setupMP({ scene, camera, monkey, makeMonkey, makeAlien, st, play, getTp: () => tp, HALF, Z2, HALL_L, WX: 80 }); window.__arcade.mp = mp;   // multiplayer step 1: public room, 10 players
 // after the first room frames: pull in the shop, then the window scenery, off the critical path
 { const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 1500 }) : setTimeout(f, 200));

@@ -1,5 +1,6 @@
-/* t855u: an old galactic-arcade-v* cache must reload once before START is interactive,
-   and must never kick the player back after they have started. */
+/* t855u: an old cache of THIS edition must reload once before START is interactive, and must never kick the player back after they have started.
+   Galactic Arcade VR: only galactic-arcade_vr-* caches are ever deleted; the live game's galactic-arcade-v* and the test copy's
+   galactic-arcade-test-* caches (same optimusgrok.github.io origin) must survive the head script, the delayed SW path and sw.js activate. */
 const { open } = require('./lib');
 
 (async () => {
@@ -17,7 +18,8 @@ const { open } = require('./lib');
       window.__gaLoadN = n;
       window.__gaSwSoon = 1;   // register the delayed SW immediately after first frames
       if (n !== 1) return;
-      return caches.open('galactic-arcade-v199').then(c => c.put(new Request('/__ga_stale__'), new Response('old', { headers: { 'content-type': 'text/plain' } })));
+      const put = k => caches.open(k).then(c => c.put(new Request('/__ga_stale__'), new Response('old', { headers: { 'content-type': 'text/plain' } })));
+      return Promise.all(['galactic-arcade_vr-v0', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].map(put));
     },
   });
 
@@ -26,8 +28,9 @@ const { open } = require('./lib');
     const S = window.__start || {};
     return {
       loadN: Number(sessionStorage.getItem('gaLoadN') || 0),
-      flag: sessionStorage.getItem('gaReloaded.galactic-arcade-v233'),
-      stale: keys.filter(k => k.indexOf('galactic-arcade-v') === 0 && k !== 'galactic-arcade-v233'),
+      flag: sessionStorage.getItem('gavrReloaded.galactic-arcade_vr-v1'),
+      stale: keys.filter(k => k.indexOf('galactic-arcade_vr-') === 0 && k !== 'galactic-arcade_vr-v1'),
+      live: ['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].filter(k => keys.includes(k)),
       updating: document.documentElement.classList.contains('ga-updating'),
       checked: !!(window.__gaUpdate && window.__gaUpdate.checked),
       reloading: !!(window.__gaUpdate && window.__gaUpdate.reloading),
@@ -38,8 +41,9 @@ const { open } = require('./lib');
   });
   console.log('after boot', JSON.stringify(a));
   chk(a.loadN === 2, 'stale cache caused exactly one reload (loadN=' + a.loadN + ')');
-  chk(a.flag === '1', 'session guard gaReloaded.v233 is set');
-  chk(a.stale.length === 0, 'old galactic-arcade-v* caches are gone (' + a.stale.join(',') + ')');
+  chk(a.flag === '1', 'session guard gavrReloaded.galactic-arcade_vr-v1 is set');
+  chk(a.stale.length === 0, 'old galactic-arcade_vr-* caches are gone (' + a.stale.join(',') + ')');
+  chk(a.live.length === 3, 'live + test caches untouched by the VR head script (' + a.live.join(',') + ')');
   chk(!a.updating && a.checked && !a.reloading, 'start screen is no longer blocked after the reload');
   chk(a.startShown && !a.dismissed, 'still on the start screen (not kicked mid-play)');
   chk(a.frames > 3, 'room is drawing behind the start screen');
@@ -56,6 +60,12 @@ const { open } = require('./lib');
   chk(b.loadN === 2, 'delayed SW registration did not reload again (loadN=' + b.loadN + ')');
   chk(!b.dismissed && b.start, 'still on the start screen after delayed SW');
   chk(b.frames > a.frames, 'frames kept advancing (no mid-session bounce)');
+  await page.waitForFunction(() => navigator.serviceWorker.controller || navigator.serviceWorker.getRegistration().then(r => r && r.active), null, { timeout: 120000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+  const c = await page.evaluate(async () => ({ keys: await caches.keys(), scope: (await navigator.serviceWorker.getRegistration() || {}).scope || null, active: !!((await navigator.serviceWorker.getRegistration()) || {}).active }));
+  console.log('after SW activate', JSON.stringify(c));
+  chk(c.active && c.keys.includes('galactic-arcade_vr-v1'), 'VR service worker active with its own cache galactic-arcade_vr-v1');
+  chk(['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].every(k => c.keys.includes(k)), 'sw.js activate + delayed SW path left the live / test caches alone');
   chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors ' + errors.join(' | '));
   await close();
 
@@ -65,7 +75,7 @@ const { open } = require('./lib');
     init: () => { window.__gaSwSoon = 1; },
   });
   const before = await mid.page.evaluate(async () => {
-    await caches.open('galactic-arcade-v198').then(c => c.put(new Request('/__ga_stale2__'), new Response('old')));
+    await caches.open('galactic-arcade_vr-v0b').then(c => c.put(new Request('/__ga_stale2__'), new Response('old'))); await caches.open('galactic-arcade-v198').then(c => c.put(new Request('/__ga_stale2__'), new Response('live')));
     const frames = window.__arcade.stats.frames;
     const href = location.href;
     if (typeof window.__gaRegisterSW === 'function') window.__gaRegisterSW();
@@ -78,14 +88,15 @@ const { open } = require('./lib');
       frames: window.__arcade && window.__arcade.stats.frames,
       href: location.href,
       arcade: !!window.__arcade,
-      stale: keys.filter(k => k === 'galactic-arcade-v198'),
+      stale: keys.filter(k => k === 'galactic-arcade_vr-v0b'), live: keys.includes('galactic-arcade-v198'),
       start: !!document.getElementById('start') && !window.__skipStart,
     };
   });
   console.log('mid-session', JSON.stringify({ before, after }));
   chk(after.arcade && after.frames > before.frames, 'mid-session SW path kept the arcade running (frames ' + before.frames + ' -> ' + after.frames + ')');
   chk(after.href === before.href, 'mid-session SW path did not reload the page');
-  chk(after.stale.length === 0, 'mid-session leftover cache was deleted without a reload');
+  chk(after.stale.length === 0, 'mid-session leftover VR cache was deleted without a reload');
+  chk(after.live, 'mid-session: the live galactic-arcade-v198 cache was NOT touched');
   chk(!after.start, 'did not bounce back to the start screen mid-session');
   await mid.close();
 
