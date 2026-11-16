@@ -270,15 +270,16 @@ export function setupVR(A) {
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
   const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
   function heldNow() { const v = J('neonarcade.held', null); if (typeof v === 'string') return { R: v, L: null }; return { R: (v && v.R) || null, L: (v && v.L) || null }; }
+  const CLAWN = { bear: 'TEDDY BEAR', bunny: 'BUNNY', duck: 'DUCKY', frog: 'FROG', cat: 'KITTY', octopus: 'OCTOPUS', penguin: 'PENGUIN', alien: 'ALIEN', monkey: 'MONKEY', grok: 'GROK' };   // inventory.js CLAW names
   function packItems(sh) { const out = [], p = J('neonarcade.prizes', {}), byId = {}; for (const it of sh.ITEMS || []) byId[it.id] = it;
     for (const id in p) if ((p[id] | 0) > 0 && byId[id]) out.push({ id, name: byId[id].name.toUpperCase(), n: p[id] | 0, src: 'shop' });
-    const cl = J('arcade_clawMachine.collection', {}); for (const k in cl) if ((cl[k] | 0) > 0) out.push({ id: 'claw:' + k, name: k.toUpperCase() + ' PLUSH', n: cl[k] | 0, src: 'claw' });
+    const cl = J('arcade_clawMachine.collection', {}); for (const k in cl) if ((cl[k] | 0) > 0) out.push({ id: 'claw:' + k, name: (CLAWN[k] || k.toUpperCase()) + ' PLUSH', n: cl[k] | 0, src: 'claw' });
     return out; }
   function packTap(sh, it) { const h = heldNow();
     if (h.R === it.id) { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('PUT AWAY: ' + it.name); return; }
     if (h.L === it.id) { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('PUT AWAY: ' + it.name); return; }
     const slot = !h.R ? 'R' : !h.L ? 'L' : 'R'; const r = sh.hold(it.id, slot) || heldNow();
-    if (r.R === it.id || r.L === it.id) { S.packEquips = (S.packEquips || 0) + 1; say('HOLDING ' + it.name + (r.L || r.R !== it.id ? ' · ' + (r.R === it.id ? 'RIGHT' : 'LEFT') + ' HAND' : ' · BOTH ARMS')); }
+    if (r.R === it.id || r.L === it.id) { S.packEquips = (S.packEquips || 0) + 1; say('HOLDING ' + it.name + (r.L === it.id ? ' · LEFT HAND' : r.L || slot === 'R' && h.L ? ' · RIGHT HAND' : '')); }
     else say("CAN'T HOLD " + it.name + ' YET'); }
   S.pack = { items: () => { const sh = A.shop || window.__shop; return sh ? packItems(sh) : []; }, held: heldNow };
   function drawPackIcon(g, x, y, s) {   // little brown monkey backpack

@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v4`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v5`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -38,7 +38,7 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - Fix: draw straight into the XR framebuffer three binds for the frame. The space-window reflection and the floor warm-up never render into or with the XR camera.
 - Safety net: a soft fill light (hemisphere) is on while in VR so the room is never fully dark.
 - Test: `test/vr_dark.js` gives the emulated headset its own framebuffer like real hardware and reads the pixels the headset shows (at entry, four directions, after 3 s, after walking). It fails on the old build (0% lit) and passes on the fix.
-- Cache bumped to `galactic-arcade_vr-v4` so headsets pick up the fix.
+- Cache bumped to `galactic-arcade_vr-v5` so headsets pick up the fix.
 
 ## Tickets, shop, teleporter, smooth turn, Neon Bricks (Dave, t350u / t351u)
 - **Smooth turn:** the right stick turns smoothly. The further you push, the faster: nothing inside 0.15, then a x² curve up to 90°/s at full push. No snapping.
@@ -49,7 +49,7 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - **Neon Bricks:** point at the window game (or its sign) and pull the trigger. Either stick moves the brick (down = soft drop), A/X/trigger rotates, B/Y hard-drops, and holding grip leaves. No zoom in VR.
 - **Signs:** they only show in VR, always face you, and grow with distance so they stay readable (ray range for signs is 30 m).
 - **Tests:** `test/vr_ui.js` (turn rates, ticket buying, beam to the shop and back, a prize purchase, Neon Bricks).
-- Cache: `galactic-arcade_vr-v4`.
+- Cache: `galactic-arcade_vr-v5`.
 
 ## Accessories, mirror, Berserker power-ups, laser (Dave, t353u)
 - **Accessories:** point at the ACCESSORIES sign over the shop mirror (or use MENU > ACCESSORIES). The panel has tabs (HAT, GLASSES, BACK, HAND, HOODIE, SUIT, FUR, SHOES) and six items per page. Press an item to wear it, or to buy and wear it if you don't own it yet (same price and ticket rules as the flat wardrobe, using player.js's own pick / tryOn / buy). REMOVE takes the item off where the category has a "none" option.
@@ -57,4 +57,15 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - **Berserker:** right A or trigger attacks, right B dashes. Power-ups appear as yellow buttons to the right of the game screen when they're ready, each labelled with its button: **X = THOR**, **Y = BERSERK**, **short right-grip tap = ODIN** (holding grip still leaves the game). You can also point at a power-up button and pull the trigger.
 - **Laser:** every ray stops at the first VR button, panel, sign or screen it reaches (exact rectangle test), and hovered signs and power-up buttons light up.
 - **Tests:** `test/vr_v4.js`. Against the old build the mirror check fails (0 renders, 0.5% lit).
-- Cache: `galactic-arcade_vr-v4`.
+- Cache: `galactic-arcade_vr-v5`.
+
+## t354u: Monkey backpack in the menu, Sky Tower controls (cache v5)
+- **MONKEY BACKPACK** (Y/B menu, with a little monkey-backpack icon) opens a panel listing everything you own: Grok Shop prizes
+  (`neonarcade.prizes`) and claw-machine plushes (`arcade_clawMachine.collection`). Point + trigger on an item to hold it, using
+  shop.js's own two-hand API (`__shop.hold(id, 'R'|'L')`): small items go to the right hand, then the left. Big plushes are a two-arm hug.
+  Tap a held item again to put it away. PUT R AWAY, PUT L AWAY and PUT BOTH AWAY work as labelled. Each button shows which hand holds it. The shop code
+  loads on demand (`__arcade.loadShop()`) if you haven't been to the shop yet.
+- **Sky Tower**: the left stick moves (arrow keys). The right stick pans the camera through the game's own `lookDrag` (full push = 2 rad/s, up = look up).
+  X/A held = jetpack (Space). Y/B (or the trigger) = laser (F: hold charges, release shoots). Inside a cabinet Y/B always go to the game.
+  The menu only opens while walking. Berserker's mapping is unchanged.
+- Test: `test/vr_v5.js` (26 checks).
