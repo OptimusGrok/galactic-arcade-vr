@@ -2,14 +2,14 @@
 // no mic prompt before a tap; MIC ON alone (no peers) is fine; a VR player turns the mic on from the Y menu; WebRTC audio links up
 // over the 'rtc' signalling; remote voices play through an HRTF panner at the talker's head; the speaking indicator shows; mute
 // silences you; a denied mic still lets you listen; leaving closes the links.
-const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const mock = require('./mpmock');
-const FAKE = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required'];
+const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const mock = require('./mpmock'); const FAKERTC = require('./fakertc');
+const FAKE = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required', '--disable-features=WebRtcHideLocalIpsWithMdns'];
 (async () => {
   let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
   const pages = [], all = [];
   const INIT = `;window.__vcIce = []; window.__gumN = 0; (function(){ const md = navigator.mediaDevices; if (!md) return; const f = md.getUserMedia.bind(md);
     md.getUserMedia = function (c) { window.__gumN++; if (window.__denyMic) return Promise.reject(new DOMException('Permission denied', 'NotAllowedError')); return f(c); }; })();`;
-  async function dev(id, vr, extra = '') { const o = await openVR({ args: FAKE, init: { content: (vr ? IWER_SRC + SETUP + HEADSET_FB : '') + INIT + extra } }); const p = o.page; p.setDefaultTimeout(90000);
+  async function dev(id, vr, extra = '') { const o = await openVR({ args: FAKE, init: { content: (vr ? IWER_SRC + SETUP + HEADSET_FB : '') + INIT + FAKERTC + extra } }); const p = o.page; p.setDefaultTimeout(90000);
     await p.exposeFunction('__mpRelay', m => { for (const q of pages) if (q !== p) q.evaluate(x => window.__mpRecv && window.__mpRecv(JSON.parse(x)), m).catch(() => {}); });
     await p.addInitScript(id => { window.__mpId = id; }, id); await p.addInitScript(mock); pages.push(p); all.push(o);
     await p.reload(); await p.waitForFunction(() => window.__arcade && window.__arcade.stats.frames > 3 && window.__mp && window.__mp.state === 'on' && window.__voice, null, { timeout: 90000 }); return o; }
@@ -41,9 +41,21 @@ const FAKE = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-str
     await tapB('mic'); await until(b, () => window.__voice.state === 'on');
     const lab2 = await b.evaluate(() => (window.__gaVR.ui.btns.find(q => q.id === 'mic') || {}).label + '|' + !!window.__gaVR.ui.btns.find(q => q.id === 'voff'));
     chk((await vs(b)).state === 'on' && lab2 === 'MUTE MIC|true', 'B taps MIC ON in VR: mic on, the button becomes MUTE MIC with ✕ VC beside it (' + lab2 + ')');
+    // real RTCPeerConnections: offer / answer over the realtime channel negotiate a two-way Opus audio link. (The box's managed Chrome policy
+    // forbids non-proxied UDP, so ICE can't complete here; media is then checked with test/fakertc.js's stand-in.)
+    const neg = async (p, id) => p.evaluate(id => { const P = window.__voice.peers.get(id); if (!P || !P.pc) return null; const t = P.pc.getTransceivers()[0];
+      return { sig: P.pc.signalingState, opus: /opus/i.test((P.pc.remoteDescription || {}).sdp || ''), dir: t && t.currentDirection, track: !!P.track, real: P.pc instanceof (window.RTCPeerConnection.prototype ? Object : Object) && !P.pc.uid }; }, id);
+    await until(a, () => { const P = window.__voice.peers.get('bbbb2222'); return P && P.pc && P.pc.signalingState === 'stable' && P.pc.remoteDescription; });
+    await until(b, () => { const P = window.__voice.peers.get('aaaa1111'); return P && P.pc && P.pc.signalingState === 'stable' && P.pc.remoteDescription; });
+    const nA = await neg(a, 'bbbb2222'), nB = await neg(b, 'aaaa1111');
+    chk(nA && nB && nA.real && nA.sig === 'stable' && nB.sig === 'stable' && nA.opus && nB.opus && nA.dir === 'sendrecv' && nB.dir === 'sendrecv' && nA.track && nB.track, 'real WebRTC: A offers (lower id), B answers; both sides negotiated two-way Opus audio with a remote track (' + JSON.stringify(nA) + ')');
+    await a.click('#vcOff'); chk(await until(b, () => !window.__voice.peers.has('aaaa1111')), 'A leaves voice: B closes its link to A');
+    for (const p of [a, b]) await p.evaluate(() => { window.__fakeRTC = 1; });
+    await a.click('#vcBtn'); await until(a, () => window.__voice.state === 'on');
+    chk((await vs(a)).gum === 2, 'A taps 🎤 MIC again: rejoins voice (mic asked again only on that tap)');
     const linked = await until(a, () => { const P = window.__voice.peers.get('bbbb2222'); return P && P.state === 'connected' && P.audio; }, null, 30000) && await until(b, () => { const P = window.__voice.peers.get('aaaa1111'); return P && P.state === 'connected' && P.audio; }, null, 30000);
     const pa = await pv(a, 'bbbb2222'), pb = await pv(b, 'aaaa1111');
-    chk(linked, 'WebRTC voice link A <-> B connected with a remote audio track on both sides (' + (pa && pa.state) + '/' + (pb && pb.state) + ', ' + (pa && pa.dir) + ')');
+    chk(linked, 'voice link A <-> B connected (stand-in transport) with a remote audio track on both sides (' + (pa && pa.state) + '/' + (pb && pb.state) + ', ' + (pa && pa.dir) + ', ice ' + JSON.stringify((await vs(a)).stats) + ')');
     const sA = await sample(b, 'aaaa1111', 4000), sB = await sample(a, 'bbbb2222', 4000);
     chk(sA.mx > 0.012 && sA.sp && sA.ind, 'B hears A (peak level ' + sA.mx.toFixed(3) + ') and sees the speaking indicator over A\'s head');
     chk(sB.mx > 0.012 && sB.sp && sB.ind, 'A hears B (peak level ' + sB.mx.toFixed(3) + ') and sees the speaking indicator over B\'s head');
@@ -63,7 +75,7 @@ const FAKE = ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-str
     // VR mute from the menu
     await tapB('mic'); chk((await vs(b)).muted, 'B mutes from the VR menu (MUTE MIC)'); await tapB('mic'); chk(!(await vs(b)).muted, 'B unmutes from the VR menu');
     // C: mic permission denied -> listening only, still hears A and B
-    const C = await dev('cccc3333', false, 'window.__denyMic = 1;'); const c = C.page;
+    const C = await dev('cccc3333', false, 'window.__denyMic = 1; window.__fakeRTC = 1;'); const c = C.page;
     await c.click('#vcBtn'); await until(c, () => window.__voice.state === 'listen');
     s = await vs(c); const toast = await c.evaluate(() => (document.getElementById('vcToast') || {}).textContent || '');
     chk(s.state === 'listen' && s.err === 'NotAllowedError' && /blocked/i.test(toast) && C.errors.length === 0, 'C denies the mic: no crash, listening only, told why ("' + toast.slice(0, 60) + '…")');

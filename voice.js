@@ -66,7 +66,7 @@ export function setupVoice({ mp, camera, scene, monkey }) {
   function onRtc(m) { if (!m || typeof m.i !== 'string' || m.i === me()) return; if (m.to && m.to !== me()) return; const from = m.i;
     if (m.t === 'bye') { closePeer(from, 'bye'); return; }
     if (V.state === 'off') return;
-    if (m.t === 'hi') { const P = V.peers.get(from); if (!m.to) sig({ t: 'hi', to: from, m: V.state === 'on' ? 1 : 0 });
+    if (m.t === 'hi') { let P = V.peers.get(from); if (!m.to) { if (P) { closePeer(from, 'rejoin'); P = null; } sig({ t: 'hi', to: from, m: V.state === 'on' ? 1 : 0 }); }   // a fresh hi = they (re)joined: drop any stale link
       if (!(P && P.pc) && me() < from) call(from); return; }
     if (m.t === 'offer' && typeof m.sdp === 'string') onOffer(from, m.sdp);
     else if (m.t === 'answer' && typeof m.sdp === 'string') onAnswer(from, m.sdp);

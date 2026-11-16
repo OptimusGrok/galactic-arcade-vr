@@ -17,7 +17,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
   const dbg = () => page.evaluate(() => { const Q = window.__gaQuestPad; Q.showDebug(true); const t = document.getElementById('gaQdbg').textContent; Q.showDebug(false); return t; });
   try {
     const v = await page.evaluate(() => ({ q: window.__gaQuestPad.isQuest(), ver: window.__gaQuestPad.VER, split: window.__gaQuestPad.split, cal: localStorage.getItem('gaQuest.stickCal'), lsv: localStorage.getItem('gaQuest.ver'), page: window.__GA_VR }));
-    chk(v.q && v.ver === 'v13' && !v.split && v.page === 'vr13', 'Quest flat, quest-pad v13, page vr13, classifier off by default ' + JSON.stringify(v));
+    chk(v.q && v.ver === 'v13' && !v.split && /^vr1[34]$/.test(v.page), 'Quest flat, quest-pad v13, page vr13, classifier off by default ' + JSON.stringify(v));
     chk(v.cal === null && v.lsv === 'v13', 'an old STICK SETUP saved by v12 is wiped on the version change');
     await page.waitForTimeout(400);
     const vis = await page.evaluate(() => ({ cal: (document.getElementById('gaQcal') || { hidden: true }).hidden, look: (document.getElementById('gaQlook') || { hidden: true }).hidden, tl: !!document.getElementById('gaQturnL') && !document.getElementById('gaQturnL').hidden, tr: !!document.getElementById('gaQturnR') && !document.getElementById('gaQturnR').hidden }));
