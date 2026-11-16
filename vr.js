@@ -401,8 +401,13 @@ export function setupVR(A) {
     if (d > MIRROR_NEAR && !seen && (S.frames % MIRROR_FAR_EVERY)) { MV.skips++; return; }
     if (d > MIRROR_NEAR && !seen) MV.far++;
     const vis = monkey.visible; monkey.visible = true;   // you see yourself in it
+    // t364u: your own first-person things (controller models + rings, rays, cursor, HUD, menu, charge glow) sit right in front of the mirror
+    // camera, so they reflected as huge arms and pink rings. The mirror shows only the avatar (with its small hand controllers).
+    const fp = fpList(), was = fp.map(o => o.visible); for (const o of fp) o.visible = false; MV.fpHidden = fp.length;
     S.inMirror = true; pinScan(); pinLights(); try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; } S.inMirror = false; unpinLights();
-    monkey.visible = vis; }
+    fp.forEach((o, i) => { o.visible = was[i]; }); monkey.visible = vis; }
+  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); return _fp; }
+  S.fpNames = () => fpList().map(o => o.name || o.type);
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
   // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
   // when the hand is close to the body, the hand takes the grip's rotation, and a small controller model sits in each avatar hand.
@@ -416,7 +421,7 @@ export function setupVR(A) {
   // one arm solver for your own avatar (mirror) and other VR players' avatars (t362u): h = real head {x, y, z, yaw}, gripOf(hand) = {p, q} world grip pose
   function armIK(arms, h, gripOf) { const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
     for (const arm of arms) { if (!arm || !arm.sh) continue; const G = gripOf(arm.sd > 0 ? 'right' : 'left');
-      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) mdl.visible = !!G;
+      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) { mdl.visible = !!G; if (G) { arm.hand.getWorldScale(_ha.ws); mdl.scale.setScalar(Math.min(4, 1 / Math.max(0.05, _ha.ws.x))); } }   // keep it controller-sized whatever the hand's scale
       if (!G) continue; _ha.wp.copy(G.p);
       _ha.rs.set(h.x + rx * arm.sd * 0.18, h.y - 0.27, h.z + rz * arm.sd * 0.18);   // the real shoulder
       _ha.v.copy(_ha.wp).sub(_ha.rs); const reach = Math.min(1, _ha.v.length() / 0.62); if (_ha.v.lengthSq() < 1e-6) continue; _ha.v.normalize();

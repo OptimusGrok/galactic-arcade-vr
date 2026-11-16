@@ -49,7 +49,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await tap('ward'); await tap('cat_back'); await tap('w_back_jetpack'); let gr = await page.evaluate(() => window.__gaVR.gear());
     chk(gr.jet, 'JETPACK bought + worn from ACCESSORIES in VR'); await tap('close');
     const fy0 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y }));
-    await H.btn(page, 'right', 'a-button', 1); await page.waitForTimeout(900); await H.frames(page, 4);
+    await H.btn(page, 'right', 'a-button', 1); await page.waitForFunction(y0 => window.__arcade.monkey.position.y > y0 + 0.8, fy0.m, { timeout: 5000 }).catch(() => {}); await H.frames(page, 4);   // slow emulator frames: wait for the rise, not a fixed time
     const fy1 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y, hold: window.__arcade.st.fly.hold, air: window.__arcade.st.fly.air }));
     chk(fy1.hold && fy1.m > fy0.m + 0.8 && Math.abs(fy1.r - fy1.m) < 0.05, 'hold A flies: the player + headset rise (' + fy0.m.toFixed(2) + ' -> ' + fy1.m.toFixed(2) + ' m)');
     await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 90);
