@@ -46,7 +46,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await page.evaluate(() => { window.__kiosk.C.bal = 3; }); await H.frames(page, 3); sb = await subOf(); chk(/^\$3 CASH/.test(sb), 'cash updates live ("' + sb + '")');
     // ---- t355u: JETPACK on -> hold A flies (in the arcade world) ----
     await page.evaluate(() => window.__arcade.play.addTickets(30)); await H.frames(page, 3);
-    await tap('ward'); await tap('cat_back'); await tap('w_back_jetpack'); let gr = await page.evaluate(() => window.__gaVR.gear());
+    await tap('pack'); await tap('ward'); await tap('cat_back'); await tap('w_back_jetpack'); let gr = await page.evaluate(() => window.__gaVR.gear());
     chk(gr.jet, 'JETPACK bought + worn from ACCESSORIES in VR'); await tap('close');
     const fy0 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y }));
     await H.btn(page, 'right', 'a-button', 1); await page.waitForFunction(y0 => window.__arcade.monkey.position.y > y0 + 0.8, fy0.m, { timeout: 5000 }).catch(() => {}); await H.frames(page, 4);   // slow emulator frames: wait for the rise, not a fixed time
@@ -58,7 +58,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 30000 }); await H.frames(page, 6);
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: B still opens the menu');
     // ---- t355u: LASER PISTOL on -> B shoots, menu on Y only ----
-    await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
+    await tap('pack'); await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
     await H.frames(page, 6); const rs = await page.evaluate(() => window.__roomFire.shown); chk(rs, 'the pistol is live in VR');
     const s0 = await page.evaluate(() => window.__roomFire.shots);
     await H.btn(page, 'right', 'b-button', 1); await H.frames(page, 4); const hd = await page.evaluate(() => window.__gaVR.vrLaser().held); await page.waitForTimeout(250);
@@ -69,7 +69,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await H.btn(page, 'right', 'a-button', 1); await page.waitForTimeout(500); const both = await page.evaluate(() => window.__arcade.st.fly.hold); await H.btn(page, 'right', 'b-button', 1); await H.frames(page, 4);
     const bothF = await page.evaluate(() => window.__gaVR.vrLaser().held); await H.btn(page, 'right', 'b-button', 0); await H.btn(page, 'right', 'a-button', 0); await page.waitForTimeout(1500);
     chk(both && bothF, 'fly (A) and shoot (B) together');
-    await H.press(page, 'left', 'y-button'); await tap('ward'); await tap('cat_hand'); await tap('remove'); await tap('close');
+    await H.press(page, 'left', 'y-button'); await tap('pack'); await tap('ward'); await tap('cat_hand'); await tap('remove'); await tap('close');
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu' && !(await page.evaluate(() => window.__gaVR.gear().laser)), 'pistol off: B opens the menu again');
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
     // ---- Sky Tower ----

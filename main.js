@@ -1091,7 +1091,7 @@ cv.addEventListener('mousedown', e => { mouseDrag = { x: e.clientX, y: e.clientY
 addEventListener('mouseup', () => mouseDrag = null);
 addEventListener('mousemove', e => {
   if (document.pointerLockElement === cv) { look(e.movementX, e.movementY); return; }
-  if (!mouseDrag) return; look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y); mouseDrag = { x: e.clientX, y: e.clientY };
+  if (!mouseDrag) return; if (questStickDrag()) { mouseDrag = { x: e.clientX, y: e.clientY }; return; } look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y); mouseDrag = { x: e.clientX, y: e.clientY };
 });
 cv.addEventListener('dblclick', () => { if (!MOBILE) cv.requestPointerLock?.(); });
 // Camera distance (Dave): desktop mouse-wheel zoom still persists. On a phone, hold the ZOOM button beside the backpack to ease in; release returns to the default. Default = PR6 wider cam (7.6 landscape / 4.2 portrait).
@@ -1118,6 +1118,10 @@ cv.addEventListener('wheel', e => { e.preventDefault(); if (renderer.xr.isPresen
 const PITCH_MIN = -0.6, PITCH_MAX = 1.25, NB_PITCH_MIN = -1.35;   // t791u: while Neon Bricks is playing, allow looking further up so the top of the playfield is on screen
 function lookPitchRange() { const n = window.__neonBricks; return (n && n.playing && !n.zoom) ? [NB_PITCH_MIN, PITCH_MAX] : [PITCH_MIN, PITCH_MAX]; }
 function look(dx, dy) { st.lookT = st.t; st.yaw -= dx * 0.005; const r = lookPitchRange(); st.pitch = THREE.MathUtils.clamp(st.pitch + dy * 0.004, r[0], r[1]); }
+// v12 (Dave's Quest photo): the Quest turns a thumbstick push into a pressed-ray drag as well as the wheel; while stick wheels are arriving a
+// touch / mouse drag is the stick, so it must not turn the camera (the left stick only walks / strafes)
+function questStickDrag() { const Q = window.__gaQuestPad; try { if (Q && Q.stickBusy && Q.stickBusy()) { Q.noteDragBlocked(); return true; } } catch (e) {} return false; }
+window.__gaLook = (dx, dy) => { if (st.vr || st.seated) return; look(dx, dy); };   // v12: quest-pad.js trigger-drag turn (flat Quest)
 function defaultDist() { return (MOBILE && camera.aspect > 1.15) ? DIST_WIDE : DIST_PORTRAIT; }
 // touch: the bottom-left stick steers. The thumb and the dotted line stay inside the base; the
 // speed still follows the real finger, so a drag past the rim still walks faster up to a capped sprint.
@@ -1182,7 +1186,7 @@ cv.addEventListener('touchmove', e => {
     if (T.kind === 'joy') joyFrom(t.clientX, t.clientY);
     else if (T.kind !== 'nbpinch') {
       T.moved = Math.max(T.moved, Math.hypot(t.clientX - T.x0, t.clientY - T.y0));
-      look((t.clientX - T.x) * 1.4, (t.clientY - T.y) * 1.4); T.x = t.clientX; T.y = t.clientY;
+      if (!questStickDrag()) look((t.clientX - T.x) * 1.4, (t.clientY - T.y) * 1.4); T.x = t.clientX; T.y = t.clientY;
     }
   }
   e.preventDefault();
@@ -1536,7 +1540,7 @@ function flyBlocked() {
   if (golf && golf.aiming) return true;
   const S = window.__start; if (S && S.shown && !S.dismissed) return true;
   const F = window.__floorBtn; if (F && F.open) return true;
-  if (window.__optsOpen || (window.__wardrobe && window.__wardrobe.isOpen) || (window.__inv && window.__inv.open) || (window.__pool && window.__pool.open) || document.body.classList.contains('ingame') || document.body.classList.contains('nbPlay')) return true;
+  if (window.__optsOpen || (window.__wardrobe && window.__wardrobe.isOpen) || (window.__inv && window.__inv.open) || (window.__pool && window.__pool.open) || (window.__chessTable && window.__chessTable.state !== 'idle') || document.body.classList.contains('ingame') || document.body.classList.contains('nbPlay')) return true;
   if (kiosk && kiosk.mode !== 'walk' && kiosk.mode !== 'pick') return true;
   for (let i = 0; i < FLY_MENUS.length; i++) { const e = document.getElementById(FLY_MENUS[i]); if (e && e.classList.contains('on')) return true; }
   return false;
@@ -1645,6 +1649,7 @@ function step(dt) {
     if (h > 0.15) { ix = v.x / h; iz = v.y / h; mag = Math.min(1, h); joyV = (v.speed || 2.2) * Math.min(1, (h - 0.15) / 0.75); run = false; } }
   if (tp && tp.locked) { ix = iz = mag = 0; run = false; if (!shop) loadShop(); }   // teleporting: input locked
   if (nb && nb.playing) { nb.joy(ix * (mag || 0), iz * (mag || 0), dt); ix = iz = mag = 0; run = false; joyV = null; }   // NEON BRICKS: the joystick / keys move the blocks, not the player
+  { const CT = window.__chessTable; if (CT && CT.seated) { ix = iz = mag = 0; run = false; joyV = null; } }   // chess table: seated, no walking
   st.inMag = mag; st.lastStep = st.t;
   if (st.jumpReq != null) { const ok = st.t - st.jumpReq < 0.2 && canJump(); st.jumpReq = null;
     if (ok) { st.jump = { t: 0, vx: st.vel.x, vz: st.vel.z }; st.jumps = (st.jumps || 0) + 1; } }
@@ -1688,6 +1693,7 @@ function step(dt) {
   }
   st.play += ((nearCab && st.speed < 0.4 ? 1 : 0) - st.play) * (1 - Math.exp(-dt * 6));
   animateMonkey(dt);
+  { const CT = window.__chessTable; if (CT && CT.seated) CT.pose(monkey, st, dt); }   // chess table: chair position + sitting pose (after the walk animation, before the camera)
   monkeyFill.position.set(monkey.position.x + Math.sin(st.yaw) * 1.2, 1.9, monkey.position.z + Math.cos(st.yaw) * 1.2);
   monkeyRim.position.set(monkey.position.x - Math.sin(st.yaw) * 1.0, 1.6, monkey.position.z - Math.cos(st.yaw) * 1.0);
   if (st.vr) { monkey.visible = false; return; }   // VR: the headset is the camera (vr.js moves the rig with the player)
@@ -1968,7 +1974,7 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
     nova: ['NOVA TETHER', 0x3fb8ff], cyber: ['CYBERCITY', 0xff3fd0], blaster: ['BLASTER', 0xfff03a], pip: ['SUPER PIP QUEST', 0xff7ad9], bb: ['BURROW BUSTER', 0xffb02e],
     rockfall: ['ROCKFALL RUSH', 0xff8a2a], skytower: ['SKY TOWER', 0x5fe0ff], roadster: ['MARS ROADSTER', 0xff4a2a] };
   const list = Object.keys(FEATURED).map(k => { const [cab, key] = FEATURED[k]; return { cab, key, title: T[key][0], color: T[key][1], wall: true }; });
-  list.push({ cab: clawCab, key: 'claw', title: 'CLAW MACHINE', color: 0xff2bd6, scale: 0.7, normal: new THREE.Vector3(0, 0, 1) });
+  list.push({ cab: clawCab, key: 'claw', title: 'CLAW MACHINE', color: 0xff2bd6, scale: 0.7, maxW: 1.9, normal: new THREE.Vector3(0, 0, 1) });   // v12 (t376u): name no wider than ~cabinet + 0.5 m
   // DEAD SIGNAL: no extra sign; the VR station already carries its own game-styled DEAD SIGNAL / VR sign above the screen (dscab.js)
   const signs = buildNeonSigns(THREE, mergeGeometries, list, { HALF, renderer, aniso: Math.min(Q.aniso || 1, renderer.capabilities.getMaxAnisotropy()), iconS: TIER.name === 'low' ? 128 : 256, atlasMax: TIER.name === 'low' ? 512 : 0 });
   scene.add(signs); window.__neonSigns = signs; }

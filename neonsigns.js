@@ -649,7 +649,7 @@ function makeIconAtlas(S = 256) {
 
 export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   const A = NEON_ATLAS, MAXW = opt.maxW || 3.7, HALF = opt.HALF, WALL_D = 0.06;
-  const quads = [], info = [], iconQuads = [], iconInfo = [];
+  const quads = [], info = [], iconQuads = [], iconInfo = [], clawQuads = [];
   const atlas = makeIconAtlas(opt.iconS || 256);
   // t840u / v223: icons are much bigger and fill the space up to just under the cyan ceiling band (y=6.2, small gap).
   // Kept centred on the sign; width shrinks if needed so neighbours and the east/west window planes stay clear.
@@ -657,7 +657,7 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   const iconPending = [];
   for (const e of list) {
     const r = A.signs[e.key]; if (!r) continue;
-    let w = r.m[0] * (e.scale || 1), h = r.m[1] * (e.scale || 1); if (w > MAXW) { h *= MAXW / w; w = MAXW; }
+    const mw = e.maxW || MAXW; let w = r.m[0] * (e.scale || 1), h = r.m[1] * (e.scale || 1); if (w > mw) { h *= mw / w; w = mw; }   // v12: e.maxW (the claw name stays about cabinet-wide)
     const u0 = r.x / A.W, u1 = (r.x + r.w) / A.W, v1 = 1 - r.y / A.H, v0 = 1 - (r.y + r.h) / A.H;
     // place: wall cabinet -> on the wall above it; free-standing -> on top of it / its given anchor
     const cab = e.cab; cab.updateMatrixWorld(true); const b = new THREE.Box3().setFromObject(cab), ctr = b.getCenter(new THREE.Vector3()), n = (e.normal || cab.userData.inward).clone().setY(0).normalize();
@@ -669,13 +669,13 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
     const yaw = Math.atan2(n.x, n.z);
     const g = new THREE.PlaneGeometry(w, h), uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) ? u1 : u0, uv.getY(i) ? v1 : v0);
-    g.rotateY(yaw); g.translate(p.x + n.x * 0.004, p.y, p.z + n.z * 0.004); quads.push(g);
+    g.rotateY(yaw); g.translate(p.x + n.x * 0.004, p.y, p.z + n.z * 0.004); (e.key === 'claw' ? clawQuads : quads).push(g);
     // t850u: claw sits in the middle of the room. Back plane is rotated 180° about Y
     // with the SAME UVs as the front (a UV flip plus the rotation would mirror the lettering).
     if (e.key === 'claw') {
       const g2 = new THREE.PlaneGeometry(w, h), uv2 = g2.attributes.uv;
       for (let i = 0; i < uv2.count; i++) uv2.setXY(i, uv2.getX(i) ? u1 : u0, uv2.getY(i) ? v1 : v0);
-      g2.rotateY(yaw + Math.PI); g2.translate(p.x - n.x * 0.004, p.y, p.z - n.z * 0.004); quads.push(g2);
+      g2.rotateY(yaw + Math.PI); g2.translate(p.x - n.x * 0.004, p.y, p.z - n.z * 0.004); clawQuads.push(g2);
     }
     const top = p.y + h / 2, bottom = p.y - h / 2;
     info.push({ title: e.title, key: e.key, color: '#' + new THREE.Color(e.color).getHexString(), pos: p.toArray().map(v => +v.toFixed(3)), w: +w.toFixed(3), h: +h.toFixed(3), normal: n.toArray().map(v => +v.toFixed(3)), bottom: +bottom.toFixed(3), top: +top.toFixed(3), cabTop: +b.max.y.toFixed(3) });
@@ -731,6 +731,9 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   mat.name = 'neonSigns';
   const mesh = new THREE.Mesh(mergeGeometries(quads), mat); mesh.name = 'neonSigns'; mesh.renderOrder = 3; mesh.matrixAutoUpdate = false; mesh.updateMatrix();
   mesh.userData.signs = info; mesh.userData.k = mat.color.r;
+  // v12 (t376u): the claw machine's name floats mid-room in front of the wall pictures. In the one merged, depth-write-off sign mesh the
+  // wall icons could paint over it ("cut off"); on its own mesh it draws after them (renderOrder 4) and depth-tests against the room.
+  if (clawQuads.length) { const cs = new THREE.Mesh(mergeGeometries(clawQuads), mat); cs.name = 'neonClawSign'; cs.renderOrder = 4; cs.matrixAutoUpdate = false; cs.updateMatrix(); cs.frustumCulled = false; mesh.add(cs); mesh.userData.clawSign = cs; if (typeof window !== 'undefined') window.__neonClawSign = cs; }
   if (iconQuads.length) {
     const itex = new THREE.CanvasTexture(atlas.cv); itex.colorSpace = THREE.SRGBColorSpace; itex.anisotropy = opt.aniso || 4;
     try { if (opt.renderer) opt.renderer.initTexture(itex); } catch (err) {}
@@ -772,7 +775,7 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
     // FrontSide: two planes already face both ways; drawing the back of the front plane would mirror the claw
     cmat.name = 'neonClawIcon'; cmat.side = THREE.FrontSide;
     const claw = new THREE.Mesh(mergeGeometries([mk(false), mk(true)]), cmat);
-    claw.name = 'neonClawIcon'; claw.renderOrder = 3; claw.frustumCulled = false; claw.matrixAutoUpdate = false; claw.updateMatrix();
+    claw.name = 'neonClawIcon'; claw.renderOrder = 4; claw.frustumCulled = false; claw.matrixAutoUpdate = false; claw.updateMatrix();
     claw.userData = { key: 'claw', period, frames: N, open: 0, frame: 0, pos: ip.toArray().map(v => +v.toFixed(3)), w: +iw.toFixed(3), h: +ih.toFixed(3) };
     function tickClaw(t) {
       const phase = ((t / period) % 1 + 1) % 1;

@@ -11,6 +11,16 @@ function bake(grp) { grp.updateMatrixWorld(true); const inv = new THREE.Matrix4(
   grp.userData.baked = grp.children.length; const keep = [...grp.children]; keep.forEach(c => grp.remove(c)); for (const [mat, gs] of by) { const m = new THREE.Mesh(mergeGeometries(gs), mat); grp.add(m); gs.forEach(x => x.dispose()); } return grp; }
 export const CLAW = { W: 1.40, D: 1.00, BASE_H: 0.82, GLASS_H: 0.92, TOP_H: 0.30 };
 const canvasTex = (w, h, paint) => { const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } paint(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t; };
+// v12 (t376u): text that always FITS its plate. Measures the real font (Quest falls back from Arial Black to its own heavy sans) and
+// shrinks it until the glyphs + glow sit inside the plate with a margin; draws undistorted on a plate whose aspect differs from its canvas.
+export const CLAW_TEXT = [];
+export function fitText(c, text, w, h, o) { const plateA = o.aspect || w / h, sx = (w / h) / plateA, vw = w / sx, mx = vw * (o.mx || 0.08), my = h * (o.my || 0.16), blur = o.blur || 0;
+  let px = o.px; const font = p => o.weight + ' ' + p + 'px ' + o.family;
+  for (; px > 8; px -= 2) { c.font = font(px); const m = c.measureText(text), tw = m.width + blur * 1.5, th = (m.actualBoundingBoxAscent || px * 0.72) + (m.actualBoundingBoxDescent || px * 0.05) + blur;
+    if (tw <= vw - 2 * mx && th <= h - 2 * my) break; }
+  c.save(); c.scale(sx, 1); c.font = font(px); c.textAlign = 'center'; c.textBaseline = 'middle'; c.shadowColor = o.glow; c.shadowBlur = blur; c.fillStyle = o.color; c.fillText(text, vw / 2, h / 2 + (o.dy || 0)); c.restore();
+  const m = c.measureText(text), rec = { name: o.name, text, px, px0: o.px, textW: m.width * sx, availW: (vw - 2 * mx) * sx, canvasW: w, textH: (m.actualBoundingBoxAscent || px * 0.72) + (m.actualBoundingBoxDescent || 0), availH: h - 2 * my, canvasH: h, squash: sx };
+  rec.fits = rec.textW <= rec.availW + 0.5 && rec.textH <= rec.availH + 0.5; const i = CLAW_TEXT.findIndex(r => r.name === o.name); if (i >= 0) CLAW_TEXT[i] = rec; else CLAW_TEXT.push(rec); return rec; }
 export function buildClawCabinet() {
   const { W, D, BASE_H, GLASS_H, TOP_H } = CLAW, g = new THREE.Group(); g.name = 'clawCabinet';
   const add = (geo, mat, name, p) => { const m = new THREE.Mesh(geo, mat); m.name = name; if (p) m.position.set(...p); g.add(m); return m; };
@@ -51,11 +61,11 @@ export function buildClawCabinet() {
     const p2 = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.08, 6), steel); p2.position.set(0.065, -0.155, 0); p2.rotation.z = -0.5; arm.add(p2); }
   // front: coin plate + '1 TICKET' price plate, PUSH prize door
   const price = canvasTex(512, 160, (c, w, h) => { c.fillStyle = '#12061f'; c.fillRect(0, 0, w, h); c.strokeStyle = '#ffd23a'; c.lineWidth = 8; c.strokeRect(6, 6, w - 12, h - 12);
-    c.font = '900 84px Arial Black, Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.shadowColor = '#ffb020'; c.shadowBlur = 18; c.fillStyle = '#ffe14a'; c.fillText('1 TICKET', w / 2, h / 2 + 4); });
+    fitText(c, '1 TICKET', w, h, { name: 'price', px: 84, weight: '900', family: 'Arial Black, Arial, sans-serif', glow: '#ffb020', blur: 18, color: '#ffe14a', aspect: 0.62 / 0.194, mx: 0.07, my: 0.18, dy: 3 }); });
   add(new THREE.PlaneGeometry(0.62, 0.194), new THREE.MeshStandardMaterial({ map: price, emissive: 0xffffff, emissiveMap: price, emissiveIntensity: 0.8, roughness: 0.4 }), 'priceTag', [0.2, BASE_H - 0.2, D / 2 + 0.003]);
   add(new THREE.PlaneGeometry(0.34, 0.26), new THREE.MeshStandardMaterial({ color: 0x1a0a2a, roughness: 0.5, metalness: 0.3 }), 'prizeDoor', [-W / 2 + 0.24, BASE_H - 0.3, D / 2 + 0.003]);
   const marq = canvasTex(1024, 220, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#2a0f4f'); gr.addColorStop(1, '#14062a'); c.fillStyle = gr; c.fillRect(0, 0, w, h);
-    c.font = '900 120px system-ui, Arial Black, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.shadowColor = '#ff2bd6'; c.shadowBlur = 30; c.fillStyle = '#ff4fe0'; c.fillText('CLAW MACHINE', w / 2, h / 2 + 6); });
+    fitText(c, 'CLAW MACHINE', w, h, { name: 'marquee', px: 120, weight: '900', family: 'system-ui, Arial Black, sans-serif', glow: '#ff2bd6', blur: 26, color: '#ff4fe0', aspect: (CLAW.W - 0.08) / (CLAW.TOP_H - 0.06), mx: 0.07, my: 0.16, dy: 4 }); });
   add(new THREE.PlaneGeometry(W - 0.08, TOP_H - 0.06), new THREE.MeshStandardMaterial({ map: marq, emissive: 0xffffff, emissiveMap: marq, emissiveIntensity: 0.9, roughness: 0.3 }), 'marquee', [0, y1 + TOP_H / 2, D / 2 + 0.003]);
   // neon edge glow only (corner verticals, top + bottom rims): one merged tube set
   const neon = new THREE.MeshBasicMaterial({ color: 0xff3fd8, toneMapped: false }), tubes = new THREE.Group(); tubes.name = 'edgeGlow'; g.add(tubes);
@@ -68,6 +78,6 @@ export function buildClawCabinet() {
   function tick(t) { const x = Math.sin(t * 0.37) * (gw / 2 - 0.12), z = Math.cos(t * 0.29) * (gd / 2 - 0.12); bridge.position.x = x; claw.position.z = z;
     const drop = 0.22 + 0.08 * Math.sin(t * 0.9); cable.scale.y = drop; head.position.y = -drop; }
   tick(0);
-  g.userData = { screen: front, tick, aspect: gw / GLASS_H, footprint: [W, D], height: H };
+  g.userData = { screen: front, tick, aspect: gw / GLASS_H, footprint: [W, D], height: H, text: CLAW_TEXT };
   return g;
 }

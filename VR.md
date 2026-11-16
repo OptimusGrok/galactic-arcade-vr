@@ -180,3 +180,29 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   each quad, a bit brighter than the dim neon. Canvas icons stay as the fallback until a picture loads. The claw keeps its two-sided
   open/close mesh and one-time 2048×256 upload. The 13 webps are precached in `sw.js` again.
 - Test: `test/vr_icons.js` (painted atlas, 13 webps, brightness, claw upload-once, also in an XR session).
+
+## v12 (t374u/t376u/t377u/t382u/t383u/t388u): Chess table, claw text, Quest sticks from real headset data, GRIP = back (cache v12)
+- **Chess table** (`chesstable.js`, `chess-play/` built by `tools_build_chess_play.py` from the chess app, unchanged pieces / battles / robot arm):
+  shop-local (6.6, 7.6), between the ACCESSORIES wardrobe and the pool tables, solid (OBST box). Flat: PLAY CHESS -> you sit, Grok walks
+  from the counter (out through the counter gap, round to the table, 1.45 m/s walk cycle), turns, slides into the chair opposite and sits;
+  the camera eases in over your shoulder, then the chess page opens (✕ / Esc / grip stands you up, Grok walks back). VR: ray + trigger on the
+  table or the CHESS · PLAY sign; the rig turns once to face the board and rides the sit tween; A skips Grok's walk; the page is painted by its
+  own `window.__chessVR` painter onto a 1.36 m panel over the table; ray + trigger press / drag / release go into the page; GRIP = stand up.
+  Tickets (arcade copy only): a win vs the Computer pays Easy 5 / Medium 10 / Hard 20 (lowest level used in the game), once per game, none
+  if Undo was used; paid only through `window.__chessWin` from the open frame. Free to play.
+- **Claw text**: the marquee "CLAW MACHINE" and the "1 TICKET" plate use `fitText` (shrinks the font until glyphs + glow fit with a
+  margin, undistorted on the plate). The VR tier's smaller canvas (768x165) used to keep the 120 px font -> cut off. The floating neon
+  "CLAW MACHINE" name is <= 1.9 m wide and on its own mesh (renderOrder 4) so the wall pictures no longer paint over it.
+- **Quest flat sticks** (Dave's ?qdbg photos): one live ray at a time (new touch pointerId per press), both sticks = the same plain wheel
+  (m0, ~20 px steps, ~82 events/s) at that ray. v9 compared it with a ray gone quiet for seconds -> MOVE/LOOK flipped. Now: two rays count only
+  if both are busy (>= 3 events in 400 ms); then each ray is LOCKED to a hand. With one ray the wheel always walks (dy walk, dx strafe) and
+  never turns; a pressed-ray drag that comes with stick wheels (the Quest does that on a sideways push) is ignored. TURN: trigger-drag on the
+  3D view, the STICK WALK/LOOK toggle, or STICK SETUP. ?qdbg=1 shows MODE, the hand locks, drag-turns and ignored stick drags.
+- **GRIP = back**: VR short press closes any panel (menu, shop, accessories, tickets, chat, pack) and stands you up from chess; cabinet games
+  and Neon Bricks keep the 0.6 s hold (no accidental exits mid-game). Flat Quest: every grip candidate (gamepad grip, non-primary pointer
+  button / contextmenu, BrowserBack key, browser back = B/Y via a history trap) sends the game's Escape; counted in ?qdbg=1.
+- **Y menu (t388u)**: title MENU, subtitle "$cash CASH · N TICKETS". Left: the BACKPACK tile (the real monkey backpack art from the flat
+  #bPack button); opens the backpack with PRIZES / ACCESSORIES tabs, both picture tiles (emoji pictures + names; tap = equip / wear / buy
+  like before; PUT R/L/BOTH AWAY, REMOVE, < >). Right: the FLOOR + WALLS square showing a different floor picture every 5 s; opens the free
+  floor + walls picker. Bottom: PLAY NEON BRICKS (arcade) or PRIZE SHOP (shop). Only the X (or GRIP) closes. BEAM TO SHOP is on the
+  teleporter pad signs, BUY TICKETS at the ticket machine (sign + ray), Grok chat by pointing at Grok. Test: test/vr_menu.js.

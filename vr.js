@@ -225,6 +225,7 @@ export function setupVR(A) {
   const UI = { open: null, page: 0, msg: '', msgT: 0, btns: [], hover: null, key: '' };
   const uiM = panel(1.0, 0.75, 1024, 768); uiM.name = 'vrMenu'; uiM.renderOrder = 1003; uiM.visible = false; scene.add(uiM);
   const kiosk = () => window.__kiosk || null, nbApi = () => A.nb || null;
+  const grokAway = () => { const C = window.__chessTable; return !!(C && C.grokBusy); };   // v12: the clerk is walking to / sitting at the chess table
   function uiOpen(kind) { const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 0.9;
     if (UI.open === 'chat' && kind !== 'chat') chatEnd();
     UI.open = kind; UI.page = 0; UI.msg = ''; UI.msgT = 0; UI.key = '';
@@ -239,6 +240,16 @@ export function setupVR(A) {
   S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
     // world point of a button (tests aim the ray at it)
     btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
+  // v12 (t388u): picture tiles for the backpack (prizes + accessories)
+  const WARD_IC = { hat: '\uD83C\uDFA9', glasses: '\uD83D\uDD76\uFE0F', back: '\uD83C\uDF92', hand: '\u270B', hoodie: '\uD83E\uDDE5', suit: '\uD83E\uDDBA', fur: '\uD83D\uDC12', shoes: '\uD83D\uDC5F' };
+  const CLAW_IC = { bear: '\uD83E\uDDF8', bunny: '\uD83D\uDC30', duck: '\uD83E\uDD86', frog: '\uD83D\uDC38', cat: '\uD83D\uDC31', octopus: '\uD83D\uDC19', penguin: '\uD83D\uDC27', alien: '\uD83D\uDC7D', monkey: '\uD83D\uDC35', grok: '\uD83E\uDD16' };
+  function prizeIcon(it) { if (it.src === 'claw') return CLAW_IC[it.id.slice(5)] || '\uD83E\uDDF8'; const n = it.name;
+    return /GROK|ROBOT/.test(n) ? '\uD83E\uDD16' : /MONKEY/.test(n) ? '\uD83D\uDC35' : /TEDDY|BEAR/.test(n) ? '\uD83E\uDDF8' : /COTTON|CANDY/.test(n) ? '\uD83C\uDF6D' : /SWORD/.test(n) ? '\u2694\uFE0F' : /BALLOON/.test(n) ? '\uD83C\uDF88' : /CROWN/.test(n) ? '\uD83D\uDC51' : /DRINK|SODA|CUP/.test(n) ? '\uD83E\uDD64' : /ICE CREAM/.test(n) ? '\uD83C\uDF66' : /DUCK/.test(n) ? '\uD83E\uDD86' : /STAR/.test(n) ? '\u2B50' : '\uD83C\uDF81'; }
+  function packTabs(add, on) { add('pt_prizes', '\uD83C\uDF81 PRIZES', 120, 166, 380, 60, true, () => { if (UI.open !== 'pack') { UI.open = 'pack'; UI.page = 0; UI.key = ''; } }); add('ward', '\uD83C\uDFA9 ACCESSORIES', 524, 166, 380, 60, !!window.__gaPlayer, () => { if (UI.open !== 'ward') { UI.open = 'ward'; UI.page = 0; UI.key = ''; S.panels.ward = (S.panels.ward || 0) + 1; } }); }
+  // floor preview: every 5 s the next floor picture (img/floor_*.webp, the same pictures as the flat OPTIONS)
+  const FLOOR_IMG = {}; function floorImg(v) { let im = FLOOR_IMG[v]; if (!im) { im = FLOOR_IMG[v] = new Image(); im.onload = () => { UI.key = ''; }; im.src = 'img/floor_' + v + '.webp'; } return im.complete && im.naturalWidth ? im : null; }
+  const floorNow = () => ROOM_FLOORS[Math.floor(performance.now() / 5000) % ROOM_FLOORS.length];
+  S.menuFloor = () => floorNow()[0]; S.menuArt = {};
   function uiSpec() {
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
     let title = '', sub = '', body = '';
@@ -253,19 +264,22 @@ export function setupVR(A) {
         sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
         items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
         add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
-    else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'ACCESSORIES';
+    else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'MONKEY BACKPACK';
+      packTabs(add, 'ward');
       if (!gp || !gp.allOpts) sub = 'NOT READY'; else {
         const cats = ['hat', 'glasses', 'back', 'hand', 'hoodie', 'suit', 'fur', 'shoes'].filter(k => gp.allOpts[k] && gp.allOpts[k].length); if (!cats.includes(UI.cat)) UI.cat = cats[0];
-        const k = UI.cat, L = gp.allOpts[k], per = 6, pages = Math.max(1, Math.ceil(L.length / per)), bal = gp.balance(); UI.page = Math.min(UI.page, pages - 1);
-        sub = 'YOU HAVE ' + bal + ' TICKETS  ·  ' + k.toUpperCase() + ' ' + (UI.page + 1) + '/' + pages;
-        cats.forEach((c, i) => add('cat_' + c, c === k ? '> ' + c.toUpperCase() + ' <' : c.toUpperCase(), 40 + (i % 4) * 240, 165 + Math.floor(i / 4) * 70, 224, 60, true, () => { UI.cat = c; UI.page = 0; }));
+        const k = UI.cat, L = gp.allOpts[k], per = 4, pages = Math.max(1, Math.ceil(L.length / per)), bal = gp.balance(); UI.page = Math.min(UI.page, pages - 1);
+        sub = 'ACCESSORIES  ·  YOU HAVE ' + bal + ' TICKETS  ·  ' + k.toUpperCase() + ' ' + (UI.page + 1) + '/' + pages;
+        cats.forEach((c, i) => add('cat_' + c, (WARD_IC[c] || '') + ' ' + c.toUpperCase(), 40 + (i % 4) * 240, 240 + Math.floor(i / 4) * 64, 224, 56, true, () => { UI.cat = c; UI.page = 0; }));
+        for (const b of B) if (b.id === 'cat_' + k) b.sel = true;
         const nm = v => String(v).replace(/^suit(?=.)/, 'suit ').toUpperCase();
         L.slice(UI.page * per, UI.page * per + per).forEach(([v], i) => { const own = gp.has(k, v), on = gp.p[k] === v, pr = gp.priceOf(k, v);
-          add('w_' + k + '_' + v, nm(v) + (on ? '  ·  ON' : own ? '' : '  ·  ' + pr + ' TICKETS'), 40 + (i % 2) * 484, 345 + Math.floor(i / 2) * 95, 460, 85, own || bal >= pr, () => {
+          add('w_' + k + '_' + v, nm(v) + (on ? ' · ON' : own ? '' : ' · ' + pr + ' T'), 40 + i * 240, 380, 224, 210, own || bal >= pr, () => {
             if (own) { gp.pick(k, v); S.wardPicks++; say(v === 'none' ? 'REMOVED' : 'WEARING ' + nm(v)); }
-            else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } }); });
-        if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 640, 564, 96, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
-        add('prev', '<', 40, 640, 170, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 640, 170, 96, UI.page < pages - 1, () => { UI.page++; }); } }
+            else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } });
+          B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); B[B.length - 1].sel = on; });
+        if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 610, 564, 80, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
+        add('prev', '<', 40, 610, 170, 80, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 610, 170, 80, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();
       if (!C || !C.open) { sub = 'GROK HAS GONE'; } else {
         sub = UI.chatQ ? 'YOU: ' + UI.chatQ : 'PICK A QUESTION'; body = 'GROK: ' + (UI.chatA || '...');
@@ -274,17 +288,18 @@ export function setupVR(A) {
         add('prev', '<', 30, 660, 170, 90, UI.page > 0, () => { UI.page--; }); add('next', '>', 824, 660, 170, 90, UI.page < pages - 1, () => { UI.page++; }); }
       add('close', 'CLOSE', 220, 660, 584, 90, true, uiClose); }
     else if (UI.open === 'pack') { title = 'MONKEY BACKPACK'; const sh = A.shop || window.__shop;
+      packTabs(add, 'prizes');
       if (!sh || !sh.hold) { sub = 'OPENING THE BACKPACK...'; try { window.__arcade && window.__arcade.loadShop && window.__arcade.loadShop(); } catch (e) {} } else {
-        const items = packItems(sh), h = heldNow(), per = 6, pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
+        const items = packItems(sh), h = heldNow(), per = 8, pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
         const nm = id => { const it = items.find(q => q.id === id); return it ? it.name : String(id).replace(/^claw:/, '').toUpperCase(); };
         sub = 'RIGHT: ' + (h.R ? nm(h.R) : '-') + '   ·   LEFT: ' + (h.L ? nm(h.L) : '-');
         if (!items.length) UI.msg = UI.msg || 'NO PRIZES YET · BUY AT THE GROK SHOP OR WIN THE CLAW';
         items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const sl = h.R === it.id ? 'R' : h.L === it.id ? 'L' : '';
-          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? '  ·  ' + sl : ''), 40 + (i % 2) * 484, 180 + Math.floor(i / 2) * 95, 460, 85, true, () => packTap(sh, it)); });
-        add('away_R', 'PUT R AWAY', 40, 475, 300, 85, !!h.R, () => { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('RIGHT HAND EMPTY'); });
-        add('away_L', 'PUT L AWAY', 362, 475, 300, 85, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
-        add('away', 'PUT BOTH AWAY', 684, 475, 300, 85, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
-        add('prev', '<', 40, 650, 170, 90, UI.page > 0, () => { UI.page--; }); add('pward', 'ACCESSORIES', 230, 650, 564, 90, !!window.__gaPlayer, () => uiOpen('ward')); add('next', '>', 814, 650, 170, 90, UI.page < pages - 1, () => { UI.page++; }); } }
+          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? ' · ' + sl : ''), 40 + (i % 4) * 240, 250 + Math.floor(i / 4) * 175, 224, 160, true, () => packTap(sh, it)); B[B.length - 1].ic = prizeIcon(it); B[B.length - 1].sel = !!sl; });
+        add('away_R', 'PUT R AWAY', 40, 610, 300, 70, !!h.R, () => { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('RIGHT HAND EMPTY'); });
+        add('away_L', 'PUT L AWAY', 362, 610, 300, 70, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
+        add('away', 'PUT BOTH AWAY', 684, 610, 300, 70, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
+        add('prev', '<', 40, 690, 150, 66, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 690, 150, 66, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'room') { title = 'FLOOR + WALLS'; sub = 'FREE  ·  LASTS UNTIL YOU RELOAD'; const tb = UI.roomTab === 'walls' ? 'walls' : 'floor';
       add('rt_floor', tb === 'floor' ? '> FLOOR <' : 'FLOOR', 40, 165, 460, 70, true, () => { UI.roomTab = 'floor'; });
       add('rt_walls', tb === 'walls' ? '> WALLS <' : 'WALLS', 524, 165, 460, 70, true, () => { UI.roomTab = 'walls'; });
@@ -292,13 +307,12 @@ export function setupVR(A) {
       L.forEach(([v, nm], i) => add((tb === 'floor' ? 'fl_' : 'wl_') + v, nm + (cur === v ? '  ·  ON' : ''), 40 + (i % 2) * 484, 265 + Math.floor(i / 2) * 95, 460, 85, true, () => roomPick(tb, v, nm)));
       add('rback', 'BACK', 230, 640, 564, 96, true, () => uiOpen('menu')); }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
-      add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 150, 800, 88, !!tp && tp.state === 'idle', beam);
-      add('pack', 'MONKEY BACKPACK', 112, 250, 800, 88, true, () => uiOpen('pack'));
-      if (!inShop) { add('tickets', 'BUY TICKETS', 112, 350, 800, 88, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 450, 800, 88, !!nbApi(), nbStart); }
-      else add('shop', 'PRIZE SHOP', 112, 350, 800, 88, !!A.shop, () => uiOpen('shop'));
-      add('ward', 'ACCESSORIES', 112, inShop ? 450 : 550, 390, 88, !!window.__gaPlayer, () => uiOpen('ward'));
-      add('room', 'FLOOR + WALLS', 522, inShop ? 450 : 550, 390, 88, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); });   // t365u: free
-      add('close2', 'CLOSE', 112, 655, 800, 88, true, uiClose); }
+      // v12 (t388u): the monkey BACKPACK (prizes + accessories inside) and a FLOOR + WALLS square that shows a different floor every 5 s;
+      // no BEAM (the pad signs beam) / BUY TICKETS (the ticket machine + its sign) / CLOSE: just the X (or GRIP)
+      add('pack', 'BACKPACK', 70, 180, 420, 400, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
+      add('room', 'FLOOR + WALLS', 534, 180, 420, 400, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
+      if (!inShop) add('nb', 'PLAY NEON BRICKS', 70, 620, 884, 100, !!nbApi(), nbStart);
+      else add('shop', 'PRIZE SHOP', 70, 620, 884, 100, !!A.shop, () => uiOpen('shop')); }
     return { title, sub, body, B }; }
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
   const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
@@ -348,21 +362,29 @@ export function setupVR(A) {
   S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
   function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
-    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + sp.B.map(b => b.id + b.label + b.on).join(','); if (key === UI.key) return; UI.key = key;
+    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(','); if (key === UI.key) return; UI.key = key;
     const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
     g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, UI.open === 'pack' ? 500 : 470, 70, UI.open === 'pack' ? 740 : 820);
     g.fillStyle = '#9ff8ff'; g.font = '900 34px "Arial Black", Arial, sans-serif'; g.fillText(sp.sub, 512, 140, 960);
-    for (const b of sp.B) { const hv = UI.hover === b.id && b.on; g.fillStyle = !b.on ? 'rgba(60,60,80,0.6)' : hv ? '#ff3fd2' : 'rgba(0,229,255,0.22)'; g.strokeStyle = b.on ? (hv ? '#ffffff' : '#3ff3ff') : '#555a70'; g.lineWidth = 6;
+    for (const b of sp.B) { const hv = UI.hover === b.id && b.on; g.fillStyle = !b.on ? 'rgba(60,60,80,0.6)' : hv ? '#ff3fd2' : b.sel ? 'rgba(255,225,74,0.30)' : 'rgba(0,229,255,0.22)'; g.strokeStyle = b.on ? (hv ? '#ffffff' : b.sel ? '#ffe14a' : '#3ff3ff') : '#555a70'; g.lineWidth = 6;
       g.beginPath(); g.roundRect ? g.roundRect(b.x, b.y, b.w, b.h, 24) : g.rect(b.x, b.y, b.w, b.h); g.fill(); g.stroke();
-      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24);
-      if (b.id === 'pack') drawPackIcon(g, b.x + 60, b.y + b.h / 2, b.h / 80); }
-    if (UI.open === 'pack') drawPackIcon(g, 70, 72, 0.95);
+      if (b.art || b.ic) { tileArt(g, b); continue; }
+      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24); }
+    if (UI.open === 'pack' || UI.open === 'ward') drawPackIcon(g, 70, 72, 0.95);
     if (sp.body) { g.save(); g.fillStyle = 'rgba(13,42,64,0.9)'; g.strokeStyle = '#00e5ff'; g.lineWidth = 3; g.beginPath(); g.roundRect ? g.roundRect(30, 168, 964, 196, 18) : g.rect(30, 168, 964, 196); g.fill(); g.stroke();
       let fs = 30, lines; for (; fs >= 20; fs -= 2) { g.font = '600 ' + fs + 'px Arial, sans-serif'; lines = wrapText(g, sp.body, 920); if (lines.length * fs * 1.22 <= 176) break; }
       g.textAlign = 'left'; g.fillStyle = '#e8f6ff'; lines.slice(0, 8).forEach((l, i) => g.fillText(l, 52, 190 + fs * 0.6 + i * fs * 1.22)); g.restore(); }
-    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'pack' ? 605 : UI.open === 'ward' ? 318 : UI.open === 'shop' ? 688 : 715, UI.open === 'ward' || UI.open === 'pack' ? 940 : 640); }
+    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'pack' ? 722 : UI.open === 'ward' ? 726 : UI.open === 'shop' ? 688 : UI.open === 'menu' ? 600 : 715, UI.open === 'ward' || UI.open === 'pack' ? 600 : 640); }
     tex.needsUpdate = true; }
+  // v12 (t388u): picture tiles: the real monkey backpack art (inventory.js's #bPack canvas), the cycling floor, or a big emoji + name
+  function tileArt(g, b) { const pad = 18, lh = Math.max(26, Math.min(44, b.h * 0.13)), ih = b.h - lh - pad * 2.2, cx = b.x + b.w / 2;
+    g.save(); g.beginPath(); g.rect(b.x + 6, b.y + 6, b.w - 12, b.h - 12); g.clip();
+    if (b.art === 'pack') { const pc = document.querySelector('#bPack canvas'), sz = Math.min(ih, b.w - pad * 2); if (pc && pc.width) g.drawImage(pc, cx - sz / 2, b.y + pad, sz, sz); else drawPackIcon(g, cx, b.y + pad + sz / 2, sz / 70); S.menuArt.pack = pc && pc.width ? 'bPack' : 'icon'; }
+    else if (b.art === 'floor') { const [v, nm] = floorNow(), im = floorImg(v), w = b.w - pad * 2, h = ih; S.menuArt.floor = v; S.menuArt.floorImg = !!im; S.menuArt.floorDraws = (S.menuArt.floorDraws || 0) + 1; if (im) g.drawImage(im, b.x + pad, b.y + pad, w, h); else { g.fillStyle = '#222'; g.fillRect(b.x + pad, b.y + pad, w, h); }
+      g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(b.x + pad, b.y + pad + h - 46, w, 46); g.fillStyle = '#ffe14a'; g.font = '900 28px "Arial Black", Arial, sans-serif'; g.fillText(nm, cx, b.y + pad + h - 22, w - 12); }
+    else { g.font = Math.round(Math.min(ih, b.w * 0.6) * 0.8) + 'px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif'; g.fillStyle = '#fff'; g.globalAlpha = b.on ? 1 : 0.45; S.menuArt.icons = (S.menuArt.icons || 0) + 1; g.fillText(b.ic, cx, b.y + pad + ih / 2 + 4); g.globalAlpha = 1; }
+    g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(lh) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, cx, b.y + b.h - pad - lh / 2 + 2, b.w - 20); g.restore(); }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
     const n = _v.set(0, 0, 1).applyQuaternion(uiM.getWorldQuaternion(_q)), den = n.dot(ray.direction); if (Math.abs(den) < 1e-4) return null;
     const t = _hit.copy(uiM.position).sub(ray.origin).dot(n) / den; if (t <= 0 || t > RAY_MAX) return null;
@@ -386,7 +408,7 @@ export function setupVR(A) {
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
-  addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
+  addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway());
   // t356u/t358u: the shop mirror. shop.js's Reflector is 512x420 (blurred in a headset) and its own hook only draws within 12 m of the
   // camera, so in VR it stayed frozen after you beamed in until you walked halfway over. In VR a twin Reflector of vr.js's own takes
   // its place (same geometry and transform; shop.js is not edited). It is sharp: 1536 px on the long side (1024 on the low tier), glass aspect,
@@ -571,7 +593,7 @@ export function setupVR(A) {
   S.mirrorRT = () => { const m = MV.twin && MV.twin.visible ? MV.twin : mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: m === MV.twin, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
   const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
   // t360u: CHAT WITH GROK over the shop clerk (above PRIZE SHOP) and over the visiting Grok in the arcade
-  addSign('chatClerk', 'CHAT WITH GROK', '#7dfcff', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()), h = S.head, k = h ? Math.min(3, Math.max(1, Math.hypot(h.x - p.x, h.z - p.z) / 6)) : 1; return [p.x, p.y + 2.3 + 0.33 * k, p.z]; }, () => chatStart('clerk'), () => A.tp && A.tp.where === 2 && !!A.shop && !!(chatApi() && chatApi().hooks.clerk) && UI.open !== 'chat');
+  addSign('chatClerk', 'CHAT WITH GROK', '#7dfcff', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()), h = S.head, k = h ? Math.min(3, Math.max(1, Math.hypot(h.x - p.x, h.z - p.z) / 6)) : 1; return [p.x, p.y + 2.3 + 0.33 * k, p.z]; }, () => chatStart('clerk'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway() && !!(chatApi() && chatApi().hooks.clerk) && UI.open !== 'chat');
   addSign('chatVisitor', 'CHAT WITH GROK', '#7dfcff', () => { const v = window.__grokVisit, g = v && v.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => chatStart('visitor'),
     () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || UI.open === 'chat' || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
@@ -580,15 +602,66 @@ export function setupVR(A) {
   const _sph = new THREE.Sphere(); let kioskBox = null;
   function nbBox() { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()), z = n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0;
     return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
+  // ---------- v12 (t374u): the CHESS table in the shop ----------
+  // Point + trigger at the table (or its CHESS · PLAY sign) = sit down. chesstable.js (the same code as the flat game) walks Grok over from
+  // the counter and sits him opposite. Seated: the rig turns once to face the board and follows the sit / stand tween; no walking or turning.
+  // Once Grok sits, the real chess page (chess-play/: same pieces, battles, robot arm) is painted by its own window.__chessVR painter onto a
+  // panel over the table; ray + trigger press / drag / release go into that page at the same spot. GRIP (short press) = stand up.
+  const chessT = () => window.__chessTable || null, CHW = 1180, CHH = 720, CPW = 1.36, CPH = CPW * CHH / CHW;
+  const chessM = panel(CPW, CPH, CHW, CHH); chessM.name = 'vrChess'; chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
+  const CS = { was: 'idle', down: false, hand: null, u: 0, v: 0, drawT: -9, draws: 0, ptr: 0, placed: false, aligns: 0, downEl: null };
+  S.chess = CS; S.chessM = chessM; S.backs = { menu: 0, chess: 0, game: 0, nb: 0 };
+  const chessIn = () => { const C = chessT(); return !!C && monkey.position.x > C.WXp / 2 && (!A.tp || A.tp.where !== 1 || monkey.position.x > C.WXp / 2); };
+  const chessFree = () => { const C = chessT(); return !!C && C.state === 'idle' && C.gstate === 'home' && chessIn(); };
+  function chessGo() { const C = chessT(); if (!C || play.mode !== 'walk') return false; uiClose(); const ok = C.start(); if (ok !== false) S.chessStarts = (S.chessStarts || 0) + 1; return ok; }
+  S.chessGo = chessGo;
+  function chessBox() { const C = chessT(), b = C.BOX; return new THREE.Box3(new THREE.Vector3(C.WXp + b.x0, 0, b.z0), new THREE.Vector3(C.WXp + b.x1, 1.25, b.z1)); }
+  addSign('chess', 'CHESS · PLAY', '#ffe14a', () => { const C = chessT(); return C ? [C.CX, 1.95, C.CZ] : null; }, chessGo, chessFree);
+  const chessWin = () => { const C = chessT(); try { return C && C.state === 'play' && C.frame ? C.frame.contentWindow : null; } catch (e) { return null; } };
+  function chessPtr(w, type, u, v) { try { const x = Math.max(0, Math.min(w.innerWidth - 1, u * w.innerWidth)), y = Math.max(0, Math.min(w.innerHeight - 1, v * w.innerHeight)), d = w.document, t = d.elementFromPoint(x, y) || d.body, down = type !== 'pointerup';
+      const base = { clientX: x, clientY: y, screenX: x, screenY: y, bubbles: true, cancelable: true, composed: true, button: 0, buttons: down ? 1 : 0, view: w };
+      t.dispatchEvent(new w.PointerEvent(type, Object.assign({ pointerId: 1, pointerType: 'mouse', isPrimary: true, pressure: down ? 0.5 : 0 }, base)));
+      t.dispatchEvent(new w.MouseEvent({ pointerdown: 'mousedown', pointermove: 'mousemove', pointerup: 'mouseup' }[type], base));
+      if (type === 'pointerdown') CS.downEl = t;
+      if (type === 'pointerup') { const a = CS.downEl; let c = t; if (a && a !== t) { c = a.contains(t) ? a : t.contains(a) ? t : null; } if (c) c.dispatchEvent(new w.MouseEvent('click', base)); CS.downEl = null; }
+      CS.u = u; CS.v = v; CS.ptr++; } catch (e) { S.lastError = 'chessPtr ' + e; } }
+  S.chessPtr = (type, u, v) => { const w = chessWin(); if (w) chessPtr(w, type, u, v); };
+  function chessUp() { if (CS.down) { const w = chessWin(); if (w) chessPtr(w, 'pointerup', CS.u, CS.v); } CS.down = false; CS.hand = null; }
+  function placeChess() { const C = chessT(), h = S.head || { y: 1.5 }; chessM.position.set(C.CX + 0.06, Math.max(0.95, Math.min(1.5, h.y - 0.22)), C.CZ); chessM.rotation.set(-0.15, -Math.PI / 2, 0, 'YXZ'); chessM.updateMatrixWorld(true); CS.placed = true; }
+  // before the step: seat the headset. Returns true while the chess table has you (sitting, playing, standing up).
+  function chessPre() { const C = chessT(), now = C ? C.state : 'idle', ch = now !== CS.was;
+    if (ch) { if (CS.was === 'idle' && S.head) { turnRig(-Math.PI / 2 - S.head.yaw); CS.aligns++; }   // face the board (+x) once
+      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; }
+      CS.was = now; }
+    if (now !== 'idle' && S.head && (ch || now === 'sit' || now === 'stand')) moveRig(monkey.position.x - S.head.x, monkey.position.z - S.head.z);   // the headset rides the sit / stand tween
+    return now !== 'idle'; }
+  // after the step: the board panel, its ray + trigger, skip, grip = stand up
+  function chessPost(dt, L, R, order) { const C = chessT(), anyP = k => !!((L && L[k]) || (R && R[k])); if (UI.open) uiClose();
+    if (anyP('gripDown')) { chessUp(); chessM.visible = false; C.exit('grip'); S.backs.chess++; pulse((L && L.gripDown ? L : R).src, 0.7, 50); return; }
+    if (C.grokBusy && C.gstate !== 'seated' && C.gstate !== 'sitdown' && (anyP('aDown') || anyP('trigDown'))) C.skip();
+    const w = chessWin(), P = w && w.__chessVR; if (!P) { chessM.visible = false; return; }
+    try { if (w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {}   // the chess page's frames (robot arm, battles, piece slides) run from the XR loop
+    if (!CS.placed) placeChess(); chessM.visible = true;
+    if (S.frames - CS.drawT >= 2 || CS.down) { CS.drawT = S.frames; try { const cv = P.draw(), u = chessM.userData; u.g.clearRect(0, 0, CHW, CHH); u.g.drawImage(cv, 0, 0, CHW, CHH); u.tex.needsUpdate = true; CS.draws++; S.texUploads++; } catch (e) { S.lastError = 'chess ' + e; } }
+    let aim = null;
+    for (const [hand, Pd] of order) { const c = ctrlFor(hand); if (!c || !Pd) continue; const ray = rayOf(c), t = rectHit(ray, chessM, RAY_MAX); if (t == null) continue;
+      const p = ray.at(t, new THREE.Vector3()), lp = chessM.worldToLocal(p.clone()), u = lp.x / CPW + 0.5, v = 0.5 - lp.y / CPH;
+      c.userData.ray.scale.z = t; c.userData.ray.material.color.setHex(0xffe14a);
+      if (!aim || hand === CS.hand) { aim = { hand, u, v, P: Pd }; dot.position.copy(p); dot.visible = true; } }
+    if (!CS.down) { if (aim && aim.P.trigDown) { CS.down = true; CS.hand = aim.hand; chessPtr(w, 'pointerdown', aim.u, aim.v); pulse(aim.P.src, 0.4, 25); } }
+    else { const Ph = CS.hand === 'right' ? R : L, a = aim && aim.hand === CS.hand ? aim : null;
+      if (Ph && Ph.trig) { if (a) chessPtr(w, 'pointermove', a.u, a.v); }
+      else { chessPtr(w, 'pointerup', a ? a.u : CS.u, a ? a.v : CS.v); CS.down = false; CS.hand = null; } } }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
   function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
     for (const g of signs) { if (!g.m.visible) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
     const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
-    const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
+    const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2 && !grokAway()) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
+    if (chessFree()) { const p = ray.intersectBox(chessBox(), _hit); if (p) take(p.distanceTo(ray.origin), p, chessGo, 'chessTable'); }   // v12: the chess table itself
     return best; }
   function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
-    if (w) { const hv = S.hoverTarget === g.id || (g.id === 'tickets' && S.hoverTarget === 'kiosk') || (g.id === 'nb' && S.hoverTarget === 'nbWindow') || (g.id === 'shop' && S.hoverTarget === 'shop'); g.m.material.color.setHex(hv ? 0xffffff : 0xb8b8c8); g.m.userData.hl = hv;
+    if (w) { const hv = S.hoverTarget === g.id || (g.id === 'tickets' && S.hoverTarget === 'kiosk') || (g.id === 'nb' && S.hoverTarget === 'nbWindow') || (g.id === 'shop' && S.hoverTarget === 'shop') || (g.id === 'chess' && S.hoverTarget === 'chessTable'); g.m.material.color.setHex(hv ? 0xffffff : 0xb8b8c8); g.m.userData.hl = hv;
       g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6)) * (hv ? 1.12 : 1)); } } } }   // far signs grow so they stay readable / easy to point at
 
   // ---------- never pitch black (t349u) ----------
@@ -624,7 +697,7 @@ export function setupVR(A) {
     A.resumeFlat();
   });
 
-  function pump() { const gf = play.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && (S.frames & 1)) continue;
+  function pump() { const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue;
     try { const w = f.contentWindow; if (w && w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} } }
 
   // ---------- t355u: equipped gear in the arcade world (not in a cabinet): JETPACK -> hold A to fly, LASER PISTOL -> B shoots ----------
@@ -726,6 +799,7 @@ export function setupVR(A) {
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
     S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
+    if (chessPre()) { gear(false, dt); if (S.head) st.yaw = S.head.yaw; return; }   // v12: seated at the chess table: no walking / turning
     gear(walk && !(A.nb && A.nb.playing), dt);
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
@@ -748,7 +822,8 @@ export function setupVR(A) {
     // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
     if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; } if (UI.open) uiClose(); }
     monkey.visible = false;
-    if (S.head) monkey.rotation.y = S.head.yaw + Math.PI;   // the avatar (seen in the mirror / by other players) faces where you look
+    const chessOn = !!(chessT() && chessT().state !== 'idle');
+    if (S.head && !chessOn) monkey.rotation.y = S.head.yaw + Math.PI;   // the avatar (seen in the mirror / by other players) faces where you look
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
@@ -763,15 +838,18 @@ export function setupVR(A) {
     for (const c of ctrls) { const ray = c.userData.ray; if (!c.userData.src) { ray.visible = false; continue; } ray.visible = true; ray.scale.z = 3; ray.material.color.setHex(0x3ff3ff); }
     const order = [['right', R], ['left', L]];
     const anyP = k => !!((L && L[k]) || (R && R[k]));
-    if (mode === 'walk' && nbOn) {   // NEON BRICKS: sticks move (step() -> nb.joy), A/X/trigger rotate, B/Y hard drop, hold grip = leave
+    if (mode !== 'walk' && chessOn) chessM.visible = false;
+    if (mode === 'walk' && chessOn) chessPost(dt, L, R, order);   // v12: at the chess table
+    else if (mode === 'walk' && nbOn) {   // NEON BRICKS: sticks move (step() -> nb.joy), A/X/trigger rotate, B/Y hard drop, hold grip = leave
       const n = nbApi(); if (UI.open) uiClose();
       if (anyP('aDown') || anyP('trigDown')) { n.rotate(); S.nbRot++; }
       if (anyP('bDown')) { n.hardDrop(); S.nbDrops++; }
       const grip = (L && L.grip) || (R && R.grip); S.nbGripT = grip ? (S.nbGripT || 0) + dt : 0;   // own timer (S.gripT is reset outside cabinet games)
-      if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
+      if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; S.backs.nb++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
       if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
+      else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
       for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
         if (UI.open) { const u = uiHit(ray);
@@ -813,7 +891,7 @@ export function setupVR(A) {
       gameInput(w, aimScreen, dt);
     } else { if (Object.keys(S.held).length || G.ptrDown) releaseAll(); G.placed = false; G.rect = null; S.gripT = 0; }
     // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
-    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
+    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
       for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
     // HUD on the left controller (or under your view when there is none)
@@ -822,8 +900,9 @@ export function setupVR(A) {
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK' };
-    const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
+    const CTs = chessOn ? chessT() : null, chessLine = CTs ? (CTs.state === 'play' ? 'TRIGGER: MOVE A PIECE · GRIP: STAND UP' : CTs.state === 'stand' ? 'STANDING UP' : CTs.gstate === 'seated' || CTs.gstate === 'sitdown' ? 'GROK SITS DOWN · GRIP: STAND UP' : 'GROK IS COMING · A: SKIP · GRIP: STAND UP') : null;
+    const line2 = S.msgT > 0 ? S.msg : chessLine ? chessLine : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : UI.open ? 'TRIGGER: PRESS · GRIP: BACK' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
     batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
@@ -850,7 +929,7 @@ export function setupVR(A) {
     const L = IN.left, R = IN.right, m = play.cur, map = MAPS[m && m.key] || MAPS.default;
     // HOLD GRIP (either hand) = leave the machine
     const grip = (L && L.grip) || (R && R.grip); S.gripT = grip ? (S.gripT || 0) + dt : 0;
-    if (S.gripT >= GRIP_EXIT_S) { S.gripT = 0; releaseAll(); pulse((L && L.grip ? L : R).src, 0.8, 60); play.exit('vr'); S.exits++; return; }
+    if (S.gripT >= GRIP_EXIT_S) { S.gripT = 0; releaseAll(); pulse((L && L.grip ? L : R).src, 0.8, 60); play.exit('vr'); S.exits++; S.backs.game++; return; }
     if (!w || play.mode !== 'game') return;
     const any = k => !!((L && L[k]) || (R && R[k])), anyAB = map.handAB === 'right' ? (k => !!(R && R[k])) : any;
     if (play.sub === 'demo') {   // attract screen: A / X / trigger = insert the ticket price, then start

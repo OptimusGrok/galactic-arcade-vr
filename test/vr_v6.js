@@ -99,7 +99,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     // ---- laser pistol from the right controller ----
     await place(M.p[0] + M.n[0] * 3, M.p[2] + M.n[2] * 3, 0);
     await page.evaluate(() => { const g = window.__gaPlayer; window.__arcade.play.addTickets(10); });
-    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); await tap('close');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); await tap('pack'); await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); await tap('close');
     chk(await page.evaluate(() => window.__gaVR.gear().laser && window.__roomFire.shown), 'LASER PISTOL on');
     const rig = await page.evaluate(() => window.__gaVR.rig);
     const shoot = async (target, holdMs = 300) => { await aim(target); await H.btn(page, 'right', 'b-button', 1); await H.frames(page, 6); await page.waitForTimeout(holdMs); await H.btn(page, 'right', 'b-button', 0); await H.frames(page, 4);

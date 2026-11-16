@@ -9,7 +9,9 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
   const LOCAL = [0.2, 1.3, -0.2];
   const aim = async (target, hand = 'right') => { await H.aim(page, hand, LOCAL, target); await H.frames(page, 3); };
   const aimPress = async (target, hand = 'right') => { await aim(target, hand); await H.press(page, hand, 'trigger'); };
-  const btnAt = id => page.evaluate(id => window.__gaVR.ui.btnWorld(id), id);
+  // v12 (t388u): accessories are 4 picture tiles per page -> page with > until the item shows
+  const pageTo = async id => { for (let i = 0; i < 4 && !(await page.evaluate(id => window.__gaVR.ui.btns.some(b => b.id === id), id)); i++) { await aimPress(await btnAt('next')); await H.frames(page, 3); } return btnAt(id); };
+  const btnAt = async id => { const w = await page.evaluate(id => window.__gaVR.ui.btnWorld(id), id); if (!w) console.log('DBG no ' + id + ' in ' + await page.evaluate(() => window.__gaVR.ui.kind + ': ' + window.__gaVR.ui.btns.map(b => b.id).join(','))); return w; };
   const sign = id => page.evaluate(id => { const s = window.__gaVR.signs().find(q => q.id === id); return s ? s.at : null; }, id);
   // ray length vs the distance from the controller to the thing it points at
   const rayCut = async (target, hand = 'right') => page.evaluate(([hand, target]) => { const r = window.__gaVR.rayLens ? window.__gaVR.rayLens()[hand] : null; if (!r || !r.o) return { len: null, dist: -1 };
@@ -20,11 +22,11 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await place(2, 4, 0);
     // ---- laser stops at a menu button (and highlights it) ----
     if (!process.env.MIRROR_ONLY) {
-    await H.press(page, 'right', 'b-button'); const bw = await btnAt('beam'); await aim(bw);
+    await H.press(page, 'right', 'b-button'); const bw = await btnAt('pack'); await aim(bw);
     let rc = await rayCut(bw); const hov = await page.evaluate(() => window.__gaVR.ui.kind === 'menu');
     chk(Math.abs(rc.len - rc.dist) < 0.06, 'ray stops at the menu button: ray ' + rc.len.toFixed(2) + ' m, button ' + rc.dist.toFixed(2) + ' m away');
     chk(hov, 'B opened the menu');
-    await aimPress(await btnAt('close2'));
+    await aimPress(await btnAt('close'));
     }
     // ---- beam to the shop ----
     await page.evaluate(() => { window.__tpTimeScale = 3; window.__arcade.play.addTickets(60); window.__gaVR.ui.beam(); });
@@ -50,12 +52,12 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await aimPress(ws); chk((await st()).panel === 'ward', 'point at ACCESSORIES + trigger opens the accessories');
     await aimPress(await btnAt('cat_glasses'));
     const T0 = await page.evaluate(() => window.__gaPlayer.balance());
-    await aimPress(await btnAt('w_glasses_monocle'));
+    await aimPress(await pageTo('w_glasses_monocle'));
     let g = await page.evaluate(() => ({ on: window.__gaPlayer.p.glasses, owned: window.__gaPlayer.has('glasses', 'monocle'), t: window.__gaPlayer.balance(), buys: window.__gaVR.wardBuys }));
     chk(g.buys === 1 && g.on === 'monocle' && g.owned && g.t === T0 - 5, 'bought + wearing the MONOCLE with the ray (' + T0 + ' -> ' + g.t + ' tickets)');
     await aimPress(await btnAt('remove')); g = await page.evaluate(() => window.__gaPlayer.p.glasses);
     chk(g === 'none', 'REMOVE takes the glasses off');
-    await aimPress(await btnAt('w_glasses_monocle')); g = await page.evaluate(() => ({ on: window.__gaPlayer.p.glasses, t: window.__gaPlayer.balance() }));
+    await aimPress(await pageTo('w_glasses_monocle')); g = await page.evaluate(() => ({ on: window.__gaPlayer.p.glasses, t: window.__gaPlayer.balance() }));
     chk(g.on === 'monocle' && g.t === T0 - 5, 'owned items equip again for free');
     await aimPress(await btnAt('cat_hat')); const hats = await page.evaluate(() => window.__gaVR.ui.btns.filter(b => /^w_hat_/.test(b.id)).length); chk(hats > 0, 'HAT tab lists hats (' + hats + ')');
     await aimPress(await btnAt('close'));

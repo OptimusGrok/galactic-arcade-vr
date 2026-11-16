@@ -57,6 +57,10 @@
   var sentinel = null, midSX = 0, midSY = 0;
   var lastScale = 1, lastVvX = 0, lastVvY = 0, pinchDist0 = 0, gestureScale0 = 1;
   var lastWheelStamp = 0;
+  // t377u: last wheel time PER CHANNEL. The scroll / visualViewport fallbacks only drop an event as a duplicate of a wheel on the SAME
+  // channel; before, any wheel (the left stick walking) muted the other channel for 50 ms at a time, so the camera could not turn while walking.
+  var lastWheelAt = { move: 0, look: 0 };
+  function dupOf(look, now) { return now - lastWheelAt[look ? 'look' : 'move'] < 50; }
   var counts = { wheel: 0, mousewheel: 0, scroll: 0, vvresize: 0, vvscroll: 0, gesture: 0, touch: 0, pinch: 0, key: 0, gamepad: 0, pointer: 0 };
   var xrInfo = { inline: null, 'immersive-vr': null, 'immersive-ar': null };
 
@@ -195,11 +199,14 @@
   function isHoldBtn(el) { try { return !!(el && el.closest && el.closest('#bFly, #bFire, #bZoom, #bJump, button, [role="button"]')); } catch (e) { return false; } }
   function notePtrTrack(e) {
     if (!e || e.pointerId == null || e.clientX == null) return;
-    var id = String(e.pointerId), p = ptrs[id] || (ptrs[id] = { id: id, type: '', x: 0, y: 0, t: 0, n: 0, hx: null, pressed: false, hold: false });
+    var id = String(e.pointerId), p = ptrs[id] || (ptrs[id] = { id: id, type: '', x: 0, y: 0, t: 0, n: 0, hx: null, pressed: false, hold: false, first: performance.now() });
     var px = p.x, py = p.y;
-    p.type = e.pointerType || p.type; p.x = e.clientX; p.y = e.clientY; p.t = performance.now(); p.n++;
-    if (e.type === 'pointerdown') { p.pressed = true; p.hold = isQuest() && isHoldBtn(e.target); return; }
-    if (!p.pressed) { p.hx = p.hx == null ? p.x : p.hx * 0.7 + p.x * 0.3; return; }
+    p.type = e.pointerType || p.type; p.x = e.clientX; p.y = e.clientY; p.t = performance.now(); p.n++; (p.ts || (p.ts = [])).push(p.t); if (p.ts.length > 6) p.ts.shift();
+    if (!p.pressed && e.type !== 'pointerdown') p.hx = p.hx == null ? p.x : p.hx * 0.7 + p.x * 0.3;
+    tryLock(p);
+    if (e.type === 'pointerdown') { p.pressed = true; p.hold = isQuest() && isHoldBtn(e.target); p.cvDrag = isQuest() && !p.hold && !!(e.target && e.target.tagName === 'CANVAS') && !startUp(); return; }
+    if (!p.pressed) return;
+    if (p.cvDrag && e.type === 'pointermove') { var cx0 = p.x - px, cy0 = p.y - py; if (Math.abs(cx0) + Math.abs(cy0) >= 0.5) cvDragMove(p, cx0, cy0); return; }
     if (p.hold && e.type === 'pointermove' && !startUp()) {
       var mx = p.x - px, my = p.y - py; if (Math.abs(mx) < 0.5 && Math.abs(my) < 0.5) return;
       var hev = { src: 'held', dx: -mx * 2, dy: -my * 2, dz: 0, mode: 0, cx: p.x, cy: p.y, pid: id, ptype: p.type };
@@ -209,23 +216,70 @@
       if (hc.look) ingestLook('held', a.x, a.y); else ingest('held', a.x, a.y);
     }
   }
-  function ptrUp(e) { if (!e || e.pointerId == null) return; var p = ptrs[String(e.pointerId)]; if (p) { p.pressed = false; p.hold = false; } }
+  // v12 (t383u): HAND LOCK. Each ray (pointerId) is locked to a hand ONCE and never flips, so where the controllers point no longer
+  // swaps MOVE / LOOK mid-session. Locks: (1) the first time two rays are live, by which one hovers further right (R = LOOK);
+  // (2) a new ray while the other hand's ray is live = the opposite hand; (3) a new ray with no live partner inherits the hand of the
+  // quiet locked ray it appeared next to (Quest gives a controller a new pointerId per press). A wheel landing where both rays
+  // overlap keeps the previous wheel's ray (latch) instead of guessing.
+  var hands = {}, lockLog = [], lastWheelPid = null, lastWheelPidAt = 0, LIVE_MS = 1500, PAIR_MS = 400;
+  // two rays count as BOTH LIVE only if each sent >= 3 events in the last 400 ms (a Quest re-id leaves the old id quiet; Dave's Quest shows one ray)
+  function together(a, b) { return !!(a && b && a.first != null && b.first != null && a.t > b.first + 0.5 && b.t > a.first + 0.5); }   // both sent events after the other appeared (not a re-id)
+  function busyRay(q, now) { if (!q.ts) return false; var n = 0; for (var i = 0; i < q.ts.length; i++) if (now - q.ts[i] < PAIR_MS) n++; return n >= 3; }
+  function lockHand(id, h, why) { if (hands[id]) return; hands[id] = h; lockLog.unshift(id + '=' + h + ' (' + why + ')'); if (lockLog.length > 6) lockLog.length = 6; }
+  function hxOf(p) { return p.hx != null ? p.hx : p.x; }
+  function tryLock(p) {
+    if (!p || hands[p.id] || p.n < 2) return;
+    var now = performance.now(), k, q, liveL = 0, liveR = 0, liveU = null, near = null, nd = 1e9, d;
+    for (k in ptrs) { q = ptrs[k]; if (k === p.id) continue; var live = now - q.t < LIVE_MS;
+      if (hands[k]) { if (live) { if (hands[k] === 'L') liveL++; else liveR++; }
+        else if (now - q.t < 600000) { d = Math.abs(q.x - p.x) + Math.abs(q.y - p.y); if (d < nd) { nd = d; near = q; } } }
+      else if (busyRay(q, now) && busyRay(p, now) && together(p, q)) liveU = q; }
+    if (liveL && liveR) {   // both hands live: the new id replaces the ray that went quiet first (the controller that just pressed)
+      var old = null; for (k in ptrs) { q = ptrs[k]; if (k !== p.id && hands[k] && now - q.t < LIVE_MS && (!old || q.t < old.t)) old = q; }
+      if (old && now - old.t > 100) return lockHand(p.id, hands[old.id], 'reid of ' + old.id);
+      return; }
+    if (liveL && !liveR) return lockHand(p.id, 'R', 'other=L');
+    if (liveR && !liveL) return lockHand(p.id, 'L', 'other=R');
+    if (!liveL && !liveR && near && nd < 220) return lockHand(p.id, hands[near.id], 'reid of ' + near.id);
+    if (liveU && Math.abs(hxOf(p) - hxOf(liveU)) > 40) { var pr = hxOf(p) > hxOf(liveU); lockHand(p.id, pr ? 'R' : 'L', 'pair x'); lockHand(liveU.id, pr ? 'L' : 'R', 'pair x'); }
+  }
+  var oneRay = { n: 0, hinted: false }, dragLook = { n: 0, skipped: 0, lastTouch: 0, lastMouse: 0 };
+  function oneRaySeen() { oneRay.n++; if (oneRay.hinted || oneRay.n < 20 || cal) return; oneRay.hinted = true;
+    try { ensureCalUi(); calSay('Both sticks WALK here (the Quest browser sends them the same). TURN: hold the TRIGGER on the floor and drag, or tap STICK WALK to switch the sticks to LOOK'); setTimeout(function () { if (!cal) calSay(''); }, 7000); } catch (e) {} }
+  // v12 (Dave's 2nd photo): pushing the LEFT stick sideways sends wheel dx (MOVE, strafe) AND the Quest reports that ray as pressed
+  // ("DOWN", touch=27) with drag moves -> main.js's touch / mouse drag-look turned the camera. A drag while stick wheels are arriving is
+  // the stick, not the hand: stickBusy() tells main.js (and the trigger-drag turn here) to ignore it.
+  var dragBlocked = 0;
+  function stickBusy(ms) { var now = performance.now(), m = ms || 220; return isQuest() && (now - lastWheelEvt < m || now - (lastScrollStamp ? lastScrollIn : 0) < m); }
+  function cvDragMove(p, mx, my) {   // trigger held on the 3D view: drag = turn the camera (main.js look(), like a touch drag)
+    var now = performance.now(); if (stickBusy()) { dragBlocked++; return; } if (now - dragLook.lastTouch < 150 || now - dragLook.lastMouse < 150) { dragLook.skipped++; return; }   // main.js already turns from touch / mouse drags
+    if (typeof root.__gaLook === 'function') { root.__gaLook(mx * 1.4, my * 1.4); dragLook.n++; }
+  }
+  function ptrUp(e) { if (!e || e.pointerId == null) return; var p = ptrs[String(e.pointerId)]; if (p) { p.pressed = false; p.hold = false; p.cvDrag = false; } }
   function ptrAt(cx, cy) {
     if (cx == null) return null;
     var best = null, bd = 1e9, now = performance.now(), k, p, d;
     for (k in ptrs) { p = ptrs[k]; if (now - p.t > 3000) continue; d = Math.abs(p.x - cx) + Math.abs(p.y - cy); if (d < bd) { bd = d; best = p; } }
     return best && bd <= 48 ? best : null;
   }
+  function ptrAtWheel(cx, cy) {   // v12: like ptrAt, but where two rays of different hands overlap, keep the ray the previous wheel used
+    if (cx == null) return null;
+    var now = performance.now(), k, p, d, a = null, ad = 1e9, b = null, bd = 1e9;
+    for (k in ptrs) { p = ptrs[k]; if (now - p.t > 3000) continue; d = Math.abs(p.x - cx) + Math.abs(p.y - cy); if (d < ad) { b = a; bd = ad; a = p; ad = d; } else if (d < bd) { b = p; bd = d; } }
+    if (!a || ad > 48) return null;
+    if (b && bd <= 48 && bd - ad < 16 && hands[a.id] && hands[b.id] && hands[a.id] !== hands[b.id] && lastWheelPid && now - lastWheelPidAt < 400 && (lastWheelPid === a.id || lastWheelPid === b.id)) { a = ptrs[lastWheelPid]; a.latch = (a.latch || 0) + 1; }
+    lastWheelPid = a.id; lastWheelPidAt = now; return a;
+  }
   function otherPtr(id) {
     var best = null, now = performance.now(), k, p;
-    for (k in ptrs) { p = ptrs[k]; if (k === id || now - p.t > 60000 || p.n < 2) continue; if (!best || p.t > best.t) best = p; }
+    for (k in ptrs) { p = ptrs[k]; if (k === id || !busyRay(p, now) || !together(p, ptrs[id])) continue; if (!best || p.t > best.t) best = p; }   // v12: LIVE rays only (v9 compared against rays gone quiet for up to 60 s = the MOVE/LOOK flip)
     return best;
   }
   function stepQ(px) { px = Math.abs(px); return px < 0.5 ? 0 : Math.round(Math.log(px) / Math.LN2 * 2) / 2; }
   function feats(ev) {
     var W = root.innerWidth || 1;
-    return { src: ev.src, mode: String(ev.mode || 0), ray: ev.pid == null ? '-' : String(ev.pid), side: ev.cx == null ? '-' : (ev.cx < W / 2 ? 'L' : 'R'),
-      step: String(stepQ(Math.max(Math.abs(ev.dx || 0), Math.abs(ev.dy || 0)))) };
+    // v12: no ray id / screen side here: the Quest gives a ray a new pointerId per press and the side follows where you point (both flipped)
+    return { src: ev.src, mode: String(ev.mode || 0), step: String(stepQ(Math.max(Math.abs(ev.dx || 0), Math.abs(ev.dy || 0)))) };
   }
   function classify(ev) {
     if (lookToggle) return { look: true, why: 'toggle' };
@@ -236,10 +290,15 @@
       if (v !== 0) return { look: v > 0, why: 'cal:' + used.join('+') };
     }
     if (ev.pid != null) {
-      var me = ptrs[String(ev.pid)], o = otherPtr(String(ev.pid)), mx = me && (me.hx != null ? me.hx : me.x), ox = o && (o.hx != null ? o.hx : o.x);
-      if (me && o && Math.abs(mx - ox) > 4) return { look: mx > ox, why: '2ray' };
+      var hl = hands[String(ev.pid)]; if (hl) return { look: hl === 'R', why: 'lock ' + hl };   // v12: never flips once locked
+      var me = ptrs[String(ev.pid)], o = otherPtr(String(ev.pid)), mx = me && hxOf(me), ox = o && hxOf(o);
+      if (me && o && busyRay(me, performance.now()) && Math.abs(mx - ox) > 40) { var lk = mx > ox; lockHand(me.id, lk ? 'R' : 'L', '2ray'); if (!hands[o.id]) lockHand(o.id, lk ? 'L' : 'R', '2ray'); return { look: lk, why: '2ray' }; }
     }
-    return { look: false, why: 'default' };
+    // v12 (Dave's Quest photo): only ONE ray is live at a time and both sticks arrive as the same plain wheel at that ray -> nothing tells
+    // the sticks apart, so the wheel always WALKS (stable, never flips). Turning: trigger-drag on the floor / screen, the STICK LOOK button,
+    // or STICK SETUP (if the sticks differ in delta mode / step size on this headset).
+    if (ev.pid != null && (ev.src === 'wheel' || ev.src === 'scroll' || ev.src === 'vvscroll')) oneRaySeen();
+    return { look: false, why: ev.pid != null ? '1ray' : 'default' };
   }
   function logEv(ev, c) {
     ev.cls = c.look ? 'LOOK' : 'MOVE'; ev.why = c.why; ev.t = performance.now();
@@ -332,6 +391,31 @@
   }
 
 
+  // ---- v12 (t382u): GRIP = BACK in flat Quest mode ----
+  // The 2D Quest Browser does not document a page event for the grip, so every candidate is mapped to BACK and counted in ?qdbg=1:
+  // a gamepad grip (xr-standard button 1, if the browser ever exposes the controllers), a non-primary pointer button (button 1/2/3+,
+  // contextmenu), a BrowserBack/GoBack key, and the browser's own back (B/Y on the Quest = history back) through a one-entry history trap.
+  // BACK = the game's own Escape (it closes the open panel / overlay, leaves a cabinet game, stands up from chess, closes the pool table...).
+  var backN = {}, backLast = '', backAt = 0, trapOn = false, padGrip = {};
+  function inXR() { try { return !!(document.body && document.body.classList.contains('vr')); } catch (e) { return false; } }
+  function backFire(src) {
+    var now = performance.now(); backN[src] = (backN[src] || 0) + 1;
+    if (inXR() || now - backAt < 250) return false; backAt = now; backLast = src;
+    try { if (typeof root.__gaBack === 'function') { root.__gaBack(src); return true; } } catch (e) {}
+    try { var t = document.activeElement && document.activeElement !== document.body && document.activeElement.tagName !== 'IFRAME' ? document.activeElement : (document.body || document.documentElement);
+      ['keydown', 'keyup'].forEach(function (ty) { var ev = new KeyboardEvent(ty, { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }); try { Object.defineProperty(ev, 'keyCode', { get: function () { return 27; } }); } catch (e) {} t.dispatchEvent(ev); });
+      backN.sent = (backN.sent || 0) + 1; } catch (e) {}
+    return true;
+  }
+  function backTrap() {
+    if (trapOn || !isQuest()) return; trapOn = true;
+    try { history.pushState({ gaBackTrap: 1 }, ''); addEventListener('popstate', function () { backFire('browser back (B/Y)'); try { history.pushState({ gaBackTrap: 1 }, ''); } catch (e) {} }); } catch (e) {}
+  }
+  function listenBack() {
+    addEventListener('contextmenu', function (e) { if (!isQuest()) return; if (e.cancelable) e.preventDefault(); backFire('contextmenu'); }, true);
+    addEventListener('pointerdown', function (e) { backTrap(); if (isQuest() && e && e.button > 0) backFire('pointer button ' + e.button); }, true);
+    addEventListener('keydown', function (e) { if (!e) return; var k = e.key || '', c = e.code || ''; if (/^(BrowserBack|GoBack)$/.test(k) || /^(BrowserBack|GoBack)$/.test(c) || e.keyCode === 166) { if (e.cancelable) e.preventDefault(); backFire('key ' + (c || k)); } }, true);
+  }
   function readPads() {
     var pads = padList();
     var move = { x: 0, y: 0, mag: 0 }, look = { x: 0, y: 0, mag: 0 };
@@ -364,7 +448,9 @@
       }
       if (mapping === 'xr-standard') {
         if (pressed(gp, 0) || pressed(gp, 4)) fire = true;
-        if (pressed(gp, 1) || pressed(gp, 5)) fly = true;
+        if (pressed(gp, 5)) fly = true;
+        var gk = String(gp.index != null ? gp.index : i) + (hand || ''), gn = pressed(gp, 1);   // v12: grip = BACK (edge)
+        if (gn && !padGrip[gk]) backFire('gamepad grip ' + (hand || '?')); padGrip[gk] = gn;
         if (pressed(gp, 3)) zoom = true;
       } else {
         if (pressed(gp, 0) || pressed(gp, 2) || pressed(gp, 6) || pressed(gp, 7)) fire = true;
@@ -481,11 +567,13 @@
     var ua = (s.ua || '').slice(0, 180);
     var xr = s.xr || {};
     var now = performance.now(), k, pl = [];
-    for (k in ptrs) pl.push(k + ':' + (ptrs[k].type || '?') + '@' + Math.round(ptrs[k].x) + ',' + Math.round(ptrs[k].y) + (ptrs[k].hx != null ? ' hx' + Math.round(ptrs[k].hx) : '') + (ptrs[k].pressed ? (ptrs[k].hold ? ' HOLD' : ' DOWN') : '') + ' ' + Math.round((now - ptrs[k].t) / 100) / 10 + 's n' + ptrs[k].n);
+    for (k in ptrs) pl.push(k + (hands[k] ? '[' + hands[k] + ']' : '') + ':' + (ptrs[k].type || '?') + '@' + Math.round(ptrs[k].x) + ',' + Math.round(ptrs[k].y) + (ptrs[k].hx != null ? ' hx' + Math.round(ptrs[k].hx) : '') + (ptrs[k].pressed ? (ptrs[k].hold ? ' HOLD' : ' DOWN') : '') + ' ' + Math.round((now - ptrs[k].t) / 100) / 10 + 's n' + ptrs[k].n);
     var el = evLog.map(function (e) { return (e.src === 'wheel' ? 'W' : e.src === 'scroll' ? 'S' : e.src === 'held' ? 'H' : 'V') + ' dx' + Math.round(e.dx) + ' dy' + Math.round(e.dy) + (e.dz ? ' dz' + Math.round(e.dz) : '') + ' m' + (e.mode || 0)
       + (e.ctrl ? ' C' : '') + (e.alt ? ' A' : '') + (e.meta ? ' M' : '') + (e.shift ? ' S' : '') + ' @' + (e.cx == null ? '-' : Math.round(e.cx) + ',' + Math.round(e.cy)) + ' ray' + (e.pid == null ? '-' : e.pid) + ' -> ' + e.cls + ' (' + e.why + ')'; });
-    dbgEl.textContent = 'GA Quest dbg VR v9 (left=MOVE right=LOOK)'
+    dbgEl.textContent = 'GA Quest dbg VR v12 (left=MOVE right=LOOK)'
       + '\nrays ' + (pl.length ? pl.join(' | ') : '-')
+      + '\nMODE ' + (function () { var live = 0, k2; for (k2 in ptrs) if (busyRay(ptrs[k2], now)) live++; if (live >= 2) { var ks = Object.keys(ptrs).filter(function (q) { return busyRay(ptrs[q], now); }); live = ks.some(function (a) { return ks.some(function (b) { return a !== b && together(ptrs[a], ptrs[b]); }); }) ? 2 : 1; } return live >= 2 || Object.keys(hands).length ? '2 RAYS: left ray = MOVE, right ray = LOOK (locked per ray)' : '1 RAY: stick wheel = MOVE always (dy walk, dx strafe, never turns) | TURN = trigger-drag on the floor, STICK LOOK button, or STICK SETUP'; })() + ' | drag-turns ' + dragLook.n + (dragLook.skipped ? ' (main ' + dragLook.skipped + ')' : '') + ' | stick-drags ignored ' + dragBlocked
+      + '\nhand lock ' + (Object.keys(hands).length ? Object.keys(hands).map(function (id) { var p = ptrs[id]; return 'ray' + id + '=' + hands[id] + (hands[id] === 'R' ? '(LOOK)' : '(MOVE)') + (p && now - p.t < LIVE_MS ? ' live' : ''); }).join(' | ') : 'none yet (point both controllers at the page)') + (lockLog.length ? '\n  locks: ' + lockLog.join('; ') : '')
       + '\nsetup ' + (cal ? 'RUNNING ' + cal.phase : calib && calib.rules ? calib.rules.map(function (r) { return r.k + ' L=' + r.L + ' R=' + r.R; }).join('; ') : 'none')
       + '\nlast stick events (newest first):\n ' + (el.length ? el.join('\n ') : '-')
       + '\n----'
@@ -509,6 +597,7 @@
       + ' stick=' + (lookToggle ? 'LOOK' : 'WALK')
       + '\nvv.scale=' + (s.scale == null ? '-' : (+s.scale).toFixed(3))
       + ' dpr=' + (s.dpr == null ? '-' : (+s.dpr).toFixed(3))
+      + '\ngrip/back ' + (Object.keys(backN).length ? Object.keys(backN).map(function (k) { return k + '=' + backN[k]; }).join(' ') : 'none yet (press GRIP)') + (backLast ? ' last=' + backLast : '') + ' trap=' + (trapOn ? 1 : 0)
       + '\ngamepads ' + (s.n || 0) + ' ' + ((s.pads && s.pads.length) ? s.pads.join(' | ') : '-')
       + '\nkeys ' + ((s.keys && s.keys.length) ? s.keys.join(',') : '-')
       + '\nstart=' + (startUp() ? '1' : '0')
@@ -556,12 +645,12 @@
     if (startUp()) return;
     if (pinchNow()) return;
     if (!isQuest() && lastDrag && performance.now() - lastDrag < 100) return;
-    var pm = ptrAt(lastWheelCX, lastWheelCY);
+    var pm = ptrAtWheel(lastWheelCX, lastWheelCY);
     var wev = { src: 'wheel', dx: lastWheelDx * (lastWheelMode === 1 ? 16 : lastWheelMode === 2 ? 80 : 1), dy: lastWheelDy * (lastWheelMode === 1 ? 16 : lastWheelMode === 2 ? 80 : 1), dz: e.deltaZ || 0, mode: lastWheelMode,
       ctrl: !!e.ctrlKey, meta: !!e.metaKey, alt: !!e.altKey, shift: !!e.shiftKey, cx: lastWheelCX, cy: lastWheelCY, pid: pm ? pm.id : null, ptype: pm ? pm.type : '' };
     var cls = classify(wev); logEv(wev, cls);
     if (cal) return;   // STICK SETUP: learn, don't move
-    var toLook = cls.look;
+    var toLook = cls.look; lastWheelAt[toLook ? 'look' : 'move'] = lastWheelEvt;
     var hist = toLook ? lookHist : moveHist;
     // Keep signed pixel deltas in the hist so rate × magnitude is meaningful.
     var pdx = lastWheelDx, pdy = lastWheelDy;
@@ -584,7 +673,7 @@
     recentring = false;
   }
 
-  var lastScrollStamp = 0;
+  var lastScrollStamp = 0, lastScrollIn = 0;
   function onScroll(e) {
     var stamp = e.timeStamp || performance.now();
     if (stamp && stamp === lastScrollStamp) return;
@@ -592,7 +681,6 @@
     bump('scroll');
     if (recentring) return;
     if (startUp()) { recen(); return; }
-    if (performance.now() - lastWheelEvt < 50) { recen(); return; }
     if (pinchNow()) { recen(); return; }
     if (!isQuest() && lastDrag && performance.now() - lastDrag < 100) { recen(); return; }
     var isSent = sentinel && (e.target === sentinel);
@@ -600,8 +688,11 @@
     var dx = (sentinel.scrollLeft || 0) - midSX, dy = (sentinel.scrollTop || 0) - midSY;
     recen();
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    lastScrollIn = performance.now();
     var sev = { src: 'scroll', dx: dx, dy: dy, dz: 0, mode: 0, cx: null, cy: null, pid: lastPtr.id != null && performance.now() - lastPtr.t < 3000 ? String(lastPtr.id) : null, ptype: lastPtr.type };
-    var sc = classify(sev); logEv(sev, sc);
+    var sc = classify(sev);
+    if (dupOf(sc.look, performance.now())) return;   // t377u: the scroll a wheel on the same channel already counted
+    logEv(sev, sc);
     if (cal) return;
     var h = sc.look ? lookHist : moveHist;
     pushHist(h, dx, dy, performance.now());
@@ -619,14 +710,14 @@
     var dx = x - lastVvX, dy = y - lastVvY;
     lastScale = scale; lastVvX = x; lastVvY = y;
     if (startUp()) return;
-    if (performance.now() - lastWheelEvt < 50) return;
     if (pinchNow()) return;
     if (!isQuest() && lastDrag && performance.now() - lastDrag < 100) return;
+    var nowV = performance.now();
     // Zoom in (scale up) -> forward (negative joy.y), matching "stick up zooms in".
-    if (Math.abs(dScale) > 0.001) ingestLook('vvscale', 0, -clamp(dScale * 8, -1, 1));
+    if (Math.abs(dScale) > 0.001) { if (!dupOf(true, nowV)) ingestLook('vvscale', 0, -clamp(dScale * 8, -1, 1)); }   // t377u: the zoom channel is LOOK; a walking wheel no longer mutes it
     else if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
       var vev = { src: 'vvscroll', dx: dx, dy: dy, dz: 0, mode: 0, cx: null, cy: null, pid: lastPtr.id != null && performance.now() - lastPtr.t < 3000 ? String(lastPtr.id) : null, ptype: lastPtr.type };
-      var vc = classify(vev); logEv(vev, vc); if (cal) return;
+      var vc = classify(vev); if (dupOf(vc.look, nowV)) return; logEv(vev, vc); if (cal) return;
       if (vc.look) ingestLook('vvscroll', clamp(dx / AXIS_SCALE, -1, 1), clamp(dy / AXIS_SCALE, -1, 1)); else ingest('vvscroll', clamp(dx / AXIS_SCALE, -1, 1), clamp(dy / AXIS_SCALE, -1, 1));
     }
   }
@@ -879,6 +970,9 @@
     applyCss();
     applyListeners();
     listenKeys();
+    listenBack();
+    addEventListener('touchmove', function () { dragLook.lastTouch = performance.now(); }, true);
+    addEventListener('mousemove', function (e) { if (e && e.buttons) dragLook.lastMouse = performance.now(); }, true);
     probeXR();
     if (document.body) { installScrollCatcher(); ensureLookBtn(); ensureCalUi(); }
     else document.addEventListener('DOMContentLoaded', function () { installScrollCatcher(); ensureLookBtn(); ensureCalUi(); });
@@ -905,6 +999,16 @@
     get calib() { return calib; },
     get calibrating() { return cal ? cal.phase : null; },
     get evLog() { return evLog.slice(); },
+    back: backFire,
+    get backs() { return Object.assign({ last: backLast, trap: trapOn }, backN); },
+    stickBusy: stickBusy,
+    noteDragBlocked: function () { dragBlocked++; },
+    get dragBlocked() { return dragBlocked; },
+    get oneRay() { return { n: oneRay.n, hinted: oneRay.hinted }; },
+    get dragLook() { return Object.assign({}, dragLook); },
+    get hands() { return Object.assign({}, hands); },
+    get lockLog() { return lockLog.slice(); },
+    resetHands: function () { hands = {}; lockLog = []; },
     get rays() { var o = [], k; for (k in ptrs) o.push(Object.assign({}, ptrs[k])); return o; },
     last: null,
     onFrame: null

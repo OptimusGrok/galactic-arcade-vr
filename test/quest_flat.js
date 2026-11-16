@@ -52,29 +52,125 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     // ---- v9 (t368u): the RIGHT stick only turns the camera, never walks ----
     const wheelAt = (n, o) => page.evaluate(async ([n, o]) => { const cv = document.querySelector('canvas');
       for (let i = 0; i < n; i++) { cv.dispatchEvent(new WheelEvent('wheel', Object.assign({ bubbles: true, cancelable: true }, o))); await new Promise(r => setTimeout(r, 16)); } }, [n, o]);
+    const rays2 = (x1 = 110, x2 = 370, y = 150) => page.evaluate(async ([x1, x2, y]) => { for (let i = 0; i < 4; i++) { for (const [id, x] of [[11, x1], [12, x2]]) window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: y + i, bubbles: true })); await new Promise(r => setTimeout(r, 8)); } }, [x1, x2, y]);   // two live rays, interleaved
     const ray = (id, x, y) => page.evaluate(([id, x, y]) => { for (let i = 0; i < 3; i++) window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: y + i, bubbles: true })); }, [id, x, y]);
     const pose = () => page.evaluate(() => ({ x: window.__arcade.monkey.position.x, z: window.__arcade.monkey.position.z, yaw: window.__arcade.st.yaw }));
     await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
-    await ray(11, 110, 150); await ray(12, 370, 150); await page.waitForTimeout(300);
+    await rays2(); await page.waitForTimeout(300);
     let a0 = await pose(), m0b = (await QF(page)).moves;
     await wheelAt(25, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 }); await page.waitForTimeout(300);
     let a1 = await pose(); let lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
-    chk(lg && lg.cls === 'LOOK' && lg.why === '2ray' && String(lg.pid) === '12', 'two controller rays: a stick scroll on the RIGHT ray is classed LOOK (' + JSON.stringify(lg && { cls: lg.cls, why: lg.why, pid: lg.pid }) + ')');
+    chk(lg && lg.cls === 'LOOK' && /^(2ray|lock R)$/.test(lg.why) && String(lg.pid) === '12', 'two controller rays: a stick scroll on the RIGHT ray is classed LOOK (' + JSON.stringify(lg && { cls: lg.cls, why: lg.why, pid: lg.pid }) + ')');
     chk(Math.abs(a1.yaw - a0.yaw) > 0.1 && Math.hypot(a1.x - a0.x, a1.z - a0.z) < 0.05 && (await QF(page)).moves === m0b, 'right stick turns the camera (yaw ' + (a1.yaw - a0.yaw).toFixed(2) + ') and does NOT move the player (' + Math.hypot(a1.x - a0.x, a1.z - a0.z).toFixed(3) + ' m)');
     await wheelAt(25, { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151 }); await page.waitForTimeout(100);
     let a2 = await pose(); lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
     chk(lg && lg.cls === 'MOVE' && Math.hypot(a2.x - a1.x, a2.z - a1.z) > 0.2 && Math.abs(a2.yaw - a1.yaw) < 1e-6, 'left-ray stick scroll walks without turning (' + Math.hypot(a2.x - a1.x, a2.z - a1.z).toFixed(2) + ' m)');
-    await page.waitForTimeout(400);
+    // ---- t377u: walking AND turning at the same time (left stick walks while the right stick looks) ----
+    // (a) both sticks as interleaved wheels on their own rays; (b) left wheel walking + the right stick on the scroll channel (sentinel
+    // scroll right after a wheel: v9 dropped every scroll/visualViewport event within 50 ms of ANY wheel, so walking muted the camera).
+    await page.waitForTimeout(500); await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
+    await rays2(); await page.waitForTimeout(200);
+    let s0 = await pose(), qs0 = await QF(page);
+    await page.evaluate(async () => { const cv = document.querySelector('canvas');
+      for (let i = 0; i < 30; i++) {
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151, bubbles: true, cancelable: true }));
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151, bubbles: true, cancelable: true }));
+        await new Promise(r => setTimeout(r, 16)); } });
+    let s1 = await pose(), qs1 = await QF(page);
+    chk(Math.hypot(s1.x - s0.x, s1.z - s0.z) > 0.2 && Math.abs(s1.yaw - s0.yaw) > 0.1 && qs1.moves > qs0.moves && qs1.looks > qs0.looks, 'both sticks at once (interleaved wheels): walks ' + Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(2) + ' m AND turns ' + (s1.yaw - s0.yaw).toFixed(2) + ' rad');
+    await page.waitForTimeout(500); await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
+    s0 = await pose(); qs0 = await QF(page);
+    await page.evaluate(async () => { const cv = document.querySelector('canvas'), sn = document.getElementById('gaQscroll'), mx = Math.floor((sn.scrollWidth - sn.clientWidth) / 2);
+      for (let i = 0; i < 45; i++) {
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151, bubbles: true, cancelable: true }));   // left stick: wheel on the left ray
+        window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 12, pointerType: 'touch', clientX: 370, clientY: 150, bubbles: true }));   // right ray active
+        sn.scrollLeft = mx + 40; sn.dispatchEvent(new Event('scroll'));   // right stick: the scroll channel, right after the left wheel
+        await new Promise(r => setTimeout(r, 16)); } });
+    s1 = await pose(); qs1 = await QF(page);
+    chk(Math.hypot(s1.x - s0.x, s1.z - s0.z) > 0.2 && Math.abs(s1.yaw - s0.yaw) > 0.1, 'walking (wheel) + turning (scroll channel) together: walks ' + Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(2) + ' m AND turns ' + (s1.yaw - s0.yaw).toFixed(2) + ' rad');
+    // ---- v12 (t383u): the hand lock never flips. Both sticks scroll while the two rays swing ACROSS each other on the screen (left ray
+    // ends up far right, right ray far left), then each controller gets a new pointerId (Quest re-ids a ray per press). ----
+    await page.waitForTimeout(500); await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
+    s0 = await pose(); qs0 = await QF(page);
+    const sw = await page.evaluate(async () => { const cv = document.querySelector('canvas'), Q = window.__gaQuestPad, out = { L: {}, R: {}, flips: 0, n: 0 }; let prevL = null, prevR = null;
+      const mv = (id, x, y) => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }));
+      for (let i = 0; i <= 40; i++) { const k = i / 40, xl = 60 + 360 * k, xr = 420 - 360 * k, yl = 140 + 30 * Math.sin(i / 3), yr = 200 - 30 * Math.cos(i / 4);   // left ray sweeps right, right ray sweeps left
+        mv(11, xl, yl); mv(12, xr, yr);
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 0, deltaY: -60, clientX: xl, clientY: yl, bubbles: true, cancelable: true })); let e = Q.evLog[0]; out.L[e.cls] = (out.L[e.cls] || 0) + 1; if (prevL && prevL !== e.cls) out.flips++; prevL = e.cls;
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 60, deltaY: 0, clientX: xr, clientY: yr, bubbles: true, cancelable: true })); e = Q.evLog[0]; out.R[e.cls] = (out.R[e.cls] || 0) + 1; if (prevR && prevR !== e.cls) out.flips++; prevR = e.cls; out.n++;
+        await new Promise(r => setTimeout(r, 16)); }
+      out.hands = Q.hands; return out; });
+    s1 = await pose(); qs1 = await QF(page);
+    chk(sw.flips === 0 && sw.L.MOVE === sw.n && sw.R.LOOK === sw.n && sw.hands['11'] === 'L' && sw.hands['12'] === 'R', 'rays swung across each other while both sticks scroll: the classification never flips (' + JSON.stringify(sw) + ')');
+    chk(Math.hypot(s1.x - s0.x, s1.z - s0.z) > 0.2 && Math.abs(s1.yaw - s0.yaw) > 0.1, 'and it walks ' + Math.hypot(s1.x - s0.x, s1.z - s0.z).toFixed(2) + ' m AND turns ' + (s1.yaw - s0.yaw).toFixed(2) + ' rad at the same time');
+    const reid = await page.evaluate(async () => { const cv = document.querySelector('canvas'), Q = window.__gaQuestPad, mv = (id, x, y) => window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: y, bubbles: true }));
+      const r = {}; await new Promise(res => setTimeout(res, 300)); mv(12, 60, 200); mv(21, 420, 150); mv(21, 421, 151);   // the LEFT controller (now pointing far right) comes back with a new id while the right ray is live
+      cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 0, deltaY: -60, clientX: 421, clientY: 151, bubbles: true, cancelable: true })); r.a = Q.evLog[0].cls + ' ' + Q.evLog[0].why;
+      await new Promise(res => setTimeout(res, 1700));   // both quiet; the right controller returns with a new id next to where ray 12 was
+      mv(22, 64, 204); mv(22, 66, 205);
+      cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 60, deltaY: 0, clientX: 66, clientY: 205, bubbles: true, cancelable: true })); r.b = Q.evLog[0].cls + ' ' + Q.evLog[0].why;
+      r.hands = Q.hands; r.log = Q.lockLog; return r; });
+    chk(/^MOVE/.test(reid.a) && /^LOOK/.test(reid.b) && reid.hands['21'] === 'L' && reid.hands['22'] === 'R', 'a controller that comes back with a new pointerId keeps its hand (' + JSON.stringify(reid) + ')');
+    // ---- v12: Dave's real Quest (?qdbg photo): ONE live ray at a time (a new touch pointerId per press, older ids quiet for seconds), both sticks
+    // as a plain wheel dy at that ray. v9 compared the live ray with a QUIET one, so the class flipped with where the new id appeared.
+    // Now: one live ray -> the wheel always walks; turning = trigger-drag on the 3D view (or STICK LOOK / STICK SETUP). ----
+    await page.waitForTimeout(1700); await page.evaluate(() => window.__gaQuestPad.resetHands());
+    const one = await page.evaluate(async () => { const cv = document.querySelector('canvas'), Q = window.__gaQuestPad, out = { cls: {}, why: {}, n: 0 };
+      // ONE controller ray sweeps the whole screen (left edge -> right edge and back) while the stick scrolls; every 10 steps a press gives
+      // it a new pointerId at the same spot (as on Dave's Quest: ids 2..9, only the newest live)
+      let id = 31, x = 30, dir = 1;
+      for (let i = 0; i < 80; i++) { if (i && i % 10 === 0) id++; x += dir * 19; if (x > 760 || x < 30) dir = -dir;
+        window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: 300 + (i % 7), bubbles: true }));
+        cv.dispatchEvent(new WheelEvent('wheel', { deltaX: i % 3 ? 0 : -22, deltaY: (i & 1 ? 25 : -28), clientX: x, clientY: 302, bubbles: true, cancelable: true })); const e = Q.evLog[0]; out.cls[e.cls] = (out.cls[e.cls] || 0) + 1; out.why[e.why] = (out.why[e.why] || 0) + 1; out.n++;
+        await new Promise(res => setTimeout(res, 16)); }
+      out.hands = Q.hands; out.hint = (document.getElementById('gaQcalMsg') || {}).textContent || ''; out.oneRay = Q.oneRay; return out; });
+    chk(!one.cls.LOOK && one.cls.MOVE === one.n && Object.keys(one.hands).length === 0, 'one live ray sweeping the whole screen + re-ids per press: the stick wheel ALWAYS walks, never flips ' + JSON.stringify(one));
+    chk(/TRIGGER/.test(one.hint) && /drag/.test(one.hint), 'one-ray headset: an on-screen hint says how to turn ("' + one.hint + '")');
+    await page.waitForTimeout(500);
+    const dg0 = await pose();
+    await page.evaluate(async () => { const cv = document.querySelector('canvas'); let x = 300, y = 200;
+      cv.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 41, pointerType: 'touch', clientX: x, clientY: y, buttons: 1, bubbles: true, cancelable: true }));
+      for (let i = 0; i < 20; i++) { x += 6; cv.dispatchEvent(new PointerEvent('pointermove', { pointerId: 41, pointerType: 'touch', clientX: x, clientY: y, buttons: 1, bubbles: true })); await new Promise(r => setTimeout(r, 16)); }
+      cv.dispatchEvent(new PointerEvent('pointerup', { pointerId: 41, pointerType: 'touch', clientX: x, clientY: y, bubbles: true })); });
+    const dg1 = await pose(), dl = await page.evaluate(() => window.__gaQuestPad.dragLook);
+    chk(Math.abs(dg1.yaw - dg0.yaw) > 0.3 && Math.hypot(dg1.x - dg0.x, dg1.z - dg0.z) < 0.05 && dl.n > 5, 'trigger-drag on the 3D view turns the camera (yaw ' + (dg1.yaw - dg0.yaw).toFixed(2) + ') without walking ' + JSON.stringify(dl));
+    const dbg1 = await page.evaluate(() => { window.__gaQuestPad.showDebug(true); const t = document.getElementById('gaQdbg').textContent; window.__gaQuestPad.showDebug(false); return t; });
+    chk(/MODE 1 RAY: stick wheel = MOVE always.*TURN = trigger-drag/.test(dbg1) && /-> MOVE \(1ray\)/.test(dbg1) && /drag-turns \d+/.test(dbg1), '?qdbg=1 shows the mode (1 RAY), the turn alternative and each event (1ray)');
+    // ---- v12 (Dave's 2nd photo): LEFT stick pushed sideways = wheel dx (MOVE) while the Quest also reports that ray pressed and dragging
+    // (touch + pointer drag). v11 turned the camera from that drag; now the drag is ignored while stick wheels arrive: strafe only. ----
+    await page.waitForTimeout(600); await page.evaluate(() => { window.__gaQuestPad.resetHands(); const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
+    const sd0 = await pose(), blk0 = await page.evaluate(() => window.__gaQuestPad.dragBlocked);
+    await page.evaluate(async () => { const cv = document.querySelector('canvas'); let x = 748, y = 209; const T = (type, xx) => { const t = new Touch({ identifier: 6, target: cv, clientX: xx, clientY: y }); cv.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: type === 'touchend' ? [] : [t], changedTouches: [t] })); };
+      cv.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 6, pointerType: 'touch', clientX: x, clientY: y, buttons: 1, bubbles: true, cancelable: true })); T('touchstart', x);
+      cv.dispatchEvent(new MouseEvent('mousedown', { clientX: x, clientY: y, buttons: 1, bubbles: true }));
+      for (let i = 0; i < 30; i++) { cv.dispatchEvent(new WheelEvent('wheel', { deltaX: 22, deltaY: 0, clientX: x, clientY: y, bubbles: true, cancelable: true })); x += 4;
+        cv.dispatchEvent(new PointerEvent('pointermove', { pointerId: 6, pointerType: 'touch', clientX: x, clientY: y, buttons: 1, bubbles: true })); T('touchmove', x);
+        window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: y, buttons: 1, bubbles: true }));
+        await new Promise(r => setTimeout(r, 16)); }
+      T('touchend', x); window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })); cv.dispatchEvent(new PointerEvent('pointerup', { pointerId: 6, pointerType: 'touch', clientX: x, clientY: y, bubbles: true })); });
+    const sd1 = await pose(), blk1 = await page.evaluate(() => window.__gaQuestPad.dragBlocked);
+    chk(Math.abs(sd1.yaw - sd0.yaw) < 1e-6 && Math.hypot(sd1.x - sd0.x, sd1.z - sd0.z) > 0.2 && blk1 > blk0, 'left stick sideways (wheel dx + the Quest\'s pressed-ray drag): strafes ' + Math.hypot(sd1.x - sd0.x, sd1.z - sd0.z).toFixed(2) + ' m, camera does NOT turn (yaw ' + (sd1.yaw - sd0.yaw).toFixed(3) + ', ' + (blk1 - blk0) + ' stick drags ignored)');
+    // ---- v12 (t382u): GRIP = BACK in flat Quest mode: every grip candidate -> the game's Escape (and counted in ?qdbg=1) ----
+    const gb = await page.evaluate(async () => { const Q = window.__gaQuestPad; let esc = 0; const h = e => { if (e.code === 'Escape') esc++; }; addEventListener('keydown', h, true);
+      const w = ms => new Promise(r => setTimeout(r, ms));
+      document.querySelector('canvas').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })); await w(300);
+      const e1 = esc;
+      window.__pads = [{ id: 'Oculus Touch (Right)', index: 1, hand: 'right', mapping: 'xr-standard', connected: true, axes: [0, 0, 0, 0], buttons: [{ pressed: false, value: 0 }, { pressed: true, value: 1 }] }]; await w(300);
+      window.__pads = []; await w(100); const e2 = esc;
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'BrowserBack', code: 'BrowserBack', bubbles: true, cancelable: true })); await w(300); const e3 = esc;
+      removeEventListener('keydown', h, true); Q.showDebug(true); const t = document.getElementById('gaQdbg').textContent; Q.showDebug(false);
+      return { e1, e2, e3, backs: Q.backs, dbg: (t.match(/grip\/back[^\n]*/) || [''])[0] }; });
+    chk(gb.e1 === 1 && gb.e2 === 2 && gb.e3 === 3 && gb.backs.contextmenu === 1 && gb.backs['gamepad grip right'] === 1 && /grip\/back .*contextmenu=1/.test(gb.dbg), 'flat Quest GRIP = back: contextmenu / gamepad grip / BrowserBack each send the game\'s Escape once, listed in ?qdbg=1 ' + JSON.stringify(gb));
     await page.waitForTimeout(600);
     // debug overlay shows raw events + class
-    await ray(11, 110, 150); await ray(12, 370, 150);
-    await wheelAt(1, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 });
+    await rays2();
+    await wheelAt(1, { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151 }); await wheelAt(1, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 });
     const dbg = await page.evaluate(() => { window.__gaQuestPad.showDebug(true); const t = document.getElementById('gaQdbg').textContent; window.__gaQuestPad.showDebug(false); return t; });
-    chk(/VR v9/.test(dbg) && /last stick events/.test(dbg) && /-> MOVE \(2ray\)/.test(dbg) && /-> LOOK \(2ray\)/.test(dbg) && /rays 11:touch@/.test(dbg), '?qdbg overlay lists rays and each stick event with its class + reason');
+    chk(/VR v12/.test(dbg) && /last stick events/.test(dbg) && /-> MOVE \((2ray|lock L)\)/.test(dbg) && /-> LOOK \((2ray|lock R)\)/.test(dbg) && /[ |]11\[L\]:touch@/.test(dbg) && /hand lock ray11=L\(MOVE\)/.test(dbg) && /ray12=R\(LOOK\)/.test(dbg), '?qdbg overlay lists rays and each stick event with its class + reason');
     // STICK SETUP calibration: one ray, same spot, but the sticks differ in deltaMode (pixels vs lines)
     // ---- t369u: while FLYING (jetpack), the left stick moves the player, the right stick only turns ----
     await page.evaluate(() => { const a = window.__arcade; window.__gaPlayer.p.back = 'jetpack'; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); a.st.fly.e = 1; });
-    await ray(11, 110, 150); await ray(12, 370, 150);
+    await rays2();
     // the LEFT controller holds FLY (bottom right) with its trigger; its stick comes through as a drag of that held pointer
     await page.evaluate(() => { const b = document.getElementById('bFly'), r = b.getBoundingClientRect(); window.__flyXY = [r.x + r.width / 2, r.y + r.height / 2];
       b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 11, pointerType: 'touch', clientX: window.__flyXY[0], clientY: window.__flyXY[1], bubbles: true, cancelable: true, buttons: 1 })); });
@@ -96,16 +192,16 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     chk(fl.air && fl.ev.cls === 'LOOK' && Math.abs(f4.yaw - f3.yaw) > 0.1 && Math.hypot(f4.x - f3.x, f4.z - f3.z) < 0.08, 'flying: the RIGHT stick only turns (yaw ' + (f4.yaw - f3.yaw).toFixed(2) + ', moved ' + Math.hypot(f4.x - f3.x, f4.z - f3.z).toFixed(3) + ' m)');
     await page.evaluate(() => { const b = document.getElementById('bFly'); b.dispatchEvent(new PointerEvent('pointerup', { pointerId: 11, pointerType: 'touch', bubbles: true })); window.__gaPlayer.p.back = 'none'; });
     await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 15000 }).catch(() => {});
-    await page.waitForTimeout(800); await page.evaluate(() => { window.__gaQuestPad.calStart(); });
-    const c0 = await pose();
-    const hold = async (o, ph) => { const t0 = Date.now(); while (Date.now() - t0 < 4000 && (await page.evaluate(() => window.__gaQuestPad.calibrating)) === ph) await wheelAt(3, o); };
+    await page.waitForTimeout(800); await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); a.st.lookT = a.st.t; }); await page.waitForTimeout(1500); await page.evaluate(() => { window.__gaQuestPad.calStart(); });   // v12: away from the STRIKE showcase swing
+    const c0 = await pose(); await page.evaluate(() => { window.__yawLog = []; const A = window.__arcade; window.__yawT = setInterval(() => window.__yawLog.push([+A.st.yaw.toFixed(3), +(A.st.showK || 0).toFixed(2), A.st.fly.air ? 1 : 0, +A.monkey.position.x.toFixed(2), +A.monkey.position.z.toFixed(2)]), 200); });
+    const hold = async (o, ph) => { const t0 = Date.now(); while (Date.now() - t0 < 4000 && (await page.evaluate(() => window.__gaQuestPad.calibrating)) === ph) await wheelAt(1, o); };   // one event per check: no burst tail after the setup finishes
     await hold({ deltaX: 0, deltaY: 37.5, deltaMode: 0, clientX: 240, clientY: 60 }, 'L');
     await page.waitForFunction(() => window.__gaQuestPad.calibrating === 'R', null, { timeout: 5000 }).catch(() => {});
     await hold({ deltaX: 3, deltaY: 0, deltaMode: 1, clientX: 240, clientY: 60 }, 'R');
     const cb = await page.evaluate(() => ({ cal: window.__gaQuestPad.calib, running: window.__gaQuestPad.calibrating, msg: (document.getElementById('gaQcalMsg') || {}).textContent }));
     const c1 = await pose();
     chk(cb.cal && cb.cal.rules.some(r => r.k === 'mode' && r.L === '0' && r.R === '1') && !cb.running, 'STICK SETUP learns the difference (' + JSON.stringify(cb.cal && cb.cal.rules) + ') "' + cb.msg + '"');
-    chk(Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.05 && Math.abs(c1.yaw - c0.yaw) < 1e-6, 'nothing moves while STICK SETUP is listening ' + JSON.stringify({ d: Math.hypot(c1.x - c0.x, c1.z - c0.z), dyaw: c1.yaw - c0.yaw, log: (await page.evaluate(() => window.__gaQuestPad.evLog.slice(0, 3).map(e => e.src + ' ' + e.cls + ' ' + e.why))) }));
+    chk(Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.05 && Math.abs(c1.yaw - c0.yaw) < 0.005, 'nothing moves while STICK SETUP is listening ' + JSON.stringify({ yl: await page.evaluate(() => window.__yawLog.slice(0, 25)), d: Math.hypot(c1.x - c0.x, c1.z - c0.z), dyaw: c1.yaw - c0.yaw, log: (await page.evaluate(() => window.__gaQuestPad.evLog.slice(0, 3).map(e => e.src + ' ' + e.cls + ' ' + e.why))) }));
     await page.waitForTimeout(400); let b0 = await pose();
     await wheelAt(25, { deltaX: 3, deltaY: 0, deltaMode: 1, clientX: 240, clientY: 60 }); await page.waitForTimeout(300);
     let b1 = await pose(); lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);

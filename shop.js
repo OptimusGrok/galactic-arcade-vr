@@ -33,7 +33,8 @@ const byId = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 
 // Shared Grok robot builder (shopkeeper + arcade visitor). Same look Dave signed off on (t569).
 // Returns { root, arms, head, faceTex, drawFace }. Caller positions/scales the root.
-import chat from './grokchat.js';   // t810u: CHAT with Grok (shared panel + offline knowledge base)
+import chat from './grokchat.js';
+import { setupChessTable, CHESS } from './chesstable.js';   // VR edition: chess table between the wardrobe and the pool tables   // t810u: CHAT with Grok (shared panel + offline knowledge base)
 export function buildGrokClerk() {
   const canvasTex = (w, h, draw) => {
     let ww = w, hh = h; const max = (tierQuality().texMax || 0);
@@ -488,7 +489,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const GYAW = Math.atan2(0 - QX, 5.0 - QZ);
   // ---- Grok clerk (t569): built via shared buildGrokClerk() so the arcade visitor can reuse the same look
   const _gk = buildGrokClerk();
-  const grok = _gk.root, arms = _gk.arms, head = _gk.head, faceTex = _gk.faceTex, drawFace = _gk.drawFace;
+  const grok = _gk.root, arms = _gk.arms, legsG = _gk.legs, head = _gk.head, faceTex = _gk.faceTex, drawFace = _gk.drawFace;
   grok.position.set(QX - 0.15, 0, QZ + 0.1); grok.rotation.y = GYAW; grok.scale.setScalar(0.6); G.add(grok);
 
   // ---------- glossy floor (fake reflections of the glowing wall, candy and counter) ----------
@@ -738,9 +739,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const OBST = [{ x0: Math.min(...cc.map(c => c[0])), x1: Math.max(...cc.map(c => c[0])), z0: Math.min(...cc.map(c => c[1])), z1: Math.max(...cc.map(c => c[1])) },
     { x0: -SXW - 0.1, x1: -SXW + 0.1, z0: ZW, z1: ZF }, { x0: SXW - 0.1, x1: SXW + 0.1, z0: ZW, z1: ZF },
     ...[PZ, PZ2].map(z => ({ x0: PX - PLW - 0.18, x1: PX + PLW + 0.18, z0: z - PLL - 0.18, z1: z + PLL + 0.18 })),   // pool tables
+    CHESS.BOX,   // chess table + chairs (pushOut skips it while you sit at it)
     { x0: WDX - WDD - 0.05, x1: WDX + 0.08, z0: WDZ - WDW, z1: WDZ + WDW }, { x0: WDX - WDD - 0.05, x1: WDX + 0.08, z0: WDZ + WDW - 0.1, z1: WDZ + WDW + 0.66 * WDS }];   // wardrobe island + mirror wing
   const NP = { x: QX + Math.sin(GYAW) * (RO + 0.55), z: QZ + Math.cos(GYAW) * (RO + 0.55) };
-  function pushOut(p) { const lx = p.x - WXp, lz = p.z;
+  function pushOut(p) { const lx = p.x - WXp, lz = p.z; const CTs = window.__chessTable; if (CTs && CTs.seated) return;
     const dx = lx - QX, dz = lz - QZ, d = Math.hypot(dx, dz); if (d < RO + R) { const k = (RO + R) / (d || 1); p.x = WXp + QX + dx * k; p.z = QZ + dz * k; return; }
     for (const o of OBST) { if (lx > o.x0 - R && lx < o.x1 + R && lz > o.z0 - R && lz < o.z1 + R) {
     const e = [lx - (o.x0 - R), (o.x1 + R) - lx, lz - (o.z0 - R), (o.z1 + R) - lz], m = Math.min(...e);
@@ -1143,6 +1145,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     try { drainToyJobs(6); } catch (e) {}
     if (tp && st && tp.where !== tpWhere) { tpWhere = tp.where; if (tp.where === 2) { const yaw = -Math.PI / 4; st.yaw = yaw; st.face = yaw + Math.PI; st.camInit = false; } }   // t563: arrive in the corner facing into the room
     t += dt; if (api_sky) api_sky.uniforms.uT.value = t; const m = getMonkey(); if (!m) return;
+    try { chessT && chessT.update(dt); } catch (e) { if (!api._cerr) { api._cerr = 1; console.warn('chess', e); } }   // also while you are out of the shop (Grok walks home)
     syncHeld(); applyHeldVis();
     const inRoom = m.position.x > WXp / 2;
     if (inRoom && !wasIn && st) { st.pitch = 0.04; st.dist = Math.max(st.dist, 5.0); }   // shop-local camera: level, a bit closer (once per visit)
@@ -1166,6 +1169,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     { const lx = m.position.x - WXp, lz = m.position.z, wo = window.__wardrobe && window.__wardrobe.isOpen;   // wardrobe corner: within 1.4 m of its front
       const dx = Math.max(0, (WDX - WDD) - lx, lx - (WDX + 0.08)), dz = Math.max(0, Math.abs(lz - WDZ) - WDW); wardApi.dist = Math.hypot(dx, dz);   // any side of the island (was front only: lx > WDX gave 9)
       wardApi.near = !busy && !wo && !poolApi.open && !api.open && !poolApi.near && wardApi.dist < 1.55; wardBtn.classList.toggle('on', wardApi.near); }
+    if (!(chessT && chessT.grokBusy)) {   // chess: Grok is away at the table, chesstable.js animates him
     // Grok idle: gentle bob + sway, head turns toward the player, blinks, mouth moves while talking
     grok.position.y = Math.sin(t * 1.6) * 0.015; grok.rotation.z = Math.sin(t * 0.9) * 0.02;
     grok.getWorldPosition(tmp); const want = Math.atan2(m.position.x - tmp.x, m.position.z - tmp.z) - grok.rotation.y - 0 ;
@@ -1181,9 +1185,11 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     else { wv.sh.rotation.z += (0.12 - wv.sh.rotation.z) * Math.min(1, dt * 4); wv.el.rotation.z *= 0.9; wv.el.rotation.x += (-1.2 - wv.el.rotation.x) * Math.min(1, dt * 4); }
     const fs = (happy ? 'h' : blinkT < 0 ? 'b' : 'o') + tk;
     if (fs !== faceState) { faceState = fs; drawFace(faceTex.g, blinkT < 0, tk, happy); faceTex.t.needsUpdate = true; }
+    }
   };
   // t632u: lazy-load Grok's arcade visit (2nd look at the pad / random). Own file; no Arcade main.js edit.
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
+  let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
   window.__shop = api;
   return api;
 }
