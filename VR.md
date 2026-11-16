@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v9`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v10`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -152,13 +152,9 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   the headset Y/B menu (new FLOOR + WALLS button: FLOOR / WALLS tabs, applies at once). A choice lasts until the next load.
 
 ## t366u/t367u: New pictures above the cabinets, claw icon black-panel fix (same v8)
-- The live original still shows the simple canvas-drawn shapes above the cabinets (its neonsigns.js is byte-identical to this repo's), so all 13 are NEW painted
-  neon art in `tex/icons/<key>.webp` (512 px, transparent background): Strike, Berserker, Monkey Crossing, Nova Tether, Super Pip Quest, Blaster, Cybercity,
-  Orc Attack, Ghost 256, Mars Roadster, Sky Tower, Rockfall Rush, Burrow Buster. vr.js redraws them into a 2048 px atlas (1024 on the low tier) with the same
-  cell layout, fitted to each quad's shape, a bit brighter than the dim neon. The neon game titles under them are unchanged. neonsigns.js is not edited.
-- The free-standing claw's animated neon icon (a 3.5 m panel up to the ceiling band) re-uploaded a 2560x256 canvas with mipmaps on every claw frame, also in XR;
-  a failed upload on the Quest leaves an incomplete texture that samples opaque black. It now uses a 2048x256 copy uploaded once and animates by offset only.
-- Test: `test/quest_flat.js` (Quest UA flat sticks via wheel + gamepad stubs, XR non-interference, default floor/walls, free OPTIONS + headset menu, new icons, claw texture).
+- vr.js used to replace the wall pictures with painted `tex/icons/<key>.webp` art in a 2048 px atlas (1024 on the low tier), a bit brighter than the dim neon.
+  The neon game titles were unchanged, and the claw kept its two-sided open/close mesh with a one-time 2048x256 upload so Quest did not get a black panel.
+- Removed in v10 (t866u): the wall pictures are the shared 2D canvas icons again. The claw upload fix is kept.
 
 ## t368u: Right stick only turns the camera on the Quest screen (cache v9)
 - Dave's real Quest: both thumbsticks walked. In the Quest's 2D browser both sticks are the same plain wheel scroll (no gamepads in 2D), so quest-pad.js
@@ -170,3 +166,11 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - `?qdbg=1` now shows every ray seen (id, type, x,y, age), the setup rules, and the last 8 stick events: raw dx/dy/dz, deltaMode, modifiers, x,y,
   the matched ray, and MOVE/LOOK with the reason (toggle / mod / cal:... / 2ray / default). Gamepads list id, hand and axes.
 - Test: `test/quest_flat.js` (two rays: right-ray scroll pans and does not move; left-ray scroll walks; calibration by deltaMode; overlay text).
+## t866u: Wall pictures match the 2D arcade (cache v10)
+- The t366u/t367u painted `tex/icons/<key>.webp` swap in vr.js is removed. The pictures above the cabinets are once again the shared
+  `neonsigns.js` / `neon_atlas.js` canvas icons (detailed Viking with an axe, blue Strike ship, orc, and the rest), at the same size,
+  placement and dim glow (colour ×0.55) as the non-VR game. Performance tiers are unchanged (icon atlas 128 px / 512 cap on low, 256 otherwise).
+- The free-standing claw's two-sided open/close mesh and its one-time 2048×256 upload fix are kept, so Quest does not get a black panel.
+- Test: `test/vr_icons.js` (shared atlas, no `tex/icons` webp, dim glow, claw upload-once, also in an XR session). `test/quest_flat.js`
+  is unchanged (Arcade's right-stick work).
+
