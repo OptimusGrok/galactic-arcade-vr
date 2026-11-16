@@ -69,3 +69,11 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   X/A held = jetpack (Space). Y/B (or the trigger) = laser (F: hold charges, release shoots). Inside a cabinet Y/B always go to the game.
   The menu only opens while walking. Berserker's mapping is unchanged.
 - Test: `test/vr_v5.js` (26 checks).
+
+## t355u: Money + tickets in the menu, jetpack and laser pistol in the arcade world (same v5)
+- The Y/B menu's subtitle shows your kiosk cash and tickets ("$5 CASH · 42 TICKETS") and updates live while it's open.
+- Walking around (not in a cabinet or Neon Bricks): with the **JETPACK** (Accessories, back) on, **hold A** to fly. This uses main.js's own fly
+  code (`st.fly.hold`, the same as the flat FLY button), so energy, the ceilings and descending all work as in the flat game, and the headset rises with you.
+  With the **LASER PISTOL** (Accessories, hand) on, **B shoots**. This uses roomfire.js's `setHeld` (same as the flat FIRE button: tap = bolt, hold = charge,
+  4 s = beam). While the pistol is on, the menu opens with **Y only**. Without it, Y or B opens the menu as before.
+- Tests: in `test/vr_v5.js` (40 checks in total).

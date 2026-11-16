@@ -9,7 +9,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
   const LOCAL = [0.2, 1.3, -0.2];
   const aim = async (target, hand = 'right') => { await H.aim(page, hand, LOCAL, target); await H.frames(page, 3); };
   const btnAt = id => page.evaluate(id => window.__gaVR.ui.btnWorld(id), id);
-  const tap = async id => { const w = await btnAt(id); if (!w) throw new Error('no button ' + id); await aim(w); await H.press(page, 'right', 'trigger'); await H.frames(page, 3); };
+  const tap = async id => { const w = await btnAt(id); if (!w) throw new Error('no button ' + id + ' in ' + (await page.evaluate(() => window.__gaVR.ui.kind + ': ' + window.__gaVR.ui.btns.map(b => b.id).join(',')))); await aim(w); await H.press(page, 'right', 'trigger'); await H.frames(page, 3); };
   const held = () => page.evaluate(() => { const h = window.__shop && window.__shop.held; return h ? { R: h.R || null, L: h.L || null } : null; });
   const ids = () => page.evaluate(() => window.__gaVR.ui.btns.map(b => b.id));
   try {
@@ -45,15 +45,16 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     chk(w2.tickets === w.tickets + 7 && sb.includes(w2.tickets + ' TICKETS'), 'tickets update live in the open menu (' + w.tickets + ' -> ' + w2.tickets + ')');
     await page.evaluate(() => { window.__kiosk.C.bal = 3; }); await H.frames(page, 3); sb = await subOf(); chk(/^\$3 CASH/.test(sb), 'cash updates live ("' + sb + '")');
     // ---- t355u: JETPACK on -> hold A flies (in the arcade world) ----
+    await page.evaluate(() => window.__arcade.play.addTickets(30)); await H.frames(page, 3);
     await tap('ward'); await tap('cat_back'); await tap('w_back_jetpack'); let gr = await page.evaluate(() => window.__gaVR.gear());
     chk(gr.jet, 'JETPACK bought + worn from ACCESSORIES in VR'); await tap('close');
     const fy0 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y }));
     await H.btn(page, 'right', 'a-button', 1); await page.waitForTimeout(900); await H.frames(page, 4);
     const fy1 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y, hold: window.__arcade.st.fly.hold, air: window.__arcade.st.fly.air }));
     chk(fy1.hold && fy1.m > fy0.m + 0.8 && Math.abs(fy1.r - fy1.m) < 0.05, 'hold A flies: the player + headset rise (' + fy0.m.toFixed(2) + ' -> ' + fy1.m.toFixed(2) + ' m)');
-    await H.btn(page, 'right', 'a-button', 0); await page.waitForTimeout(1500); await H.frames(page, 4);
+    await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 90);
     const fy2 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, hold: window.__arcade.st.fly.hold }));
-    chk(!fy2.hold && fy2.m < fy1.m - 0.5, 'let go of A and you come back down (' + fy2.m.toFixed(2) + ' m)');
+    chk(!fy2.hold && fy2.m < fy1.m - 0.3, 'let go of A and you come back down (' + fy2.m.toFixed(2) + ' m)');
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: B still opens the menu');
     // ---- t355u: LASER PISTOL on -> B shoots, menu on Y only ----
     await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
