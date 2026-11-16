@@ -28,7 +28,8 @@ const MAPS = {
   ghost: { a: ['Space'], b: [], trig: 'a', help: 'STICK STEER · A START' },
   claw: { a: ['Enter', 'Space'], b: [], trig: 'ptr', help: 'STICK MOVE · A DROP · TRIGGER TAPS' },
   orc: { a: [], b: [], trig: 'ptr', help: 'POINT + TRIGGER TO TAP THE SCREEN' },
-  skytower: { a: ['Space', 'KeyJ'], b: ['KeyF'], trig: 'a', help: 'STICK MOVE · A JUMP · B FIRE' },
+  // t354u (Dave): left stick moves, right stick pans the camera (the game's own lookDrag), X/A = jetpack (hold Space), Y/B/trigger = laser (hold F: charge, release = shot)
+  skytower: { a: ['Space'], b: ['KeyF'], trig: 'b', moveStick: 'left', pan: '__skytower', help: 'L-STICK MOVE · R-STICK CAMERA · A/X FLY · B/Y LASER' },
   roadster: { a: ['Space'], b: [], trig: 'a', help: 'STICK STEER / GAS · A ACTION' },
   nova: { a: ['Space', 'KeyZ'], b: ['ShiftLeft'], trig: 'a', help: 'STICK MOVE · A ACTION · B ALT' },
   ds: { a: ['Space', 'KeyE'], b: [], trig: 'a', help: 'STICK MOVE · A ACTION' },
@@ -246,23 +247,59 @@ export function setupVR(A) {
             else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } }); });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 640, 564, 96, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 640, 170, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 640, 170, 96, UI.page < pages - 1, () => { UI.page++; }); } }
+    else if (UI.open === 'pack') { title = 'MONKEY BACKPACK'; const sh = A.shop || window.__shop;
+      if (!sh || !sh.hold) { sub = 'OPENING THE BACKPACK...'; try { window.__arcade && window.__arcade.loadShop && window.__arcade.loadShop(); } catch (e) {} } else {
+        const items = packItems(sh), h = heldNow(), per = 6, pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
+        const nm = id => { const it = items.find(q => q.id === id); return it ? it.name : String(id).replace(/^claw:/, '').toUpperCase(); };
+        sub = 'RIGHT: ' + (h.R ? nm(h.R) : '-') + '   ·   LEFT: ' + (h.L ? nm(h.L) : '-');
+        if (!items.length) UI.msg = UI.msg || 'NO PRIZES YET · BUY AT THE GROK SHOP OR WIN THE CLAW';
+        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const sl = h.R === it.id ? 'R' : h.L === it.id ? 'L' : '';
+          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? '  ·  ' + sl : ''), 40 + (i % 2) * 484, 180 + Math.floor(i / 2) * 95, 460, 85, true, () => packTap(sh, it)); });
+        add('away_R', 'PUT R AWAY', 40, 475, 300, 85, !!h.R, () => { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('RIGHT HAND EMPTY'); });
+        add('away_L', 'PUT L AWAY', 362, 475, 300, 85, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
+        add('away', 'PUT BOTH AWAY', 684, 475, 300, 85, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
+        add('prev', '<', 40, 650, 170, 90, UI.page > 0, () => { UI.page--; }); add('pward', 'ACCESSORIES', 230, 650, 564, 90, !!window.__gaPlayer, () => uiOpen('ward')); add('next', '>', 814, 650, 170, 90, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU';
-      add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 160, 800, 100, !!tp && tp.state === 'idle', beam);
-      if (!inShop) { add('tickets', 'BUY TICKETS', 112, 275, 800, 100, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 390, 800, 100, !!nbApi(), nbStart); }
-      else add('shop', 'PRIZE SHOP', 112, 275, 800, 100, !!A.shop, () => uiOpen('shop'));
-      add('ward', 'ACCESSORIES', 112, inShop ? 390 : 505, 800, 100, !!window.__gaPlayer, () => uiOpen('ward'));
-      add('close2', 'CLOSE', 112, 620, 800, 100, true, uiClose); }
+      add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 150, 800, 88, !!tp && tp.state === 'idle', beam);
+      add('pack', 'MONKEY BACKPACK', 112, 250, 800, 88, true, () => uiOpen('pack'));
+      if (!inShop) { add('tickets', 'BUY TICKETS', 112, 350, 800, 88, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 450, 800, 88, !!nbApi(), nbStart); }
+      else add('shop', 'PRIZE SHOP', 112, 350, 800, 88, !!A.shop, () => uiOpen('shop'));
+      add('ward', 'ACCESSORIES', 112, inShop ? 450 : 550, 800, 88, !!window.__gaPlayer, () => uiOpen('ward'));
+      add('close2', 'CLOSE', 112, 655, 800, 88, true, uiClose); }
     return { title, sub, B }; }
+  // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
+  const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+  function heldNow() { const v = J('neonarcade.held', null); if (typeof v === 'string') return { R: v, L: null }; return { R: (v && v.R) || null, L: (v && v.L) || null }; }
+  function packItems(sh) { const out = [], p = J('neonarcade.prizes', {}), byId = {}; for (const it of sh.ITEMS || []) byId[it.id] = it;
+    for (const id in p) if ((p[id] | 0) > 0 && byId[id]) out.push({ id, name: byId[id].name.toUpperCase(), n: p[id] | 0, src: 'shop' });
+    const cl = J('arcade_clawMachine.collection', {}); for (const k in cl) if ((cl[k] | 0) > 0) out.push({ id: 'claw:' + k, name: k.toUpperCase() + ' PLUSH', n: cl[k] | 0, src: 'claw' });
+    return out; }
+  function packTap(sh, it) { const h = heldNow();
+    if (h.R === it.id) { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('PUT AWAY: ' + it.name); return; }
+    if (h.L === it.id) { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('PUT AWAY: ' + it.name); return; }
+    const slot = !h.R ? 'R' : !h.L ? 'L' : 'R'; const r = sh.hold(it.id, slot) || heldNow();
+    if (r.R === it.id || r.L === it.id) { S.packEquips = (S.packEquips || 0) + 1; say('HOLDING ' + it.name + (r.L || r.R !== it.id ? ' · ' + (r.R === it.id ? 'RIGHT' : 'LEFT') + ' HAND' : ' · BOTH ARMS')); }
+    else say("CAN'T HOLD " + it.name + ' YET'); }
+  S.pack = { items: () => { const sh = A.shop || window.__shop; return sh ? packItems(sh) : []; }, held: heldNow };
+  function drawPackIcon(g, x, y, s) {   // little brown monkey backpack
+    g.save(); g.translate(x, y); g.scale(s, s);
+    g.fillStyle = '#7a4a24'; g.beginPath(); g.roundRect ? g.roundRect(-30, -26, 60, 64, 14) : g.rect(-30, -26, 60, 64); g.fill();
+    g.strokeStyle = '#4a2a10'; g.lineWidth = 5; g.beginPath(); g.arc(0, -26, 14, Math.PI, 0); g.stroke();
+    g.fillStyle = '#9a6a3e'; g.beginPath(); g.arc(0, 8, 19, 0, 7); g.fill(); g.beginPath(); g.arc(-19, -2, 8, 0, 7); g.arc(19, -2, 8, 0, 7); g.fill();
+    g.fillStyle = '#f0c99a'; g.beginPath(); g.ellipse(0, 13, 13, 10, 0, 0, 7); g.fill(); g.fillStyle = '#1a0d05'; g.beginPath(); g.arc(-6, 3, 3, 0, 7); g.arc(6, 3, 3, 0, 7); g.fill();
+    g.restore(); }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
     const key = sp.title + '|' + sp.sub + '|' + msg + '|' + UI.hover + '|' + sp.B.map(b => b.id + b.label + b.on).join(','); if (key === UI.key) return; UI.key = key;
     const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
     g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, 470, 70, 820);
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, UI.open === 'pack' ? 500 : 470, 70, UI.open === 'pack' ? 740 : 820);
     g.fillStyle = '#9ff8ff'; g.font = '900 34px "Arial Black", Arial, sans-serif'; g.fillText(sp.sub, 512, 140, 960);
     for (const b of sp.B) { const hv = UI.hover === b.id && b.on; g.fillStyle = !b.on ? 'rgba(60,60,80,0.6)' : hv ? '#ff3fd2' : 'rgba(0,229,255,0.22)'; g.strokeStyle = b.on ? (hv ? '#ffffff' : '#3ff3ff') : '#555a70'; g.lineWidth = 6;
       g.beginPath(); g.roundRect ? g.roundRect(b.x, b.y, b.w, b.h, 24) : g.rect(b.x, b.y, b.w, b.h); g.fill(); g.stroke();
-      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24); }
-    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'ward' ? 318 : UI.open === 'shop' ? 688 : 715, UI.open === 'ward' ? 940 : 640); }
+      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24);
+      if (b.id === 'pack') drawPackIcon(g, b.x + 60, b.y + b.h / 2, b.h / 80); }
+    if (UI.open === 'pack') drawPackIcon(g, 70, 72, 0.95);
+    if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'pack' ? 605 : UI.open === 'ward' ? 318 : UI.open === 'shop' ? 688 : 715, UI.open === 'ward' || UI.open === 'pack' ? 940 : 640); }
     tex.needsUpdate = true; }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
     const n = _v.set(0, 0, 1).applyQuaternion(uiM.getWorldQuaternion(_q)), den = n.dot(ray.direction); if (Math.abs(den) < 1e-4) return null;
@@ -463,13 +500,14 @@ export function setupVR(A) {
       if (Object.keys(S.held).length) releaseAll(); return; }
     if (play.sub !== 'play') return;
     // sticks -> arrow keys (whichever stick is pushed further)
-    const sx = [L, R].reduce((a, P) => P && Math.hypot(P.x, P.y) > Math.hypot(a.x, a.y) ? P : a, { x: 0, y: 0 });
+    const sx = map.moveStick === 'left' ? (L || { x: 0, y: 0 }) : [L, R].reduce((a, P) => P && Math.hypot(P.x, P.y) > Math.hypot(a.x, a.y) ? P : a, { x: 0, y: 0 });
+    if (map.pan) camPan(w, map, R, dt);
     const th = (code, v) => S.held[code] ? v > 0.3 : v > 0.55;
     hold('ArrowLeft', th('ArrowLeft', -sx.x), w); hold('ArrowRight', th('ArrowRight', sx.x), w); hold('ArrowUp', th('ArrowUp', -sx.y), w); hold('ArrowDown', th('ArrowDown', sx.y), w);
     // B / Y: CONTINUE when the game offers it, otherwise the game's secondary button
     const canC = contCan(w);
     if (canC && any('bDown')) play.tryContinue();
-    for (const k of map.b) hold(k, !canC && anyAB('b'), w);
+    for (const k of map.b) hold(k, !canC && (anyAB('b') || (map.trig === 'b' && any('trig'))), w);
     if (map.pw) pwInput(w, map, L, R, dt);
     // trigger: tap the screen where you point (pointer games) or the primary button
     let trigAsA = map.trig === 'a';
@@ -480,6 +518,10 @@ export function setupVR(A) {
     const prim = anyAB('a') || (trigAsA && !S.trigOnPw && any('trig'));
     for (const k of map.a) hold(k, prim, w);
   }
+  // ---- right stick = camera pan through the game's own drag-look (Sky Tower: lookDrag(dx, dy) in drag pixels, 0.0055 rad per px) ----
+  function camPan(w, map, R, dt) { const api = w && w[map.pan]; if (!api || typeof api.lookDrag !== 'function' || !R) return;
+    const f = v => { const a = Math.abs(v); return a < 0.15 ? 0 : Math.sign(v) * ((a - 0.15) / 0.85); }, px = 2.0 * dt / 0.0055;   // full push = 2 rad/s
+    const dx = f(R.x) * px, dy = f(R.y) * px * 0.6; if (dx || dy) { try { api.lookDrag(dx, dy); S.pans = (S.pans || 0) + 1; } catch (e) {} } }
   // ---- power-ups: ready = the game's own button is showing; fire = tap its key for a few frames ----
   const pwRel = {};
   function pwReady(w, p) { try { const e = w.document.getElementById(p.el); return !!(e && e.style.display === 'flex'); } catch (e) { return false; } }
