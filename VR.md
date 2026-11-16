@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v10`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v11`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -174,3 +174,9 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - Test: `test/vr_icons.js` (shared atlas, no `tex/icons` webp, dim glow, claw upload-once, also in an XR session). `test/quest_flat.js`
   is unchanged (Arcade's right-stick work).
 
+## t869u: Painted cabinet pictures restored (cache v11)
+- Dave asked for Arcade's painted `tex/icons/<key>.webp` pictures back in VR, and also in the non-VR game. The v10 removal of the
+  vr.js swap is reversed: wall pictures are again redrawn into a 2048 px atlas (1024 on the low tier) from those webps, fitted to
+  each quad, a bit brighter than the dim neon. Canvas icons stay as the fallback until a picture loads. The claw keeps its two-sided
+  open/close mesh and one-time 2048×256 upload. The 13 webps are precached in `sw.js` again.
+- Test: `test/vr_icons.js` (painted atlas, 13 webps, brightness, claw upload-once, also in an XR session).

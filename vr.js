@@ -497,33 +497,46 @@ export function setupVR(A) {
   function mpHook() { const M = window.__mp; if (M && mpHooked !== M) { mpHooked = M; M.vrSnap = vrSnap; M.posePeer = posePeer; }
     const R = window.__roomFire; if (R && R.laserSnap && rfHooked !== R) { rfHooked = R; const ls0 = R.laserSnap; R.laserSnap = function () { const v = vrLaserSnap(); return v !== undefined ? v : ls0.apply(this, arguments); }; } }
   setInterval(mpHook, 1000);
-  // ---------- t866u / v10: wall pictures are the shared neonsigns.js canvas icons (same as the 2D arcade).
-  // The t366u/t367u swap onto painted tex/icons/<key>.webp is gone, so VR shows the detailed Viking-with-axe,
-  // blue Strike ship, orc, etc. at the same size, placement and dim glow (colour x0.55). Tiers are unchanged.
-  // The free-standing claw keeps its two-sided open/close mesh and the one-time 2048x256 upload: a 2560x256
-  // re-upload mid-XR on Quest can fail and sample as an opaque black panel. Animation is offset only.
-  const IC = { claw: false };
+  // ---------- t366u/t367u + t869u / v11: painted pictures above the cabinets + the claw icon's black-panel fix ----------
+  // The wall pictures above each cabinet (neonsigns.js icon atlas: simple canvas-drawn shapes, the same as the live original) are
+  // replaced by new painted neon art, one picture per game (tex/icons/<key>.webp, 512 px, transparent background). They go into a
+  // fresh power-of-two atlas with the SAME 4x4 cell layout (the icon quads' UVs are fractions, so they keep working); each picture is
+  // fitted to its quad's own shape so it is never squashed. neonsigns.js is not edited. If a picture fails to load, its old icon stays.
+  // The free-standing claw's animated icon used a 2560x256 canvas strip that was re-uploaded (with mipmaps) on every claw frame, also
+  // mid-XR; on the Quest a failed upload leaves an incomplete texture, which samples as an opaque BLACK panel hanging under the ceiling.
+  // It now gets a power-of-two copy uploaded once and animates by sharing the old texture's offset (a uniform; no re-uploads).
+  // t869u / v11: this swap was restored (it had been removed in v10) so VR matches Dave's request for Arcade's painted art.
+  const ICON_KEYS = ['strike', 'ghost', 'cyber', 'orc', 'pip', 'berserker', 'monkey', 'nova', 'blaster', 'bb', 'rockfall', 'skytower', 'roadster', 'claw'];
+  const IC = { done: false, loaded: [], failed: [], cell: 0, claw: false, k: 0 };
+  function iconArt() { const icons = window.__neonIcons; if (!icons || !icons.material || !icons.material.map || IC.started) return; IC.started = true;
+    const old = icons.material.map, oc = old.image, low = (A.TIER && A.TIER.name === 'low') || !oc || oc.width <= 512, S0 = oc ? oc.width / 4 : 256;
+    const C = IC.cell = low ? 256 : 512, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
+    if (oc) g.drawImage(oc, 0, 0, cv.width, cv.height);   // start from the old icons (fallback for any picture that fails)
+    const info = {}; (icons.userData.icons || []).forEach(i => { info[i.key] = i; });
+    const load = k => new Promise(res => { const im = new Image(); im.onload = () => res([k, im]); im.onerror = () => res([k, null]); im.src = 'tex/icons/' + k + '.webp'; });
+    Promise.all(ICON_KEYS.filter(k => k !== 'claw').map(load)).then(list => { try {
+      for (const [k, im] of list) { if (!im) { IC.failed.push(k); continue; }
+        const i = ICON_KEYS.indexOf(k), x = (i % 4) * C, y = Math.floor(i / 4) * C, pad = 12 * C / S0, inner = C - 2 * pad, q = info[k];
+        // the quad shows the cell's inner square stretched to w x h: draw the picture at h/w of the height (or w/h of the width) so it looks square
+        const r = q && q.w > 0 && q.h > 0 ? q.w / q.h : 1, dw = r >= 1 ? inner / r : inner, dh = r >= 1 ? inner : inner * r;
+        g.clearRect(x, y, C, C); g.drawImage(im, x + pad + (inner - dw) / 2, y + pad + (inner - dh) / 2, dw, dh); IC.loaded.push(k); }
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4;
+      try { renderer.initTexture(t); } catch (e) {}
+      icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8));   // painted art: a bit brighter than the dim neon (0.55)
+      icons.material.needsUpdate = false; old.dispose(); IC.done = true;
+    } catch (e) { S.lastError = 'icons ' + e; IC.done = true; } });
+    clawFix(); }
   function clawFix() { const claw = window.__neonClawIcon; if (!claw || !claw.material || !claw.material.map || IC.claw) return;
     const ot = claw.material.map, src = ot.image; if (!src || !src.width) return;
-    if (src.width === 2048 && src.height === 256) { IC.claw = true; return; }
     const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 256; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ot.anisotropy || 4; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.repeat.copy(ot.repeat); t.offset = ot.offset;   // shared Vector2: neonsigns.js's tick moves the frame, nothing is re-uploaded
     try { renderer.initTexture(t); } catch (e) {}
     claw.material.map = t; ot.dispose(); IC.claw = true; }
-  const icT = setInterval(() => { clawFix(); if (IC.claw || (window.__neonIcons && !window.__neonClawIcon)) clearInterval(icT); }, 500);
-  S.icons = () => {
-    const icons = window.__neonIcons, map = icons && icons.material && icons.material.map, img = map && map.image;
-    const claw = window.__neonClawIcon, cmap = claw && claw.material && claw.material.map, cimg = cmap && cmap.image;
-    const keys = ((icons && icons.userData && icons.userData.icons) || []).map(i => i.key).filter(k => k !== 'claw');
-    return {
-      done: !!(icons && map), swapped: false, source: 'neonsigns', loaded: keys, failed: [],
-      cell: img ? img.width / 4 : 0, claw: IC.claw, k: icons && icons.material && icons.material.color ? icons.material.color.r : 0,
-      atlas: img ? img.width : 0, clawTex: cimg ? cimg.width : 0,
-      webp: !!(img && img.src && /tex\/icons\//.test(String(img.src))),
-      canvas: !!(img && typeof img.getContext === 'function')
-    };
-  };
+  const icT = setInterval(() => { iconArt(); clawFix(); if (IC.done && (IC.claw || !window.__neonClawIcon)) clearInterval(icT); }, 500);
+  S.icons = () => ({ done: IC.done, loaded: IC.loaded.slice(), failed: IC.failed.slice(), cell: IC.cell, claw: IC.claw, k: IC.k,
+    atlas: window.__neonIcons && window.__neonIcons.material.map && window.__neonIcons.material.map.image ? window.__neonIcons.material.map.image.width : 0,
+    clawTex: window.__neonClawIcon && window.__neonClawIcon.material.map.image ? window.__neonClawIcon.material.map.image.width : 0 });
   // ---------- t365u: Quest Browser 2D (on the screen, not in VR): left stick walks, right stick looks ----------
   // quest-pad.js (ported from the original v242) turns the Quest's stick input (wheel / scroll / zoom channels, or real gamepads when exposed)
   // into read() = { move, look }. Applied here like the original main.js applyQuestPad: move -> the on-screen stick's st.joy, look -> the
