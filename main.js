@@ -23,6 +23,7 @@ import { buildBBCabinet } from './bbcab.js';
 import { buildRockfallCabinet } from './rfcab.js';
 import { buildSkyTowerCabinet } from './skytowercab.js';
 import { setupMP } from './mp.js';
+import { setupVoice } from './voice.js';
 import { buildNovaCabinet } from './novacab.js';
 import { buildRoadsterCabinet, MR } from './roadstercab.js';
 import { buildDeadSignalStation, DS } from './dscab.js';
@@ -2103,7 +2104,7 @@ VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playable
   resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
   get shop() { return shop; }, get tp() { return tp; }, get golf() { return golf; }, get nb() { return nb; } });
 Object.assign(window.__arcade, { vr: VRH, collide, schedule });
-const mp = setupMP({ scene, camera, monkey, makeMonkey, makeAlien, st, play, getTp: () => tp, HALF, Z2, HALL_L, WX: 80 }); window.__arcade.mp = mp;   // multiplayer step 1: public room, 10 players
+const mp = setupMP({ scene, camera, monkey, makeMonkey, makeAlien, st, play, getTp: () => tp, HALF, Z2, HALL_L, WX: 80 }); window.__arcade.mp = mp; try { window.__arcade.voice = setupVoice({ mp, camera, scene, monkey }); } catch (e) { console.warn('voice', e); }   // v14 voice chat   // multiplayer step 1: public room, 10 players
 // after the first room frames: pull in the shop, then the window scenery, off the critical path
 { const idle = f => (window.requestIdleCallback ? requestIdleCallback(f, { timeout: 1500 }) : setTimeout(f, 200));
   const t = setInterval(() => { if (stats.frames < 2) return; clearInterval(t); idle(() => { loadShop(); idle(() => loadWindows()); }); }, 100);

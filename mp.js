@@ -289,6 +289,7 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
   function announce(type, payload) { try { if (M.state !== 'on' || typeof type !== 'string' || !type) return false; const o = payload || {};
       return send(type, { i: id, n: name, item: String(o.item == null ? '' : o.item).slice(0, 60), cost: Number.isFinite(+o.cost) ? +o.cost : 0 }) !== false; } catch (e) { return false; } }
   M.announce = announce;
+  M.rtcSend = pl => send('rtc', Object.assign({}, pl, { i: id }));   // v14: WebRTC offer/answer/ice for voice.js
   function sendChat(raw) { const now = performance.now(), text = cleanMsg(raw); if (!text) return { ok: false, why: 'empty' };
     if (now - M.lastChat < RATE_MS) return { ok: false, why: 'rate' }; M.lastChat = now;
     bubble(me, 'chat', text, 5000); addLog(name, id, text); send('chat', { i: id, n: name, t: text }); return { ok: true, text }; }
@@ -322,7 +323,8 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
       ch.on('presence', { event: 'sync' }, onSync)
         .on('broadcast', { event: 'st' }, m => onState(m && m.payload)).on('broadcast', { event: 'chat' }, m => onChat(m && m.payload)).on('broadcast', { event: 'emo' }, m => onEmo(m && m.payload))
         .on('broadcast', { event: 'look' }, m => onLook(m && m.payload)).on('broadcast', { event: 'zap' }, m => onZap(m && m.payload)).on('broadcast', { event: 'sky' }, m => onSky(m && m.payload)).on('broadcast', { event: 'strike' }, m => onStrike(m && m.payload)).on('broadcast', { event: 'berserker' }, m => onBerserker(m && m.payload))
-        .on('broadcast', { event: 'bye' }, m => { if (m && m.payload) drop(m.payload.i); });
+        .on('broadcast', { event: 'bye' }, m => { if (m && m.payload) drop(m.payload.i); })
+        .on('broadcast', { event: 'rtc' }, m => { M.recv++; if (M.onRtc && m && m.payload) try { M.onRtc(m.payload); } catch (e) {} });   // v14 voice-chat signalling (voice.js)
       // peek at presence before taking a seat: if 10 are already in, stay solo without counting as an 11th
       ch.subscribe(async status => {
         if (ch !== mine) return;   // t208: a late CLOSED / error from a channel we already removed must not tear down the new one

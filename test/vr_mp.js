@@ -57,7 +57,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const moc
     await place(b, 2, 1.5, Math.PI); await b.evaluate(() => window.__arcade.play.addTickets(40));
     const LOCAL = [0.2, 1.3, -0.2], aimB = async t => { await H.aim(b, 'right', LOCAL, t); await H.frames(b, 3); };
     const tapB = async id => { for (let i = 0; i < 3; i++) { const w = await b.evaluate(id => window.__gaVR.ui.btnWorld(id), id); if (!w) throw new Error('no button ' + id); await aimB(w); await H.press(b, 'right', 'trigger'); await H.frames(b, 3); if ((await b.evaluate(() => window.__gaVR.lastPress)) === id) break; } await b.evaluate(() => { window.__gaVR.lastPress = null; }); };
-    await H.press(b, 'left', 'y-button'); await H.frames(b, 3); await tapB('ward'); await tapB('cat_hand'); await tapB('w_hand_pistol'); await tapB('cat_back'); await tapB('w_back_jetpack'); await tapB('close');
+    await H.press(b, 'left', 'y-button'); await H.frames(b, 3); await tapB('pack'); await tapB('ward'); await tapB('cat_hand'); await tapB('w_hand_pistol'); await tapB('cat_back'); await tapB('w_back_jetpack'); await tapB('close');
     const gB = await b.evaluate(() => window.__gaVR.gear()); chk(gB.laser && gB.jet, 'B holds the laser pistol and wears the jetpack');
     chk(await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p && p.pistol; }), 'A sees the pistol in B\'s hand');
     await a.evaluate(() => { const R = window.__roomFire, f = R.spawn; window.__rs = []; R.spawn = function (o, d, hue, remote) { if (remote) window.__rs.push({ o, d, hue }); return f.apply(this, arguments); }; });

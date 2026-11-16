@@ -233,6 +233,9 @@ export function setupVR(A) {
     S.panels[kind] = (S.panels[kind] || 0) + 1; }
   function uiClose() { chatEnd(); UI.open = null; uiM.visible = false; UI.btns = []; }
   function say(m) { UI.msg = m; UI.msgT = 3; }
+  function vcTap() { const vc = window.__voice; if (!vc) return; const r = vc.tap();
+    const show = () => { const st = vc.state; say(st === 'on' ? (vc.muted ? 'MIC MUTED' : 'MIC ON · PLAYERS IN VOICE HEAR YOU') : st === 'listen' ? (vc.err === 'NotAllowedError' ? 'MIC BLOCKED · LISTENING ONLY' : 'NO MIC · LISTENING ONLY') : (vc.msg || '').toUpperCase().slice(0, 40)); UI.key = ''; };
+    if (r && r.then) { say('ASKING FOR THE MIC…'); r.then(show, show); } else show(); }
   function beam() { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(); S.beams++; return true; }
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
     K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
@@ -311,8 +314,12 @@ export function setupVR(A) {
       // no BEAM (the pad signs beam) / BUY TICKETS (the ticket machine + its sign) / CLOSE: just the X (or GRIP)
       add('pack', 'BACKPACK', 70, 180, 420, 400, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
       add('room', 'FLOOR + WALLS', 534, 180, 420, 400, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
-      if (!inShop) add('nb', 'PLAY NEON BRICKS', 70, 620, 884, 100, !!nbApi(), nbStart);
-      else add('shop', 'PRIZE SHOP', 70, 620, 884, 100, !!A.shop, () => uiOpen('shop')); }
+      // v14 (t396u): voice chat. MIC ON asks for the mic (only on this tap), then the same button mutes / unmutes; ✕ VC leaves voice
+      const vc = window.__voice, vin = !!(vc && vc.state !== 'off');
+      if (!inShop) add('nb', 'PLAY NEON BRICKS', 70, 620, 520, 100, !!nbApi(), nbStart);
+      else add('shop', 'PRIZE SHOP', 70, 620, 520, 100, !!A.shop, () => uiOpen('shop'));
+      add('mic', vc ? vc.label() : 'MIC ON', 610, 620, vin ? 224 : 344, 100, !!vc, vcTap); if (vc && vc.state === 'on') B[B.length - 1].sel = !vc.muted;
+      if (vin) add('voff', '✕ VC', 846, 620, 108, 100, true, () => { vc.leave(); say('VOICE CHAT OFF'); }); }
     return { title, sub, body, B }; }
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
   const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
@@ -532,7 +539,8 @@ export function setupVR(A) {
     if (p.visor) p.visor.visible = on; }
   function posePeer(p, dt, now) { const u = p.g.userData || {}, v = p.v, fresh = !!(v && now - (p.vAt || -1e9) < 2000 && arr7(v.h));
     p.vr = fresh; visor(p, fresh && p.g.visible);
-    if (!fresh || !p.g.visible || p.slot || !u.arms) { if (p.vrS) { p.vrS = null; for (const arm of u.arms || []) { const m = arm.hand && AH.models.get(arm.hand); if (m) m.visible = false; } if (u.head) u.head.rotation.set(0, 0, 0); } return; }
+    if (!fresh || !p.g.visible || p.slot || !u.arms) { if (p.flip && p.g.scale.x < 0) { p.g.scale.x = -p.g.scale.x; p.flip = false; } if (p.vrS) { p.vrS = null; for (const arm of u.arms || []) { const m = arm.hand && AH.models.get(arm.hand); if (m) m.visible = false; } if (u.head) u.head.rotation.set(0, 0, 0); } return; }
+    if (p.g.scale.x > 0) { p.g.scale.x = -p.g.scale.x; p.flip = true; }   // v13: like your own avatar, a VR player's model is mirrored so its 'handR' (gun hand) is on their right
     const k = 1 - Math.exp(-Math.max(dt, 0) * 14), S0 = p.vrS || (p.vrS = { first: true });
     for (const key of ['h', 'l', 'r']) { const a = v[key]; if (!arr7(a)) { S0[key] = null; continue; }
       let e = S0[key]; if (!e) e = S0[key] = { p: new THREE.Vector3().fromArray(a), q: new THREE.Quaternion(a[3], a[4], a[5], a[6]).normalize(), snap: true };
@@ -542,7 +550,7 @@ export function setupVR(A) {
     g.updateMatrixWorld(true);
     // head: turn + nod (clamped), on top of the body's facing
     const H = S0.h; MPV.e.setFromQuaternion(H.q, 'YXZ'); const hy = Math.max(-1.3, Math.min(1.3, MPV.e.y)), hp = Math.max(-0.9, Math.min(0.9, MPV.e.x));
-    if (u.head) { MPV.e.set(hp, hy, 0, 'YXZ'); MPV.qb.setFromEuler(MPV.e); MPV.qa.setFromAxisAngle(MPV.Y, yaw).multiply(MPV.qb); u.head.parent.getWorldQuaternion(_ha.pq); u.head.quaternion.copy(_ha.pq).invert().multiply(MPV.qa); }
+    if (u.head) { MPV.e.set(hp, hy, 0, 'YXZ'); MPV.qb.setFromEuler(MPV.e); MPV.qa.setFromAxisAngle(MPV.Y, yaw).multiply(MPV.qb); setWorldQ(u.head, MPV.qa); }
     const hw = toW(H.p, new THREE.Vector3()), head = { x: hw.x, y: hw.y, z: hw.z, yaw: yaw - Math.PI + hy };
     const grip = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
     armIK(u.arms, head, hand => { const e = S0[hand[0]]; if (!e) return null; toW(e.p, grip.p); grip.q.setFromAxisAngle(MPV.Y, yaw).multiply(e.q); return grip; });
