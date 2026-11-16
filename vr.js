@@ -453,25 +453,60 @@ export function setupVR(A) {
   function handModel(hand) { let m = AH.models.get(hand); if (m && m.parent === hand) return m;
     m = new THREE.Group(); m.name = 'vrAvatarCtrl';
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.09, 10).rotateX(Math.PI / 2 - 0.5), new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.5, metalness: 0.3 }));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.005, 6, 18), new THREE.MeshBasicMaterial({ color: 0xff3fd2, toneMapped: false })); ring.position.set(0, 0.01, -0.025); ring.rotation.x = 0.6;
-    m.add(body, ring); const ws = new THREE.Vector3(); hand.getWorldScale(ws); m.scale.setScalar(1 / Math.max(0.05, ws.x)); m.position.set(0, -0.02 / Math.max(0.05, ws.y), 0); m.rotation.x = -Math.PI / 2; hand.add(m); AH.models.set(hand, m); return m; }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.005, 6, 18), new THREE.MeshStandardMaterial({ color: 0x2a2a34, roughness: 0.5, metalness: 0.3 }));   // v13: no pink ring in the mirror ring.position.set(0, 0.01, -0.025); ring.rotation.x = 0.6;
+    m.add(body, ring); const ws = new THREE.Vector3(); hand.getWorldScale(ws); m.scale.setScalar(1 / Math.max(0.05, Math.abs(ws.y))); m.position.set(0, -0.02 / Math.max(0.05, Math.abs(ws.y)), 0); m.rotation.x = -Math.PI / 2; hand.add(m); AH.models.set(hand, m); return m; }
   // one arm solver for your own avatar (mirror) and other VR players' avatars (t362u): h = real head {x, y, z, yaw}, gripOf(hand) = {p, q} world grip pose
-  function armIK(arms, h, gripOf) { const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
-    for (const arm of arms) { if (!arm || !arm.sh) continue; const G = gripOf(arm.sd > 0 ? 'right' : 'left');
-      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) { mdl.visible = !!G; if (G) { arm.hand.getWorldScale(_ha.ws); mdl.scale.setScalar(Math.min(4, 1 / Math.max(0.05, _ha.ws.x))); } }   // keep it controller-sized whatever the hand's scale
-      if (!G) continue; _ha.wp.copy(G.p);
-      _ha.rs.set(h.x + rx * arm.sd * 0.18, h.y - 0.27, h.z + rz * arm.sd * 0.18);   // the real shoulder
-      _ha.v.copy(_ha.wp).sub(_ha.rs); const reach = Math.min(1, _ha.v.length() / 0.62); if (_ha.v.lengthSq() < 1e-6) continue; _ha.v.normalize();
-      arm.sh.parent.getWorldQuaternion(_ha.pq);
-      _ha.q.setFromUnitVectors(_ha.dn, _ha.v); arm.sh.quaternion.copy(_ha.pq).invert().multiply(_ha.q);
-      const bend = Math.max(0, 1 - reach) * 1.9; arm.sh.rotateX(-bend * 0.5); if (arm.el) arm.el.rotation.set(-bend, 0, 0);   // hand near you: elbow bends, the upper arm tips back
-      if (arm.hand) { arm.sh.updateMatrixWorld(true); arm.hand.parent.getWorldQuaternion(_ha.pq); arm.hand.quaternion.copy(_ha.pq).invert().multiply(G.q).multiply(_ha.fix); arm.hand.visible = true; } } }
+  // v13 (t395u, Dave: the mirror hands are "not right"): a real two-bone IK. From the avatar's own shoulder, the upper arm + forearm (their
+  // real lengths) bend at the elbow (pointing down / out / back) so the HAND lands on the controller (as far as the arm reaches: no
+  // stretching), and the hand takes the controller's rotation. The small controller in the avatar hand is dark (no pink ring), and with
+  // the laser pistol in that hand the gun is held instead and points where the controller points (the shot leaves its muzzle).
+  const _ik = { S: new THREE.Vector3(), T: new THREE.Vector3(), u: new THREE.Vector3(), pole: new THREE.Vector3(), E: new THREE.Vector3(), H: new THREE.Vector3(), y: new THREE.Vector3(), x: new THREE.Vector3(), z: new THREE.Vector3(), fwd: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), pq: new THREE.Quaternion(), ws: new THREE.Vector3(), flip: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI) };
+  const IKS = { err: {}, reach: {} };
+  function boneQ(dir, fwd, out) {   // a bone whose local -Y runs along dir, local +Z as close to fwd as possible
+    _ik.y.copy(dir).negate().normalize(); _ik.x.crossVectors(_ik.y, fwd); if (_ik.x.lengthSq() < 1e-6) _ik.x.crossVectors(_ik.y, _v.set(0, 1, 0.3)); _ik.x.normalize();
+    _ik.z.crossVectors(_ik.x, _ik.y).normalize(); _ik.m.makeBasis(_ik.x, _ik.y, _ik.z); return out.setFromRotationMatrix(_ik.m); }
+  const _ikM = { w: new THREE.Matrix4(), pi: new THREE.Matrix4(), l: new THREE.Matrix4(), r: new THREE.Matrix4(), fx: new THREE.Vector3(-1, 1, 1) };
+  function setWorldQ(o, wq) {   // local rotation that gives o this world rotation, also under a mirrored (scale.x < 0) or scaled parent
+    o.parent.updateMatrixWorld(true); _ikM.w.makeRotationFromQuaternion(wq); const pm = o.parent.matrixWorld; if (pm.determinant() < 0) _ikM.w.scale(_ikM.fx);
+    _ikM.pi.copy(pm).setPosition(0, 0, 0).invert(); _ikM.l.multiplyMatrices(_ikM.pi, _ikM.w); _ikM.r.extractRotation(_ikM.l); o.quaternion.setFromRotationMatrix(_ikM.r); o.updateMatrixWorld(true); }
+  function armIK(arms, h, gripOf, own) { const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
+    for (const arm of arms) { if (!arm || !arm.sh) continue;
+      // v13: the arm on YOUR right follows the right controller (by where the shoulder really is: v12 matched 'handR' to the right controller,
+      // but the model's handR sits on its other side, so the arms crossed in the mirror)
+      arm.sh.getWorldPosition(_ik.S); const side = ((_ik.S.x - h.x) * rx + (_ik.S.z - h.z) * rz) >= 0 ? 'right' : 'left', G = gripOf(side);
+      const pg = arm.hand && arm.hand.getObjectByName('gaPistol'), gun = !!(pg && pg.visible);
+      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) { mdl.visible = !!G && !gun; if (G) { arm.hand.getWorldScale(_ha.ws); mdl.scale.setScalar(Math.min(4, 1 / Math.max(0.05, Math.abs(_ha.ws.y)))); } }   // keep it controller-sized whatever the hand's scale
+      if (!G || !arm.el || !arm.hand) continue;
+      arm.sh.parent.updateMatrixWorld(true); arm.sh.getWorldPosition(_ik.S);
+      for (let it = 0; it < 2; it++) {   // bone lengths measured in the world (the torso can be scaled unevenly), solved twice
+      arm.sh.updateMatrixWorld(true); arm.el.getWorldPosition(_ik.E); arm.hand.getWorldPosition(_ik.H); const L1 = _ik.E.distanceTo(_ik.S), L2 = _ik.H.distanceTo(_ik.E);
+      _ik.T.copy(G.p); _ik.u.copy(_ik.T).sub(_ik.S); let d = _ik.u.length(); if (d < 1e-5) break; _ik.u.divideScalar(d);
+      const full = d; d = Math.min(Math.max(d, Math.abs(L1 - L2) + 1e-3), L1 + L2 - 1e-3); IKS.reach[side] = +(full / (L1 + L2)).toFixed(2);
+      // elbow: down, out to your side and a little back
+      _ik.fwd.set(-Math.sin(h.yaw), 0, -Math.cos(h.yaw)); _ik.pole.set(rx * arm.sd * 0.55, -1, rz * arm.sd * 0.55).addScaledVector(_ik.fwd, -0.3);
+      _ik.pole.addScaledVector(_ik.u, -_ik.pole.dot(_ik.u)); if (_ik.pole.lengthSq() < 1e-6) _ik.pole.set(0, -1, 0); _ik.pole.normalize();
+      const ca = Math.min(1, Math.max(-1, (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d))), sa = Math.sqrt(1 - ca * ca);
+      _ik.E.copy(_ik.S).addScaledVector(_ik.u, ca * L1).addScaledVector(_ik.pole, sa * L1);
+      _ik.H.copy(_ik.S).addScaledVector(_ik.u, d);
+      setWorldQ(arm.sh, boneQ(_v.copy(_ik.E).sub(_ik.S), _ik.fwd, _ik.q));
+      setWorldQ(arm.el, boneQ(_v.copy(_ik.H).sub(_ik.E), _ik.fwd, _ik.q));
+      }
+      _ik.q.copy(G.q).multiply(_ha.fix); setWorldQ(arm.hand, _ik.q); arm.hand.visible = true;
+      if (gun && own) { _ik.q.copy(G.aq || G.q).multiply(_ik.flip); setWorldQ(pg, _ik.q); }   // the barrel (+Z) along the controller's ray (-Z)
+      arm.hand.getWorldPosition(_ik.H); IKS.err[side] = +_ik.H.distanceTo(_ik.T).toFixed(3); } }
   const _gp = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+  const _gaq = new THREE.Quaternion();
   function myGrip(hand) { const i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src), g = i >= 0 ? grips[i] : null; if (!g) return null;
-    g.updateMatrixWorld(true); _gp.p.setFromMatrixPosition(g.matrixWorld); g.getWorldQuaternion(_gp.q); return _gp; }
+    g.updateMatrixWorld(true); _gp.p.setFromMatrixPosition(g.matrixWorld); g.getWorldQuaternion(_gp.q); ctrls[i].updateMatrixWorld(true); ctrls[i].getWorldQuaternion(_gaq); _gp.aq = _gaq; return _gp; }
   function avatarHands() { const u = monkey.userData || {}, arms = u.arms; if (!arms || !S.head) return;
-    monkey.updateMatrixWorld(true); armIK(arms, S.head, myGrip); AH.frames++; }
-  function avatarHandsOff() { for (const m of AH.models.values()) m.visible = false; }
+    // v13: the monkey model holds its pistol in 'handR', which is on the model's left as seen from behind; in the headset the avatar is
+    // mirrored (scale.x = -1, three.js flips the face winding) so that hand, and the gun, are on your RIGHT with the right controller
+    if (monkey.scale.x > 0) { monkey.scale.x = -monkey.scale.x; AH.flipped = true; }
+    monkey.updateMatrixWorld(true); armIK(arms, S.head, myGrip, true); AH.frames++; }
+  S.ikStats = () => JSON.parse(JSON.stringify(IKS));
+  S.ctrlGrips = () => { const out = {}; for (const h of ['left', 'right']) { const g = myGrip(h); if (g) out[h] = g.p.toArray(); } return out; };
+  S.laserFromMuzzle = () => VL.fromMuzzle || 0;
+  function avatarHandsOff() { for (const m of AH.models.values()) m.visible = false; if (AH.flipped && monkey.scale.x < 0) monkey.scale.x = -monkey.scale.x; AH.flipped = false; }
   // ---------- t362u: two (or more) people in the VR arcade: mp.js's shared room + VR poses ----------
   // Sent: with each mp 'st' packet (mp.js ticks at 10 Hz, only when changed) a compact `v` = head + both grips relative to the body
   // (position cm, rotation quaternion), so it lines up with the smoothed body the others draw. Flat / older clients ignore `v`.
@@ -568,17 +603,19 @@ export function setupVR(A) {
   function qfJoyOff() { if (!QF.joy) return; QF.joy = false; st.joy.on = false; st.joy.x = 0; st.joy.y = 0; st.joy.dist = 0; st.joy.vmax = 0; }
   function questFlat(s) { const Q = window.__gaQuestPad; if (!Q || !Q.isQuest || !Q.isQuest()) return; QF.frames++;
     const now = performance.now(), ms = Math.min(50, Math.max(1, now - (QF.lastT || now - 16))); QF.lastT = now;
-    if (renderer.xr.isPresenting) { qfJoyOff(); QF.xrSkips++; return; }
+    if (renderer.xr.isPresenting) { qfJoyOff(); QF.xrSkips++; QF.yawSeen = null; return; }
     const S0 = window.__start, startUp = !!(S0 && S0.shown && !S0.dismissed && document.getElementById('start')), walking = play.mode === 'walk' && !(A.nb && A.nb.playing);
     const mv = (s && s.move) || { x: 0, y: 0 }, lk = (s && s.look) || { x: 0, y: 0 }, dead = Q.DEAD || 0.18, mag = Math.hypot(mv.x || 0, mv.y || 0);
-    if (startUp || !walking) { qfJoyOff(); return; }
+    if (startUp || !walking) { qfJoyOff(); QF.yawSeen = null; return; }
     if (mag >= dead && (QF.joy || !st.joy.on)) {   // never fight a finger on the touch stick
       const t = Math.min(1, (mag - dead) / (1 - dead)), dist = QJ.DEAD + t * (QJ.REACH - QJ.DEAD), u = Math.min(1, (dist - QJ.DEAD) / (QJ.REACH - QJ.DEAD)), sm = u * u * (3 - 2 * u);
       QF.joy = true; st.joy.on = true; st.joy.x = mv.x / mag; st.joy.y = mv.y / mag; st.joy.dist = dist; st.joy.vmax = QJ.GENTLE + (QJ.SPRINT - QJ.GENTLE) * sm; QF.moves++;
     } else qfJoyOff();
     const lm = Math.hypot(lk.x || 0, lk.y || 0);
     if (lm > 0) { const dx = (lk.x || 0) * 0.6 * ms, dy = (lk.y || 0) * 0.6 * ms;   // same as main.js look(): yaw -= dx * 0.005, pitch += dy * 0.004 (clamped)
-      st.lookT = st.t; st.yaw -= dx * 0.005; st.pitch = Math.max(-0.6, Math.min(1.25, st.pitch + dy * 0.004)); QF.looks++; } }
+      st.lookT = st.t; st.yaw -= dx * 0.005; if (window.__gaNoteYaw) window.__gaNoteYaw('quest-look:' + (Q.lookSrc || '?'), -dx * 0.005); st.pitch = Math.max(-0.6, Math.min(1.25, st.pitch + dy * 0.004)); QF.looks++; }
+    // v13: anything else that turned the camera since the last frame shows up in ?qdbg=1 as 'other'
+    const Y = window.__gaYaw; if (Y) { if (QF.yawSeen != null) { const un = Math.atan2(Math.sin(st.yaw - QF.yawSeen - (Y.sum - QF.sumSeen)), Math.cos(st.yaw - QF.yawSeen - (Y.sum - QF.sumSeen))); if (Math.abs(un) > 1e-6 && window.__gaNoteYaw) window.__gaNoteYaw('other', un); } QF.yawSeen = st.yaw; QF.sumSeen = Y.sum; } }
   function qfHook() { const Q = window.__gaQuestPad; if (Q && Q.onFrame !== questFlat && (!Q.onFrame || Q.onFrame.__ga !== 1)) { questFlat.__ga = 1; Q.onFrame = questFlat; } }
   qfHook(); setInterval(qfHook, 1000);
   S.questFlat = () => Object.assign({}, QF, { quest: !!(window.__gaQuestPad && window.__gaQuestPad.isQuest()), joy: { on: st.joy.on, x: st.joy.x, y: st.joy.y, vmax: st.joy.vmax }, yaw: st.yaw, pitch: st.pitch });   // also for players in the VR edition who are not in a headset: they still see VR players' heads and hands
@@ -722,6 +759,10 @@ export function setupVR(A) {
     const c = ctrls[i], g = grips[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_lq); _ld.set(0, 0, -1).applyQuaternion(_lq).normalize();   // pointing direction = the controller's ray
     (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
     // t361u: the alien's shot leaves its floating machine (botEye, as roomfire.js does), aimed at where the right controller points
+    // v13 (t395u): with the laser pistol in the avatar's right hand the shot leaves the gun's MUZZLE (the IK puts the hand on the controller
+    // and turns the barrel along its ray), so in the mirror and in the world the bolt / beam comes out of the gun
+    const pz = monkey.getObjectByName('gaPistolMuzzle'), pgun = pz && pz.parent;
+    if (pz && pgun && pgun.visible && (monkey.userData || {}).char !== 'alien') { try { avatarHands(); } catch (e) {} pz.getWorldPosition(_le); _lo.copy(_le).addScaledVector(_ld, 0.03); VL.fromMuzzle = (VL.fromMuzzle || 0) + 1; return { o: _lo, d: _ld, muzzle: true }; }
     const u = monkey.userData || {}; if (u.char === 'alien') { const eye = monkey.getObjectByName('botEye') || u.bot; if (eye) { monkey.updateMatrixWorld(true); eye.getWorldPosition(_le); _lt.copy(_lo).addScaledVector(_ld, 20); _ld.copy(_lt).sub(_le).normalize(); _lo.copy(_le).addScaledVector(_ld, 0.12); return { o: _lo, d: _ld, alien: true }; } }
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }

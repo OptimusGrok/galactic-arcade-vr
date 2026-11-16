@@ -191,8 +191,18 @@
   }
 
   // ---------- v9 stick classifier ----------
+  var padStickAt = 0, padWheelSkip = 0, lastLookSrc = '';
   var ptrs = {}, evLog = [], calib = null, cal = null, calBtn = null, calMsg = null, CAL_KEY = 'gaQuest.stickCal';
-  try { calib = JSON.parse(localStorage.getItem(CAL_KEY) || 'null'); } catch (e) { calib = null; }
+  // v13 (t391u-t393u, Dave: "still swapping and now both sticks move the camera"): the Quest 2D browser gives a page NO way to tell the
+  // thumbsticks apart (no gamepads outside WebXR, one live ray, both sticks = the same plain wheel), so by default EVERY stick signal
+  // walks (dy forward/back, dx strafe) and nothing a stick sends can turn the camera. TURN = hold the on-screen turn buttons, or hold
+  // the TRIGGER on the 3D view and drag. A real left/right split only comes from handed gamepads (if the browser ever exposes them:
+  // left stick walks, right stick turns, by the pad's own handedness, never a guess). The old classifier / STICK SETUP / STICK LOOK
+  // only run with ?qsplit=1 (experiments). A saved STICK SETUP from older versions is wiped on a version change.
+  var QVER = 'v13', SPLIT = false, VER_KEY = 'gaQuest.ver', lookIgn = {};
+  try { SPLIT = /[?&]qsplit=1\b/.test(location.search); } catch (e) {}
+  try { if (localStorage.getItem(VER_KEY) !== QVER) { localStorage.removeItem(CAL_KEY); localStorage.removeItem('gaQuest.lookStick'); localStorage.setItem(VER_KEY, QVER); } } catch (e) {}
+  try { calib = SPLIT ? JSON.parse(localStorage.getItem(CAL_KEY) || 'null') : null; } catch (e) { calib = null; }
   // t369u: each ray remembers where it HOVERS (hx: smoothed x while not pressed), so a controller holding the FLY button
   // (bottom right) still counts as the hand it is. A held ray's drags (the Quest can turn that controller's stick into a drag
   // while its trigger is down) are stick input too ('held' events), classified like the wheel.
@@ -204,8 +214,9 @@
     p.type = e.pointerType || p.type; p.x = e.clientX; p.y = e.clientY; p.t = performance.now(); p.n++; (p.ts || (p.ts = [])).push(p.t); if (p.ts.length > 6) p.ts.shift();
     if (!p.pressed && e.type !== 'pointerdown') p.hx = p.hx == null ? p.x : p.hx * 0.7 + p.x * 0.3;
     tryLock(p);
-    if (e.type === 'pointerdown') { p.pressed = true; p.hold = isQuest() && isHoldBtn(e.target); p.cvDrag = isQuest() && !p.hold && !!(e.target && e.target.tagName === 'CANVAS') && !startUp(); return; }
+    if (e.type === 'pointerdown') { p.pressed = true; p.hold = isQuest() && isHoldBtn(e.target) && !isTurnBtn(e.target); p.trig = !!((e.buttons & 1) || (e.button === 0 && e.buttons == null)); p.cvDrag = isQuest() && p.trig && !p.hold && !!(e.target && e.target.tagName === 'CANVAS') && !startUp() && !stickBusy(300); p.downAt = performance.now(); p.live = false; p.acc = 0; p.pend = null; return; }
     if (!p.pressed) return;
+    if (e.type === 'pointermove' && e.buttons != null && !(e.buttons & 1) && p.cvDrag) { p.cvDrag = false; dragLook.noTrig = (dragLook.noTrig || 0) + 1; }   // trigger not held any more: no turning
     if (p.cvDrag && e.type === 'pointermove') { var cx0 = p.x - px, cy0 = p.y - py; if (Math.abs(cx0) + Math.abs(cy0) >= 0.5) cvDragMove(p, cx0, cy0); return; }
     if (p.hold && e.type === 'pointermove' && !startUp()) {
       var mx = p.x - px, my = p.y - py; if (Math.abs(mx) < 0.5 && Math.abs(my) < 0.5) return;
@@ -244,16 +255,37 @@
     if (liveU && Math.abs(hxOf(p) - hxOf(liveU)) > 40) { var pr = hxOf(p) > hxOf(liveU); lockHand(p.id, pr ? 'R' : 'L', 'pair x'); lockHand(liveU.id, pr ? 'L' : 'R', 'pair x'); }
   }
   var oneRay = { n: 0, hinted: false }, dragLook = { n: 0, skipped: 0, lastTouch: 0, lastMouse: 0 };
-  function oneRaySeen() { oneRay.n++; if (oneRay.hinted || oneRay.n < 20 || cal) return; oneRay.hinted = true;
-    try { ensureCalUi(); calSay('Both sticks WALK here (the Quest browser sends them the same). TURN: hold the TRIGGER on the floor and drag, or tap STICK WALK to switch the sticks to LOOK'); setTimeout(function () { if (!cal) calSay(''); }, 7000); } catch (e) {} }
+  function oneRaySeen() { oneRay.n++; if (oneRay.hinted || oneRay.n < 20 || cal) return; if (startUp()) { oneRay.n = 0; return; } oneRay.hinted = true;
+    try { ensureCalUi(); calSay(SPLIT ? 'Both sticks WALK here (the Quest browser sends them the same). TURN: hold the TRIGGER on the floor and drag, or tap STICK WALK to switch the sticks to LOOK' : 'Both sticks WALK (the Quest browser cannot tell them apart). TURN: hold \u25C0 \u25B6 or hold the TRIGGER on the floor and drag'); setTimeout(function () { if (!cal) calSay(''); }, 7000); } catch (e) {} }
   // v12 (Dave's 2nd photo): pushing the LEFT stick sideways sends wheel dx (MOVE, strafe) AND the Quest reports that ray as pressed
   // ("DOWN", touch=27) with drag moves -> main.js's touch / mouse drag-look turned the camera. A drag while stick wheels are arriving is
   // the stick, not the hand: stickBusy() tells main.js (and the trigger-drag turn here) to ignore it.
   var dragBlocked = 0;
   function stickBusy(ms) { var now = performance.now(), m = ms || 220; return isQuest() && (now - lastWheelEvt < m || now - (lastScrollStamp ? lastScrollIn : 0) < m); }
   function cvDragMove(p, mx, my) {   // trigger held on the 3D view: drag = turn the camera (main.js look(), like a touch drag)
-    var now = performance.now(); if (stickBusy()) { dragBlocked++; return; } if (now - dragLook.lastTouch < 150 || now - dragLook.lastMouse < 150) { dragLook.skipped++; return; }   // main.js already turns from touch / mouse drags
-    if (typeof root.__gaLook === 'function') { root.__gaLook(mx * 1.4, my * 1.4); dragLook.n++; }
+    // v13: main.js no longer drag-turns on a Quest; this (trigger held on the 3D view) is the only drag turn. A stick push can come with a
+    // pressed-ray drag (Dave's 2nd photo), so a drag only turns after 150 ms + 10 px with NO stick wheel; one stick wheel during the press
+    // cancels that whole press (it was the stick, not your hand).
+    var now = performance.now();
+    if (stickBusy(300)) { dragBlocked++; p.cvDrag = false; p.pend = null; return; }
+    if (!p.live) { p.pend = p.pend || [0, 0]; p.pend[0] += mx; p.pend[1] += my; p.acc = (p.acc || 0) + Math.abs(mx) + Math.abs(my);
+      if (now - (p.downAt || now) < 150 || p.acc < 10) return; p.live = true; mx = p.pend[0]; my = p.pend[1]; p.pend = null; }
+    if (typeof root.__gaLook === 'function') { root.__gaLook(mx * 1.4, my * 1.4, 'trigger-drag'); dragLook.n++; }
+  }
+  // v13: ◀ ▶ TURN buttons (hold to turn) next to the walk stick: the one unambiguous turn in the 2D browser
+  var turnDir = 0, turnBtns = null, turnN = 0, TURN_RATE = 0.55;
+  function isTurnBtn(el) { try { return !!(el && el.closest && el.closest('.gaQturn')); } catch (e) { return false; } }
+  function ensureTurnBtns() {
+    if (turnBtns || !document.body || !isQuest() || isPlayFrame()) return;
+    turnBtns = [];
+    [['gaQturnL', '\u25C0', -1, 'Turn left (hold)'], ['gaQturnR', '\u25B6', 1, 'Turn right (hold)']].forEach(function (d) {
+      var b = document.createElement('button'); b.id = d[0]; b.className = 'gaQturn'; b.type = 'button'; b.textContent = d[1]; b.title = d[3]; b.setAttribute('aria-label', d[3]);
+      var on = function (e) { if (e && e.cancelable) e.preventDefault(); if (e && e.stopPropagation) e.stopPropagation(); turnDir = d[2]; turnN++; b.classList.add('on'); };
+      var off = function (e) { if (turnDir === d[2]) turnDir = 0; b.classList.remove('on'); };
+      b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off); addEventListener('pointerup', off, true); addEventListener('blur', off);
+      b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+      document.body.appendChild(b); turnBtns.push(b);
+    });
   }
   function ptrUp(e) { if (!e || e.pointerId == null) return; var p = ptrs[String(e.pointerId)]; if (p) { p.pressed = false; p.hold = false; p.cvDrag = false; } }
   function ptrAt(cx, cy) {
@@ -282,6 +314,7 @@
     return { src: ev.src, mode: String(ev.mode || 0), step: String(stepQ(Math.max(Math.abs(ev.dx || 0), Math.abs(ev.dy || 0)))) };
   }
   function classify(ev) {
+    if (!SPLIT) { if (ev.src === 'wheel' || ev.src === 'scroll' || ev.src === 'vvscroll') oneRaySeen(); return { look: false, why: 'v13 WALK' }; }
     if (lookToggle) return { look: true, why: 'toggle' };
     if (ev.ctrl || ev.meta || ev.alt) return { look: true, why: 'mod' };
     if (calib && calib.rules && calib.rules.length) {
@@ -378,6 +411,7 @@
   }
 
   function ingestLook(source, nx, ny) {
+    if (!SPLIT && source !== 'turn' && source !== 'gamepad') { lookIgn[source] = (lookIgn[source] || 0) + 1; return virtLook(); }   // v13: no stick-made signal turns the camera
     nx = clamp(+nx || 0, -1, 1);
     ny = clamp(+ny || 0, -1, 1);
     var mag = Math.hypot(nx, ny);
@@ -387,6 +421,7 @@
     lastLookAt = performance.now();
     lastChan = 'look';
     lastIngestSrc = source || 'look';
+    lastLookSrc = source || 'look';
     return virtLook();
   }
 
@@ -441,6 +476,7 @@
         alt = { x: 0, y: 0, mag: 0 };
       }
       hand = handOf(gp);
+      if ((hand === 'right' || hand === 'left') && stick.mag) padStickAt = performance.now();   // v13: handed pads = the real split; the wheel they also make is ignored
       if (hand === 'right') {
         if (stick.mag) look = stick;
       } else if (hand === 'left') {
@@ -479,6 +515,7 @@
     else if (v.mag) { move = v; source = lastIngestSrc || 'virt'; }
     else if (lv.mag) source = lastIngestSrc || 'look';
     else if (keys.length) source = 'key';
+    if (look.mag) lastLookSrc = 'gamepad';
     if (!look.mag && lv.mag) look = lv;
     var vv = root.visualViewport;
     var lookAge = lastLookAt ? +(performance.now() - lastLookAt).toFixed(0) : null;
@@ -538,7 +575,10 @@
         + '#gaQcal{position:fixed;right:max(8px,env(safe-area-inset-right));bottom:calc(max(10px,env(safe-area-inset-bottom)) + 40px);z-index:25;pointer-events:auto;font:800 11px/1.15 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.06em;color:#fff6c8;background:#0a0612cc;border:1px solid #ffd23a88;border-radius:8px;padding:8px 10px;text-shadow:0 0 6px #ffb000;cursor:pointer}'
         + '#gaQcal[hidden]{display:none!important}'
         + '#gaQcalMsg{position:fixed;left:50%;top:18%;transform:translateX(-50%);z-index:2147483001;pointer-events:none;font:900 20px/1.3 Arial Black,Arial,sans-serif;color:#fff;background:#0a0612e6;border:2px solid #ffd23a;border-radius:12px;padding:14px 20px;text-align:center;max-width:80vw;text-shadow:0 0 8px #ffb000}'
-        + '#gaQcalMsg[hidden]{display:none!important}';
+        + '#gaQcalMsg[hidden]{display:none!important}'
+        + '.gaQturn{position:fixed;bottom:max(30px,calc(env(safe-area-inset-bottom) + 22px));z-index:25;width:76px;height:76px;border-radius:50%;pointer-events:auto;touch-action:none;font:900 30px/1 Arial,sans-serif;color:#dffbff;background:#0a0612cc;border:2px solid #00e5ffaa;box-shadow:0 0 12px #00e5ff55;user-select:none;-webkit-user-select:none}'
+        + '#gaQturnL{left:max(160px,calc(env(safe-area-inset-left) + 152px))}#gaQturnR{left:max(248px,calc(env(safe-area-inset-left) + 240px))}'
+        + '.gaQturn.on{background:#ff3cf0aa;border-color:#fff}.gaQturn[hidden]{display:none!important}';
       (document.head || document.documentElement).appendChild(s);
     } catch (e) {}
     ensureViewport();
@@ -575,7 +615,12 @@
     for (k in ptrs) pl.push(k + (hands[k] ? '[' + hands[k] + ']' : '') + ':' + (ptrs[k].type || '?') + '@' + Math.round(ptrs[k].x) + ',' + Math.round(ptrs[k].y) + (ptrs[k].hx != null ? ' hx' + Math.round(ptrs[k].hx) : '') + (ptrs[k].pressed ? (ptrs[k].hold ? ' HOLD' : ' DOWN') : '') + ' ' + Math.round((now - ptrs[k].t) / 100) / 10 + 's n' + ptrs[k].n);
     var el = evLog.map(function (e) { return (e.src === 'wheel' ? 'W' : e.src === 'scroll' ? 'S' : e.src === 'held' ? 'H' : 'V') + ' dx' + Math.round(e.dx) + ' dy' + Math.round(e.dy) + (e.dz ? ' dz' + Math.round(e.dz) : '') + ' m' + (e.mode || 0)
       + (e.ctrl ? ' C' : '') + (e.alt ? ' A' : '') + (e.meta ? ' M' : '') + (e.shift ? ' S' : '') + ' @' + (e.cx == null ? '-' : Math.round(e.cx) + ',' + Math.round(e.cy)) + ' ray' + (e.pid == null ? '-' : e.pid) + ' -> ' + e.cls + ' (' + e.why + ')'; });
-    dbgEl.textContent = 'GA Quest dbg VR v12 (left=MOVE right=LOOK)'
+    var YL = root.__gaYaw || { log: [], by: {} };
+    dbgEl.textContent = 'GA Quest dbg VR ' + QVER + ' | page ' + (root.__GA_VR || '?') + ' | sw ' + swInfo
+      + '\nSTICKS: ' + (SPLIT ? 'qsplit=1 EXPERIMENT (classifier on)' : (padStickAt ? 'GAMEPADS: left stick WALK, right stick TURN (by handedness)' : 'both WALK (dy walk, dx strafe), never turn')) + ' | TURN: \u25C0 \u25B6 x' + turnN + (turnDir ? (turnDir < 0 ? ' <<' : ' >>') : '') + ', trigger-drag x' + dragLook.n
+      + '\nyaw by ' + (Object.keys(YL.by).length ? Object.keys(YL.by).map(function (k) { return k + '=' + YL.by[k].n + '(' + YL.by[k].d.toFixed(2) + 'rad)'; }).join(' ') : 'nothing yet')
+      + '\nyaw last ' + (YL.log.length ? YL.log.slice(0, 4).map(function (e) { return e.c + ' ' + (e.d >= 0 ? '+' : '') + e.d.toFixed(3) + ' ' + Math.round((now - e.t) / 100) / 10 + 's'; }).join(' | ') : '-')
+      + '\nstick look ignored ' + (Object.keys(lookIgn).length ? Object.keys(lookIgn).map(function (k) { return k + '=' + lookIgn[k]; }).join(' ') : '0') + ' | pad-wheel skipped ' + padWheelSkip + ' | drag w/o trigger ' + (dragLook.noTrig || 0) + ' | stick drags ignored ' + dragBlocked
       + '\nrays ' + (pl.length ? pl.join(' | ') : '-')
       + '\nMODE ' + (function () { var live = 0, k2; for (k2 in ptrs) if (busyRay(ptrs[k2], now)) live++; if (live >= 2) { var ks = Object.keys(ptrs).filter(function (q) { return busyRay(ptrs[q], now); }); live = ks.some(function (a) { return ks.some(function (b) { return a !== b && together(ptrs[a], ptrs[b]); }); }) ? 2 : 1; } return live >= 2 || Object.keys(hands).length ? '2 RAYS: left ray = MOVE, right ray = LOOK (locked per ray)' : '1 RAY: stick wheel = MOVE always (dy walk, dx strafe, never turns) | TURN = trigger-drag on the floor, STICK LOOK button, or STICK SETUP'; })() + ' | drag-turns ' + dragLook.n + (dragLook.skipped ? ' (main ' + dragLook.skipped + ')' : '') + ' | stick-drags ignored ' + dragBlocked
       + '\nhand lock ' + (Object.keys(hands).length ? Object.keys(hands).map(function (id) { var p = ptrs[id]; return 'ray' + id + '=' + hands[id] + (hands[id] === 'R' ? '(LOOK)' : '(MOVE)') + (p && now - p.t < LIVE_MS ? ' live' : ''); }).join(' | ') : 'none yet (point both controllers at the page)') + (lockLog.length ? '\n  locks: ' + lockLog.join('; ') : '')
@@ -650,6 +695,7 @@
     if (startUp()) return;
     if (pinchNow()) return;
     if (!isQuest() && lastDrag && performance.now() - lastDrag < 100) return;
+    if (padStickAt && lastWheelEvt - padStickAt < 600) { padWheelSkip++; return; }
     var pm = ptrAtWheel(lastWheelCX, lastWheelCY);
     var wev = { src: 'wheel', dx: lastWheelDx * (lastWheelMode === 1 ? 16 : lastWheelMode === 2 ? 80 : 1), dy: lastWheelDy * (lastWheelMode === 1 ? 16 : lastWheelMode === 2 ? 80 : 1), dz: e.deltaZ || 0, mode: lastWheelMode,
       ctrl: !!e.ctrlKey, meta: !!e.metaKey, alt: !!e.altKey, shift: !!e.shiftKey, cx: lastWheelCX, cy: lastWheelCY, pid: pm ? pm.id : null, ptype: pm ? pm.type : '' };
@@ -694,6 +740,7 @@
     recen();
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
     lastScrollIn = performance.now();
+    if (padStickAt && lastScrollIn - padStickAt < 600) { padWheelSkip++; return; }
     var sev = { src: 'scroll', dx: dx, dy: dy, dz: 0, mode: 0, cx: null, cy: null, pid: lastPtr.id != null && performance.now() - lastPtr.t < 3000 ? String(lastPtr.id) : null, ptype: lastPtr.type };
     var sc = classify(sev);
     if (dupOf(sc.look, performance.now())) return;   // t377u: the scroll a wheel on the same channel already counted
@@ -926,9 +973,12 @@
       var cv = document.querySelector('canvas');
       if (cv && !cv.__gaQWheel) { cv.__gaQWheel = 1; try { cv.classList.add('gaQuestRoom'); } catch (e) {} attachWheel(cv); }
       if (!lookBtn) ensureLookBtn();
-      if (lookBtn) lookBtn.hidden = !!startUp();
+      if (lookBtn) lookBtn.hidden = !SPLIT || !!startUp();
       if (!calBtn) ensureCalUi();
-      if (calBtn) calBtn.hidden = !!startUp();
+      if (calBtn) calBtn.hidden = !SPLIT || !!startUp();
+      if (!turnBtns) ensureTurnBtns();
+      if (turnBtns) { var th = !!startUp() || inXR() || document.body.classList.contains('nbPlay') || document.body.classList.contains('ingame'); for (var tb = 0; tb < turnBtns.length; tb++) turnBtns[tb].hidden = th; if (th) turnDir = 0; }
+      if (turnDir) ingestLook('turn', turnDir * TURN_RATE, 0);
       s = read();
       if (isPlayFrame()) applyPlay(s);
     } else {
@@ -971,7 +1021,11 @@
     document.body.appendChild(lookBtn);
   }
 
+  var swInfo = '?';
+  function probeSW() { try { var ctl = navigator.serviceWorker && navigator.serviceWorker.controller ? 'ctl' : 'no-ctl';
+    if (root.caches && caches.keys) caches.keys().then(function (ks) { swInfo = (ks.filter(function (k) { return k.indexOf('galactic-arcade_vr-') === 0; }).join(',') || 'no cache') + ' ' + ctl; }).catch(function () { swInfo = ctl; }); else swInfo = ctl; } catch (e) {} }
   function start() {
+    probeSW(); setInterval(probeSW, 5000);
     applyCss();
     applyListeners();
     listenKeys();
@@ -1004,6 +1058,7 @@
     get calib() { return calib; },
     get calibrating() { return cal ? cal.phase : null; },
     get evLog() { return evLog.slice(); },
+    get lookSrc() { return lastLookSrc; }, VER: QVER, get split() { return SPLIT; }, get turn() { return { dir: turnDir, n: turnN }; }, setTurn: function (d) { turnDir = d | 0; if (d) turnN++; }, lookIgnored: lookIgn, get padWheelSkip() { return padWheelSkip; },
     back: backFire, bFire: bFire, get bFires() { return bFireN; },
     get backs() { return Object.assign({ last: backLast, trap: trapOn }, backN); },
     stickBusy: stickBusy,

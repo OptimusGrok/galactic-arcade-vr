@@ -14,7 +14,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
       await new Promise(r => setTimeout(r, 16)); } }, [n, dy, ctrl, dx]);
   const QF = page => page.evaluate(() => window.__gaVR.questFlat());
   // ---------------- flat page, Quest UA, saved lava/viking + 0 tickets, random room NOT pre-disabled by the harness ----------------
-  let o = await open({ w: 480, h: 270, randomRoom: true, init: { content: FAKE } });
+  let o = await open({ w: 480, h: 270, randomRoom: true, qs: '?qsplit=1', init: { content: FAKE } });   // v13: the stick classifier only runs with ?qsplit=1 (test/quest_v13.js covers the default)
   let { page, errors } = o;
   try {
     const r0 = await page.evaluate(() => ({ room: window.__gaVR.room(), lsF: localStorage.getItem('neonarcade.floor'), lsW: localStorage.getItem('neonarcade.walls'), rr: !!window.__noRandomRoom, q: !!(window.__gaQuestPad && window.__gaQuestPad.isQuest()), qm: !!window.__gaQuest, hook: !!(window.__gaQuestPad && window.__gaQuestPad.onFrame) }));
@@ -173,7 +173,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     await rays2();
     await wheelAt(1, { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151 }); await wheelAt(1, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 });
     const dbg = await page.evaluate(() => { window.__gaQuestPad.showDebug(true); const t = document.getElementById('gaQdbg').textContent; window.__gaQuestPad.showDebug(false); return t; });
-    chk(/VR v12/.test(dbg) && /last stick events/.test(dbg) && /-> MOVE \((2ray|lock L)\)/.test(dbg) && /-> LOOK \((2ray|lock R)\)/.test(dbg) && /[ |]11\[L\]:touch@/.test(dbg) && /hand lock ray11=L\(MOVE\)/.test(dbg) && /ray12=R\(LOOK\)/.test(dbg), '?qdbg overlay lists rays and each stick event with its class + reason');
+    chk(/VR v1[23]/.test(dbg) && /last stick events/.test(dbg) && /-> MOVE \((2ray|lock L)\)/.test(dbg) && /-> LOOK \((2ray|lock R)\)/.test(dbg) && /[ |]11\[L\]:touch@/.test(dbg) && /hand lock ray11=L\(MOVE\)/.test(dbg) && /ray12=R\(LOOK\)/.test(dbg), '?qdbg overlay lists rays and each stick event with its class + reason');
     // STICK SETUP calibration: one ray, same spot, but the sticks differ in deltaMode (pixels vs lines)
     // ---- t369u: while FLYING (jetpack), the left stick moves the player, the right stick only turns ----
     await page.evaluate(() => { const a = window.__arcade; window.__gaPlayer.p.back = 'jetpack'; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); a.st.fly.e = 1; });
@@ -227,7 +227,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     chk(ic.done && ic.loaded.length === 13 && !ic.failed.length && ic.atlas === 2048, 'all 13 new cabinet pictures loaded into a 2048 px atlas (' + ic.loaded.length + ', failed ' + ic.failed.join(',') + ')');
     chk(ic.opaque.every(v => v > 0.12), 'every picture cell has solid art in it (min ' + Math.min(...ic.opaque).toFixed(2) + ')');
     chk(ic.claw && ic.clawTex === 2048, 'claw icon uses a 2048x256 power-of-two texture');
-    const cl = await page.evaluate(async () => { const c = window.__neonClawIcon, t = c.material.map, v0 = t.version, o0 = t.offset.x; await new Promise(r => setTimeout(r, 2000)); return { v0, v1: t.version, o0, o1: t.offset.x }; });
+    const cl = await page.evaluate(async () => { const c = window.__neonClawIcon, t = c.material.map, v0 = t.version, o0 = t.offset.x; let o1 = o0; for (let i = 0; i < 6 && o1 === o0; i++) { await new Promise(r => setTimeout(r, 450)); o1 = t.offset.x; } return { v0, v1: t.version, o0, o1 }; });
     chk(cl.o0 !== cl.o1 && cl.v1 === cl.v0, 'claw still animates (offset ' + cl.o0.toFixed(2) + ' -> ' + cl.o1.toFixed(2) + ') with no texture re-uploads (version ' + cl.v0 + ' -> ' + cl.v1 + ')');
     // in-game OPTIONS: free with 0 tickets
     const op = await page.evaluate(() => { const O = window.__opts; O.pickRoom('floor', 'ice'); O.pickRoom('walls', 'portals'); const a = window.__gaVR.room();

@@ -207,3 +207,22 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   like before; PUT R/L/BOTH AWAY, REMOVE, < >). Right: the FLOOR + WALLS square showing a different floor picture every 5 s; opens the free
   floor + walls picker. Bottom: PLAY NEON BRICKS (arcade) or PRIZE SHOP (shop). Only the X (or GRIP) closes. BEAM TO SHOP is on the
   teleporter pad signs, BUY TICKETS at the ticket machine (sign + ray), Grok chat by pointing at Grok. Test: test/vr_menu.js.
+
+## v13 (t391u-t395u): Quest 2D sticks never turn the camera, turn buttons, real arm IK in the mirror, laser from the gun muzzle (cache v13)
+- **What turned the camera in v12** (Dave: "still swapping and both sticks move the camera"): (1) a STICK SETUP saved in localStorage by
+  v9-v12 kept classifying wheels by step size / source, so a stick flipped to LOOK with how far it was pushed; (2) the hand locks /
+  2-ray rule could still mark a ray LOOK; (3) the zoom channel (visualViewport scale / ctrl+wheel) was LOOK; (4) main.js drag-turned from
+  the touch / mouse drags the Quest fakes from the ray; (5) the showcase camera swing near featured cabinets turned the view while walking.
+- **v13 rule (default)**: every stick signal WALKS (dy forward/back, dx strafe); nothing a stick sends can turn. TURN = hold the on-screen
+  ◀ ▶ buttons (beside the walk stick), or hold the TRIGGER on the 3D view and drag (only after 150 ms + 10 px with no stick wheel; a stick
+  wheel cancels that press). main.js never drag-turns on a Quest; no showcase swing on a Quest. Handed gamepads (if the browser ever
+  exposes them) = the real split: left stick walks, right stick turns, by the pad's own handedness, and their wheel is ignored.
+- The Quest 2D browser exposes no gamepads outside WebXR (Meta: the system shell, not the browser, owns the controllers), one ray is live at
+  a time and both sticks arrive as the same plain wheel, so there is no reliable left/right signal. The old classifier, STICK SETUP and
+  STICK LOOK only run with ?qsplit=1; a saved STICK SETUP is wiped on a version change.
+- ?qdbg=1: version (quest-pad, page, SW cache + controller), the stick rule, every camera yaw change by cause (turn buttons, trigger-drag,
+  gamepad, showcase, neon-bricks, other) and the stick looks / drags ignored. Test: test/quest_v13.js (replays Dave's 3 photos: 0 yaw).
+- **Mirror arms**: two-bone IK from the avatar's shoulder (real bone lengths, elbow down/out/back): the small hands sit on the controllers
+  as far as the arm reaches (no stretching) and turn with them; the avatar's little controllers have no pink ring; your own controllers,
+  rings, rays and HUD stay hidden in the mirror. **Laser**: with the pistol the gun replaces the little controller in the right hand, its
+  barrel follows the controller ray and bolts / the beam leave the muzzle. Test: test/vr_mirror_ik.js.

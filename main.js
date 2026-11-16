@@ -1090,8 +1090,8 @@ let mouseDrag = null;
 cv.addEventListener('mousedown', e => { mouseDrag = { x: e.clientX, y: e.clientY }; cv.focus(); });
 addEventListener('mouseup', () => mouseDrag = null);
 addEventListener('mousemove', e => {
-  if (document.pointerLockElement === cv) { look(e.movementX, e.movementY); return; }
-  if (!mouseDrag) return; if (questStickDrag()) { mouseDrag = { x: e.clientX, y: e.clientY }; return; } look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y); mouseDrag = { x: e.clientX, y: e.clientY };
+  if (document.pointerLockElement === cv) { look(e.movementX, e.movementY, 'mouse-lock'); return; }
+  if (!mouseDrag) return; if (questStickDrag()) { mouseDrag = { x: e.clientX, y: e.clientY }; return; } look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y, 'mouse-drag'); mouseDrag = { x: e.clientX, y: e.clientY };
 });
 cv.addEventListener('dblclick', () => { if (!MOBILE) cv.requestPointerLock?.(); });
 // Camera distance (Dave): desktop mouse-wheel zoom still persists. On a phone, hold the ZOOM button beside the backpack to ease in; release returns to the default. Default = PR6 wider cam (7.6 landscape / 4.2 portrait).
@@ -1117,11 +1117,18 @@ if (!MOBILE) loadZoom();   // desktop wheel zoom may persist; the hold-to-zoom b
 cv.addEventListener('wheel', e => { e.preventDefault(); if (renderer.xr.isPresenting || QUEST) { st.wheelBlocked = (st.wheelBlocked || 0) + 1; return; } setDist(st.dist + e.deltaY * 0.004); }, { passive: false });
 const PITCH_MIN = -0.6, PITCH_MAX = 1.25, NB_PITCH_MIN = -1.35;   // t791u: while Neon Bricks is playing, allow looking further up so the top of the playfield is on screen
 function lookPitchRange() { const n = window.__neonBricks; return (n && n.playing && !n.zoom) ? [NB_PITCH_MIN, PITCH_MAX] : [PITCH_MIN, PITCH_MAX]; }
-function look(dx, dy) { st.lookT = st.t; st.yaw -= dx * 0.005; const r = lookPitchRange(); st.pitch = THREE.MathUtils.clamp(st.pitch + dy * 0.004, r[0], r[1]); }
+// v13 (t391u): every camera yaw change is noted with its cause (?qdbg=1 shows them): window.__gaYaw = { log, by, sum }
+const YAWLOG = window.__gaYaw = { log: [], by: {}, sum: 0 };
+function noteYaw(c, d) { if (!d) return; YAWLOG.sum += d; const b = YAWLOG.by[c] || (YAWLOG.by[c] = { n: 0, d: 0 }); b.n++; b.d += d; const L = YAWLOG.log[0];
+  if (L && L.c === c && performance.now() - L.t < 400) { L.d += d; L.t = performance.now(); } else { YAWLOG.log.unshift({ c, d, t: performance.now() }); if (YAWLOG.log.length > 10) YAWLOG.log.length = 10; } }
+window.__gaNoteYaw = noteYaw;
+function look(dx, dy, cause = 'drag') { st.lookT = st.t; st.yaw -= dx * 0.005; noteYaw(cause, -dx * 0.005); const r = lookPitchRange(); st.pitch = THREE.MathUtils.clamp(st.pitch + dy * 0.004, r[0], r[1]); }
 // v12 (Dave's Quest photo): the Quest turns a thumbstick push into a pressed-ray drag as well as the wheel; while stick wheels are arriving a
 // touch / mouse drag is the stick, so it must not turn the camera (the left stick only walks / strafes)
-function questStickDrag() { const Q = window.__gaQuestPad; try { if (Q && Q.stickBusy && Q.stickBusy()) { Q.noteDragBlocked(); return true; } } catch (e) {} return false; }
-window.__gaLook = (dx, dy) => { if (st.vr || st.seated) return; look(dx, dy); };   // v12: quest-pad.js trigger-drag turn (flat Quest)
+// v13 (t391u, Dave: "both sticks move the camera"): on a Quest the 2D browser fakes touch / mouse drags from the controller ray (and from
+// stick pushes), so main.js never drag-turns there at all; the only drag turn is quest-pad.js's trigger-held drag (__gaLook).
+function questStickDrag() { if (QUEST) { st.questDragIgnored = (st.questDragIgnored || 0) + 1; return true; } const Q = window.__gaQuestPad; try { if (Q && Q.stickBusy && Q.stickBusy()) { Q.noteDragBlocked(); return true; } } catch (e) {} return false; }
+window.__gaLook = (dx, dy, cause = 'trigger-drag') => { if (st.vr || st.seated) return; look(dx, dy, cause); };   // v12: quest-pad.js trigger-drag turn (flat Quest)
 function defaultDist() { return (MOBILE && camera.aspect > 1.15) ? DIST_WIDE : DIST_PORTRAIT; }
 // touch: the bottom-left stick steers. The thumb and the dotted line stay inside the base; the
 // speed still follows the real finger, so a drag past the rim still walks faster up to a capped sprint.
@@ -1186,7 +1193,7 @@ cv.addEventListener('touchmove', e => {
     if (T.kind === 'joy') joyFrom(t.clientX, t.clientY);
     else if (T.kind !== 'nbpinch') {
       T.moved = Math.max(T.moved, Math.hypot(t.clientX - T.x0, t.clientY - T.y0));
-      if (!questStickDrag()) look((t.clientX - T.x) * 1.4, (t.clientY - T.y) * 1.4); T.x = t.clientX; T.y = t.clientY;
+      if (!questStickDrag()) look((t.clientX - T.x) * 1.4, (t.clientY - T.y) * 1.4, 'touch-drag'); T.x = t.clientX; T.y = t.clientY;
     }
   }
   e.preventDefault();
@@ -1462,6 +1469,7 @@ function camPush(q) { if (DEV.clip) { clampAreas(q, [{ x0: -HALF + 0.3, x1: HALF
 }
 // when the monkey walks up to the STRIKE cabinet, ease the camera round to a three-quarter view (unless the player is steering the camera)
 function showcase(dt) {
+  if (QUEST) { st.showK = 0; return; }   // v13: no automatic camera swing near the featured cabinets on a Quest (it looked like the sticks turning)
   if (tp && (tp.locked || tp.near < tp.R + 0.6)) { st.showK = 0; return; }   // on the teleporter pad: no cabinet showcase swing
   let u = null, d = 1e9, dx = 0, dz = 0;
   for (const c of featured) { const ex = monkey.position.x - c.userData.front.x, ez = monkey.position.z - c.userData.front.z, ed = Math.hypot(ex, ez); if (ed < d) { d = ed; u = c.userData; dx = ex; dz = ez; } }
@@ -1471,7 +1479,7 @@ function showcase(dt) {
   const side = Math.sign((dx * u.inward.z - dz * u.inward.x) || 1); // which side of the cabinet the monkey is on
   const wantYaw = base + side * 0.62; let dy = Math.atan2(Math.sin(wantYaw - st.yaw), Math.cos(wantYaw - st.yaw));
   const k = (1 - Math.exp(-dt * 1.6)) * st.showK;
-  st.yaw += dy * k; st.pitch += (0.22 - st.pitch) * k; st.dist += (3.4 - st.dist) * k;
+  st.yaw += dy * k; noteYaw('showcase', dy * k); st.pitch += (0.22 - st.pitch) * k; st.dist += (3.4 - st.dist) * k;
 }
 const tmp = new THREE.Vector3(), camTarget = new THREE.Vector3(), camPos = new THREE.Vector3();
 // ---------- LAVA falls (Dave: 'if the player steps off the path, it falls into the lava then respawns instantly back on the path') ----------
@@ -2016,7 +2024,7 @@ kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
   const padEnd = e => { const b = e.target.closest && e.target.closest('[data-nbd]'); if (b) b.classList.remove('on'); if (b && b.dataset.nbd !== 'u') padOff(); };
   bPad.addEventListener('pointerup', padEnd); bPad.addEventListener('pointercancel', padEnd); bPad.addEventListener('lostpointercapture', padEnd);
   nb = setupNeonBricks({ THREE, room, HALF, getMonkey: () => monkey, st, onState: on => {
-    document.body.classList.toggle('nbPlay', on); if (on) { st.yaw = -Math.PI / 2; st.pitch = Math.min(st.pitch, 0.25); joyClear && joyClear(); padOff(); try { flyCut(); } catch (e) {} } else { padOff(); bZoom.classList.remove('locked'); st.pitch = THREE.MathUtils.clamp(st.pitch, PITCH_MIN, PITCH_MAX); } try { syncJoyArm(); } catch (e) {} } });
+    document.body.classList.toggle('nbPlay', on); if (on) { noteYaw('neon-bricks', Math.atan2(Math.sin(-Math.PI / 2 - st.yaw), Math.cos(-Math.PI / 2 - st.yaw))); st.yaw = -Math.PI / 2; st.pitch = Math.min(st.pitch, 0.25); joyClear && joyClear(); padOff(); try { flyCut(); } catch (e) {} } else { padOff(); bZoom.classList.remove('locked'); st.pitch = THREE.MathUtils.clamp(st.pitch, PITCH_MIN, PITCH_MAX); } try { syncJoyArm(); } catch (e) {} } });
   bPlay.addEventListener('pointerdown', e => { e.stopPropagation(); nb.start(); });
   bMove.addEventListener('pointerdown', e => { e.stopPropagation(); nb.rotate(); });
   bExit.addEventListener('pointerdown', e => { e.stopPropagation(); nb.stop('exit'); });

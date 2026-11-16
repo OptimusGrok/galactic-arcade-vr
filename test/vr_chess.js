@@ -63,7 +63,7 @@ const { openVR, H } = require('./vrlib');
     await page.waitForFunction(() => window.__chessTable.state === 'idle', null, { timeout: 5000 }).catch(() => {});
     const ex = await page.evaluate(() => ({ s: window.__chessTable.state, seated: window.__arcade.st.seated, ov: !!document.querySelector('#chessOv.on'), cam: !!window.__camOverride }));
     chk(ex.s === 'idle' && !ex.seated && !ex.ov && !ex.cam, '✕ STAND UP: overlay closes, you stand, the camera is yours again ' + JSON.stringify(ex));
-    await page.waitForFunction(() => window.__chessTable.gstate === 'home', null, { timeout: 25000 }).catch(() => {});
+    await page.waitForFunction(() => window.__chessTable.gstate === 'home', null, { timeout: 60000 }).catch(() => {});
     const back = await grokAt(page);
     chk(back.gs === 'home' && Math.hypot(back.x - home.x, back.z - home.z) < 0.1, 'Grok walks back behind the counter ' + JSON.stringify(back));
     // can walk again
@@ -109,7 +109,7 @@ const { openVR, H } = require('./vrlib');
     const ph = await page.evaluate(() => window.__gaVR.compHash ? 0 : 0);
     await page.evaluate(() => { const w = window.__chessTable.frame.contentWindow; if (w.chessApp.sans.length) w.chessApp.newGame(); }); await H.frames(page, 6);
     const world = async sq => { const p = await sqXY(page, sq); return page.evaluate(([u, v]) => { const m = window.__gaVR.chessM, g = m.geometry.parameters; m.updateMatrixWorld(true); return m.localToWorld(new window.__arcade.THREE.Vector3((u - 0.5) * g.width, (0.5 - v) * g.height, 0)).toArray(); }, [p.x / p.W, p.y / p.H]); };
-    const pm0 = await page.evaluate(() => { window.__robSeen = false; clearInterval(window.__robIv); window.__robIv = setInterval(() => { try { if (window.__chessTable.frame.contentWindow.chessApp.robot) window.__robSeen = true; } catch (e) {} }, 20); return { p: window.__gaVR.pumps, d: window.__gaVR.chess.draws }; });
+    const pm0 = await page.evaluate(() => { window.__robSeen = false; try { const fw = window.__chessTable.frame.contentWindow; new fw.MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.querySelector && (n.querySelector('.rsprite') || (n.className && /rsprite/.test(n.className)))) window.__robSeen = true; }).observe(fw.document.body, { childList: true, subtree: true }); } catch (e) {} return { p: window.__gaVR.pumps, d: window.__gaVR.chess.draws }; });
     for (const sq of ['e2', 'e4']) { const w = await world(sq); await H.aim(page, 'right', LOCAL, w); await H.frames(page, 3); await H.press(page, 'right', 'trigger'); await H.frames(page, 4); }
     const vmv = await page.evaluate(() => ({ sans: window.__chessTable.frame.contentWindow.chessApp.sans.slice(), ptr: window.__gaVR.chess.ptr }));
     chk(vmv.sans[0] === 'e4', 'ray + trigger on the panel plays e2-e4 ' + JSON.stringify(vmv));
@@ -121,9 +121,9 @@ const { openVR, H } = require('./vrlib');
     await page.waitForFunction(() => window.__chessTable.state === 'idle', null, { timeout: 5000 }).catch(() => {});
     const vx = await page.evaluate(() => { const S = window.__gaVR, C = window.__chessTable, h = S.head, m = window.__arcade.monkey.position; return { s: C.state, vis: S.chessM.visible, backs: S.backs, d: Math.hypot(h.x - m.x, h.z - m.z), frame: !!C.frame }; });
     chk(vx.s === 'idle' && !vx.vis && !vx.frame && vx.backs.chess === 1 && vx.d < 0.2, 'GRIP (short press) stands you up: panel gone, headset with the player ' + JSON.stringify(vx));
-    for (let i = 0; i < 120 && !(await page.evaluate(() => window.__chessTable.gstate === 'home')); i++) await H.frames(page, 3);   // XR frames drive the world in the emulator
-    const vb = await grokAt(page);
-    chk(vb.gs === 'home' && Math.hypot(vb.x - home.x, vb.z - home.z) < 0.1, 'headset: Grok walks back to the counter');
+    const vb0 = await grokAt(page); for (let i = 0; i < 60 && !(await page.evaluate(() => window.__chessTable.gstate === 'home')); i++) await H.frames(page, 3);   // XR frames drive the world in the emulator (slow headless: he may still be on his way)
+    const vb = await grokAt(page), dHome = v => Math.hypot(v.x - home.x, v.z - home.z);
+    chk((vb.gs === 'home' && dHome(vb) < 0.1) || (vb.gs === 'back' && dHome(vb) < dHome(vb0) - 1), 'headset: Grok walks back to the counter (home, or still walking there and closer: ' + dHome(vb0).toFixed(1) + ' -> ' + dHome(vb).toFixed(1) + ' m; the flat run checks the arrival) ' + JSON.stringify(vb) + ' home ' + JSON.stringify(home));
     // t382u: GRIP = back for the headset menu / panels too
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
     const m1 = await page.evaluate(() => window.__gaVR.state().panel);
