@@ -194,7 +194,7 @@ export function setupVR(A) {
     for (const src of ss) { if (!src.gamepad || (src.handedness !== 'left' && src.handedness !== 'right')) continue; IN[src.handedness] = readPad(src, src.handedness === 'left' ? L : R); } }
   function ctrlFor(hand) { for (const c of ctrls) if (c.userData.hand === hand) return c; return null; }
   function pulse(src, k = 0.5, ms = 30) { try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.pulse) h.pulse(k, ms); } catch (e) {} }
-  function rayOf(c) { c.updateMatrixWorld(true); _o.setFromMatrixPosition(c.matrixWorld); c.getWorldQuaternion(_q); _d.set(0, 0, -1).applyQuaternion(_q).normalize(); _ray.set(_o, _d); return _ray; }
+  function rayOf(c) { c.updateMatrixWorld(true); _o.setFromMatrixPosition(c.matrixWorld); if (GF.on && c === GF.ctrl) _o.copy(GF.o); c.getWorldQuaternion(_q); _d.set(0, 0, -1).applyQuaternion(_q).normalize(); _ray.set(_o, _d); return _ray; }
 
   // ---------- rig: the player's place in the arcade = an offset reference space ----------
   function applyRig() { if (!baseRef || typeof XRRigidTransform === 'undefined') return; const r = S.rig;
@@ -450,7 +450,7 @@ export function setupVR(A) {
     const fp = fpList(), was = fp.map(o => o.visible); for (const o of fp) o.visible = false; MV.fpHidden = fp.length;
     S.inMirror = true; pinScan(); pinLights(); try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; } S.inMirror = false; unpinLights();
     fp.forEach((o, i) => { o.visible = was[i]; }); monkey.visible = vis; }
-  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); return _fp; }
+  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
   S.fpNames = () => fpList().map(o => o.name || o.type);
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
   // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
@@ -469,6 +469,10 @@ export function setupVR(A) {
   // the laser pistol in that hand the gun is held instead and points where the controller points (the shot leaves its muzzle).
   const _ik = { S: new THREE.Vector3(), T: new THREE.Vector3(), u: new THREE.Vector3(), pole: new THREE.Vector3(), E: new THREE.Vector3(), H: new THREE.Vector3(), y: new THREE.Vector3(), x: new THREE.Vector3(), z: new THREE.Vector3(), fwd: new THREE.Vector3(), m: new THREE.Matrix4(), q: new THREE.Quaternion(), pq: new THREE.Quaternion(), ws: new THREE.Vector3(), flip: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI) };
   const IKS = { err: {}, reach: {} };
+  const GUN_S = 0.42, GUN_GRIP = new THREE.Vector3(0, -0.09, 0.02), _gf = { m: new THREE.Matrix4(), pi: new THREE.Matrix4(), p: new THREE.Vector3(), s: new THREE.Vector3() };
+  function gunFit(pg, q, at) { _gf.p.copy(GUN_GRIP).multiplyScalar(GUN_S).applyQuaternion(q); _gf.p.subVectors(at, _gf.p); _gf.m.compose(_gf.p, q, _gf.s.setScalar(GUN_S));
+    pg.parent.updateMatrixWorld(true); _gf.pi.copy(pg.parent.matrixWorld).invert(); pg.matrix.multiplyMatrices(_gf.pi, _gf.m); pg.matrixAutoUpdate = false; pg.userData.vrFit = true; pg.updateMatrixWorld(true); }
+  function gunRest(pg) { if (pg && pg.userData.vrFit) { pg.matrixAutoUpdate = true; pg.userData.vrFit = false; pg.updateMatrix(); } }
   function boneQ(dir, fwd, out) {   // a bone whose local -Y runs along dir, local +Z as close to fwd as possible
     _ik.y.copy(dir).negate().normalize(); _ik.x.crossVectors(_ik.y, fwd); if (_ik.x.lengthSq() < 1e-6) _ik.x.crossVectors(_ik.y, _v.set(0, 1, 0.3)); _ik.x.normalize();
     _ik.z.crossVectors(_ik.x, _ik.y).normalize(); _ik.m.makeBasis(_ik.x, _ik.y, _ik.z); return out.setFromRotationMatrix(_ik.m); }
@@ -483,6 +487,7 @@ export function setupVR(A) {
       arm.sh.getWorldPosition(_ik.S); const side = ((_ik.S.x - h.x) * rx + (_ik.S.z - h.z) * rz) >= 0 ? 'right' : 'left', G = gripOf(side);
       const pg = arm.hand && arm.hand.getObjectByName('gaPistol'), gun = !!(pg && pg.visible);
       const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) { mdl.visible = !!G && !gun; if (G) { arm.hand.getWorldScale(_ha.ws); mdl.scale.setScalar(Math.min(4, 1 / Math.max(0.05, Math.abs(_ha.ws.y)))); } }   // keep it controller-sized whatever the hand's scale
+      if (!G && gun) gunRest(pg);
       if (!G || !arm.el || !arm.hand) continue;
       arm.sh.parent.updateMatrixWorld(true); arm.sh.getWorldPosition(_ik.S);
       for (let it = 0; it < 2; it++) {   // bone lengths measured in the world (the torso can be scaled unevenly), solved twice
@@ -499,7 +504,9 @@ export function setupVR(A) {
       setWorldQ(arm.el, boneQ(_v.copy(_ik.H).sub(_ik.E), _ik.fwd, _ik.q));
       }
       _ik.q.copy(G.q).multiply(_ha.fix); setWorldQ(arm.hand, _ik.q); arm.hand.visible = true;
-      if (gun && own) { _ik.q.copy(G.aq || G.q).multiply(_ik.flip); setWorldQ(pg, _ik.q); }   // the barrel (+Z) along the controller's ray (-Z)
+      // v15 (t397u): the gun is HELD: a real-size blaster (GUN_S of the model, ~30 cm) whose grip sits in the hand on the controller, barrel (+Z)
+      // along the controller's ray (-Z; other players: along their grip). Its world matrix is set directly (the monkey hand is scaled unevenly).
+      if (gun) { _ik.q.copy(own ? (G.aq || G.q) : G.q).multiply(_ik.flip); arm.hand.getWorldPosition(_ik.H); gunFit(pg, _ik.q, _ik.H); }
       arm.hand.getWorldPosition(_ik.H); IKS.err[side] = +_ik.H.distanceTo(_ik.T).toFixed(3); } }
   const _gp = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
   const _gaq = new THREE.Quaternion();
@@ -513,7 +520,38 @@ export function setupVR(A) {
   S.ikStats = () => JSON.parse(JSON.stringify(IKS));
   S.ctrlGrips = () => { const out = {}; for (const h of ['left', 'right']) { const g = myGrip(h); if (g) out[h] = g.p.toArray(); } return out; };
   S.laserFromMuzzle = () => VL.fromMuzzle || 0;
-  function avatarHandsOff() { for (const m of AH.models.values()) m.visible = false; if (AH.flipped && monkey.scale.x < 0) monkey.scale.x = -monkey.scale.x; AH.flipped = false; }
+  // ---------- v15 (t397u): first person. Your avatar is hidden in your own view, so with the laser pistol out a copy of the monkey's right
+  // hand + the held gun is drawn where the mirror shows them (on your right controller); that controller's model and its cone ray are hidden,
+  // and a thin ray from the MUZZLE (all aiming / UI pointing for that hand starts there) keeps you able to point at panels. ----------
+  const GF = { on: false, ctrl: null, o: new THREE.Vector3(), d: new THREE.Vector3(), hand: null, gun: null, ray: null, frames: 0, src: null };
+  function fpGunOff() { if (!GF.on && !(GF.gun && GF.gun.visible)) return; GF.on = false; GF.ctrl = null; for (const o of [GF.hand, GF.gun, GF.ray]) if (o) o.visible = false; ctrlModelsVis(true); }
+  function ctrlModelsVis(on, only) { for (let i = 0; i < grips.length; i++) { if (only != null && i !== only) continue; const g = grips[i].userData, parts = [g.fallback, g.model].filter(Boolean);
+      if (!on) { if (!g.fpHid) { g.fpHid = parts.map(o => o.visible); } for (const o of parts) o.visible = false; }
+      else if (g.fpHid) { parts.forEach((o, k) => { o.visible = g.fpHid[k]; }); g.fpHid = null; } } }
+  function fpGun() { const u = monkey.userData || {}, pg = monkey.getObjectByName('gaPistol'), pz = pg && pg.getObjectByName('gaPistolMuzzle');
+    const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src);
+    const on = !!(renderer.xr.isPresenting && pg && pg.visible && pz && u.char !== 'alien' && i >= 0 && pg.userData.vrFit);
+    if (!on) { fpGunOff(); return; }
+    const hand = pg.parent;
+    if (!GF.gun || GF.src !== pg) { if (GF.gun) scene.remove(GF.gun); GF.gun = pg.clone(true); GF.gun.name = 'vrFpGun'; GF.gun.matrixAutoUpdate = false; GF.gun.traverse(o => { o.frustumCulled = false; }); scene.add(GF.gun); GF.src = pg;
+      GF.fpMuzzle = GF.gun.getObjectByName('gaPistolMuzzle'); if (GF.fpMuzzle) GF.fpMuzzle.name = 'vrFpMuzzle'; }
+    if (!GF.hand) { GF.hand = new THREE.Mesh(hand.geometry, hand.material); GF.hand.name = 'vrFpHand'; GF.hand.matrixAutoUpdate = false; GF.hand.frustumCulled = false; scene.add(GF.hand); }
+    if (!GF.ray) { GF.ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0x3ff3ff, transparent: true, opacity: 0.55, fog: false, toneMapped: false })); GF.ray.name = 'vrFpRay'; GF.ray.frustumCulled = false; scene.add(GF.ray); }
+    GF.gun.matrix.copy(pg.matrixWorld); GF.gun.matrixWorldNeedsUpdate = true; GF.gun.updateMatrixWorld(true); GF.hand.matrix.copy(hand.matrixWorld); GF.hand.updateMatrixWorld(true);
+    GF.gun.visible = true; GF.hand.visible = true; GF.on = true; GF.ctrl = ctrls[i]; GF.frames++;
+    const c = ctrls[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_q); GF.d.set(0, 0, -1).applyQuaternion(_q).normalize(); pz.getWorldPosition(GF.o).addScaledVector(GF.d, 0.03);
+    for (let k = 0; k < grips.length; k++) if (k !== i) ctrlModelsVis(true, k); ctrlModelsVis(false, i); }
+  function fpRayPost() { if (!GF.on || !GF.ctrl) return; const r = GF.ctrl.userData.ray; GF.ray.position.copy(GF.o); GF.ctrl.getWorldQuaternion(GF.ray.quaternion); GF.ray.scale.set(1, 1, r.scale.z);
+    GF.ray.material.color.copy(r.material.color); GF.ray.visible = r.visible; r.visible = false; }
+  S.fpGun = () => { const pg = monkey.getObjectByName('gaPistol'), pz = pg && pg.getObjectByName('gaPistolMuzzle'), out = { on: GF.on, frames: GF.frames };
+    if (!GF.on) return out; const v = new THREE.Vector3(), g = myGrip('right'); out.grip = g ? g.p.toArray() : null;
+    out.muzzle = GF.fpMuzzle ? GF.fpMuzzle.getWorldPosition(v).toArray() : null; out.mirrorMuzzle = pz ? pz.getWorldPosition(new THREE.Vector3()).toArray() : null;
+    out.hand = new THREE.Vector3().setFromMatrixPosition(GF.hand.matrixWorld).toArray(); const ws = new THREE.Vector3(); GF.gun.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws); out.gunScale = Math.abs(ws.x);
+    out.barrel = new THREE.Vector3(0, 0, 1).transformDirection(GF.gun.matrixWorld).toArray(); out.aim = GF.d.toArray(); out.rayO = GF.o.toArray();
+    out.gunVis = GF.gun.visible; out.handVis = GF.hand.visible; out.fpRay = GF.ray.visible; out.fpRayLen = GF.ray.scale.z; out.ctrlRay = GF.ctrl.userData.ray.visible;
+    const gi = ctrls.indexOf(GF.ctrl), gd = grips[gi] && grips[gi].userData; out.ctrlModel = !!(gd && ((gd.fallback && gd.fallback.visible) || (gd.model && gd.model.visible)));
+    const ld = ctrls.findIndex(c => c.userData.hand === 'left'), lg = grips[ld] && grips[ld].userData; out.leftModel = !!(lg && ((lg.fallback && lg.fallback.visible) || (lg.model && lg.model.visible))); return out; };
+  function avatarHandsOff() { gunRest(monkey.getObjectByName('gaPistol')); fpGunOff(); for (const m of AH.models.values()) m.visible = false; if (AH.flipped && monkey.scale.x < 0) monkey.scale.x = -monkey.scale.x; AH.flipped = false; }
   // ---------- t362u: two (or more) people in the VR arcade: mp.js's shared room + VR poses ----------
   // Sent: with each mp 'st' packet (mp.js ticks at 10 Hz, only when changed) a compact `v` = head + both grips relative to the body
   // (position cm, rotation quaternion), so it lines up with the smoothed body the others draw. Flat / older clients ignore `v`.
@@ -539,7 +577,7 @@ export function setupVR(A) {
     if (p.visor) p.visor.visible = on; }
   function posePeer(p, dt, now) { const u = p.g.userData || {}, v = p.v, fresh = !!(v && now - (p.vAt || -1e9) < 2000 && arr7(v.h));
     p.vr = fresh; visor(p, fresh && p.g.visible);
-    if (!fresh || !p.g.visible || p.slot || !u.arms) { if (p.flip && p.g.scale.x < 0) { p.g.scale.x = -p.g.scale.x; p.flip = false; } if (p.vrS) { p.vrS = null; for (const arm of u.arms || []) { const m = arm.hand && AH.models.get(arm.hand); if (m) m.visible = false; } if (u.head) u.head.rotation.set(0, 0, 0); } return; }
+    if (!fresh || !p.g.visible || p.slot || !u.arms) { gunRest(p.g.getObjectByName('gaPistol')); if (p.flip && p.g.scale.x < 0) { p.g.scale.x = -p.g.scale.x; p.flip = false; } if (p.vrS) { p.vrS = null; for (const arm of u.arms || []) { const m = arm.hand && AH.models.get(arm.hand); if (m) m.visible = false; } if (u.head) u.head.rotation.set(0, 0, 0); } return; }
     if (p.g.scale.x > 0) { p.g.scale.x = -p.g.scale.x; p.flip = true; }   // v13: like your own avatar, a VR player's model is mirrored so its 'handR' (gun hand) is on their right
     const k = 1 - Math.exp(-Math.max(dt, 0) * 14), S0 = p.vrS || (p.vrS = { first: true });
     for (const key of ['h', 'l', 'r']) { const a = v[key]; if (!arr7(a)) { S0[key] = null; continue; }
@@ -876,7 +914,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    avatarHands(); mpStep(); mirrorFrame();
+    avatarHands(); fpGun(); mpStep(); mirrorFrame();
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -943,6 +981,7 @@ export function setupVR(A) {
     const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
       for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
+    fpRayPost();
     // HUD on the left controller (or under your view when there is none)
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
     if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(HUD_TILT); }
