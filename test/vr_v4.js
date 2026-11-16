@@ -1,5 +1,5 @@
 // t353u: the shop mirror is not black in VR; ACCESSORIES (wardrobe) works with the ray; Berserker power-ups show beside the screen
-// and fire from their own buttons (X = THOR, Y = BERSERK, right-grip tap = ODIN) or the ray; every ray stops at the button it hits.
+// and fire from their own buttons (t358u: A = DASH always shown, B = THOR, X = BERSERK, Y = ODIN) or the ray; every ray stops at the button it hits.
 const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
 (async () => {
   let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
@@ -34,8 +34,8 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     const yaw = Math.atan2(M.n[0], M.n[2]);
     await place(M.p[0] + M.n[0] * 1.3, M.p[2] + M.n[2] * 1.3, yaw);
     await page.evaluate(([y]) => { window.__xrd.position.set(0, 1.25, 0); }, [yaw]); await H.frames(page, 10);
-    const r0 = await page.evaluate(() => window.__gaVR.ui.shop().wardrobe.mirror.renders); await page.waitForTimeout(1500); await H.frames(page, 6);
-    const mir = await page.evaluate(() => ({ renders: window.__gaVR.ui.shop().wardrobe.mirror.renders, kicks: window.__gaVR.mirrorKicks }));
+    const r0 = await page.evaluate(() => window.__gaVR.mirrorStats().renders); await page.waitForTimeout(1500); await H.frames(page, 6);
+    const mir = await page.evaluate(() => ({ renders: window.__gaVR.mirrorStats().renders, kicks: window.__gaVR.mirrorKicks }));
     chk(mir.renders > r0 + 3 && mir.kicks > 3, 'the mirror renders in VR (' + r0 + ' -> ' + mir.renders + ' renders)');
     const hs = await page.evaluate(() => window.__hsRead(0.3, 0.3, 0.7, 0.7));
     chk(hs && hs.left.lit > 30 && hs.right.lit > 30 && hs.left.mean > 25 && hs.right.mean > 25, 'the headset sees a lit (not black) mirror where you look ' + JSON.stringify(hs && { l: hs.left, r: hs.right }));
@@ -69,25 +69,30 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     chk((await st()).sub === 'play', 'Berserker started with A');
     const fr = page.frames().find(f => /berserker-play/.test(f.url()));
     await page.waitForFunction(() => true); await H.frames(page, 10);
-    // A = attack (KeyJ), B = dash (Space)
-    const k0 = await page.evaluate(() => window.__gaVR.keysSent); await H.press(page, 'right', 'a-button'); const ka = await page.evaluate(() => window.__gaVR.lastKey);
-    chk(/KeyJ/.test(ka), 'A = attack (' + ka + ')');
-    // nothing ready -> no power-up buttons
+    // t358u: trigger = attack (KeyJ), A = DASH (Space, its button always shows), B = THOR, X = BERSERK, Y = ODIN, no grip-tap Odin
+    await H.btn(page, 'right', 'trigger', 1); await H.frames(page, 2); let ka = await page.evaluate(() => window.__gaVR.state().held.join()); await H.btn(page, 'right', 'trigger', 0); await H.frames(page, 3);
+    chk(/KeyJ/.test(ka) && !/Space/.test(ka), 'trigger = attack (' + ka + ')');
+    await fr.evaluate('P.dashCd = 0; P.dashT = 0;'); await H.btn(page, 'right', 'a-button', 1); await H.frames(page, 2); ka = await page.evaluate(() => window.__gaVR.state().held.join()); const dt0 = await fr.evaluate('P.dashT'); await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 3);
+    chk(/Space/.test(ka) && !/KeyJ/.test(ka) && dt0 > 0, 'A = DASH (' + ka + ', dashT ' + (+dt0).toFixed(2) + ')');
+    // nothing ready -> only the DASH button
     await fr.evaluate('P.energy = 0; G.rgReady = false; G.odReady = false;'); await H.frames(page, 6);
-    chk((await page.evaluate(() => window.__gaVR.pw.ready())).length === 0 && !(await page.evaluate(() => window.__gaVR.pw.world('thor'))), 'no power-up buttons before they are ready');
+    chk((await page.evaluate(() => window.__gaVR.pw.ready())).join() === 'dash' && !!(await page.evaluate(() => window.__gaVR.pw.world('dash'))) && !(await page.evaluate(() => window.__gaVR.pw.world('thor'))), 'DASH button always shows; power-ups hidden until ready');
     // all three become ready
     await fr.evaluate('P.energy = 100; G.rgReady = true; G.odReady = true; G.odS = 0; P.rage = 0;'); await H.frames(page, 8);
-    const rd = await page.evaluate(() => window.__gaVR.pw.ready()); chk(rd.join() === 'thor,rage,odin', 'THOR / BERSERK / ODIN ready (' + rd.join(', ') + ')');
-    const pos = await page.evaluate(() => { const S = window.__gaVR, scr = S.screen, T = window.__arcade.THREE; return ['thor', 'rage', 'odin'].map(id => { const w = S.pw.world(id); return w ? scr.worldToLocal(new T.Vector3(...w)).x : null; }); });
+    const rd = await page.evaluate(() => window.__gaVR.pw.ready()); chk(rd.join() === 'dash,thor,rage,odin', 'DASH + THOR / BERSERK / ODIN showing (' + rd.join(', ') + ')');
+    const pos = await page.evaluate(() => { const S = window.__gaVR, scr = S.screen, T = window.__arcade.THREE; return ['dash', 'thor', 'rage', 'odin'].map(id => { const w = S.pw.world(id); return w ? scr.worldToLocal(new T.Vector3(...w)).x : null; }); });
     chk(pos.every(x => x != null && x > 0.5), 'their buttons sit on the right of the screen (x ' + pos.map(x => x == null ? 'none' : x.toFixed(2)).join(', ') + ')');
-    await H.press(page, 'left', 'x-button'); await H.frames(page, 6);
+    const lb = await page.evaluate(() => ['dash', 'thor', 'rage', 'odin'].map(id => { const m = window.__gaVR.screen.getObjectByName('vrPower_' + id); return m && m.userData.txt; }).join(' / '));
+    chk(/DASH\|HOLD A/.test(lb) && /THOR\|PRESS B/.test(lb) && /BERSERK\|PRESS X/.test(lb) && /ODIN\|PRESS Y/.test(lb), 'labels: ' + lb);
+    await H.press(page, 'right', 'b-button'); await H.frames(page, 6);
     let e = await fr.evaluate('({ energy: P.energy, rage: P.rage, odS: G.odS })'); let f = await page.evaluate(() => window.__gaVR.pwFired);
-    chk(f.thor === 1 && e.energy < 100, 'X fires THOR (energy 100 -> ' + Math.round(e.energy) + ')');
+    chk(f.thor === 1 && e.energy < 100 && !f.rage && !f.odin, 'B fires THOR (energy 100 -> ' + Math.round(e.energy) + ')');
+    await H.press(page, 'left', 'x-button'); await H.frames(page, 6); e = await fr.evaluate('({ energy: P.energy, rage: P.rage, odS: G.odS })'); f = await page.evaluate(() => window.__gaVR.pwFired);
+    chk(f.rage === 1 && e.rage > 0, 'X fires BERSERK (rage ' + (+e.rage).toFixed(2) + ')');
     await H.press(page, 'left', 'y-button'); await H.frames(page, 6); e = await fr.evaluate('({ energy: P.energy, rage: P.rage, odS: G.odS })'); f = await page.evaluate(() => window.__gaVR.pwFired);
-    chk(f.rage === 1 && e.rage > 0, 'Y fires BERSERK (rage ' + (+e.rage).toFixed(2) + ')');
+    chk(f.odin === 1 && e.odS > 0 && (await st()).mode === 'game', 'Y fires ODIN (odS ' + (+e.odS).toFixed(2) + ')');
     await H.btn(page, 'right', 'squeeze', 1); await H.frames(page, 2); await H.btn(page, 'right', 'squeeze', 0); await H.frames(page, 6);
-    e = await fr.evaluate('({ energy: P.energy, rage: P.rage, odS: G.odS, mode: 1 })'); f = await page.evaluate(() => window.__gaVR.pwFired);
-    chk(f.odin === 1 && e.odS > 0 && (await st()).mode === 'game', 'a short right-grip tap fires ODIN and stays in the game (odS ' + (+e.odS).toFixed(2) + ')');
+    f = await page.evaluate(() => window.__gaVR.pwFired); chk(f.odin === 1 && (await st()).mode === 'game', 'a grip tap no longer fires ODIN (and stays in the game)');
     // ray + trigger on a power-up button; the ray stops on it
     await fr.evaluate('P.energy = 100;'); await H.frames(page, 6); const tw = await page.evaluate(() => window.__gaVR.pw.world('thor'));
     await aim(tw); rc = await rayCut(tw); chk(rc.len != null && Math.abs(rc.len - rc.dist) < 0.06, 'ray stops at the THOR button: ray ' + (rc.len || 0).toFixed(2) + ' m, button ' + rc.dist.toFixed(2) + ' m');

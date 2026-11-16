@@ -12,6 +12,7 @@
 // The player rig is an offset XR reference space (renderer.xr.setReferenceSpace), so camera.position and the controller
 // objects stay in world coordinates for the rest of the arcade code.
 import * as THREE from 'three';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
@@ -23,8 +24,9 @@ const MAPS = {
   strike: { a: ['KeyZ'], b: ['KeyX'], trig: 'a', help: 'STICK FLY · A/X/TRIGGER FIRE · B/Y BOMB' },
   // t353u: Berserker's power-ups are HTML buttons on the right that appear when ready (THOR at 100 energy, BERSERK and ODIN after their timers).
   // VR: A/B/trigger only on the RIGHT controller (attack / dash); each power-up gets its own free button, shown on a button beside the screen on the right.
-  berserker: { a: ['KeyJ'], b: ['Space'], trig: 'a', handAB: 'right', help: 'STICK MOVE · A/TRIGGER ATTACK · B DASH',
-    pw: [{ id: 'thor', name: 'THOR', code: 'KeyL', btn: 'X', el: 'thor' }, { id: 'rage', name: 'BERSERK', code: 'KeyB', btn: 'Y', el: 'bRg' }, { id: 'odin', name: 'ODIN', code: 'KeyO', btn: 'R-GRIP TAP', el: 'bOd' }] },
+  // t358u (Dave): A = DASH (always shown on the right), B = THOR, X = BERSERK, Y = ODIN; trigger = attack; hold grip = leave
+  berserker: { a: ['Space'], b: [], trig: 'keys', trigKeys: ['KeyJ'], handAB: 'right', help: 'STICK MOVE · TRIGGER ATTACK · A DASH · B THOR · X BERSERK · Y ODIN',
+    pw: [{ id: 'dash', name: 'DASH', code: 'Space', btn: 'A', el: 'bD', always: true }, { id: 'thor', name: 'THOR', code: 'KeyL', btn: 'B', el: 'thor' }, { id: 'rage', name: 'BERSERK', code: 'KeyB', btn: 'X', el: 'bRg' }, { id: 'odin', name: 'ODIN', code: 'KeyO', btn: 'Y', el: 'bOd' }] },
   ghost: { a: ['Space'], b: [], trig: 'a', help: 'STICK STEER · A START' },
   claw: { a: ['Enter', 'Space'], b: [], trig: 'ptr', help: 'STICK MOVE · A DROP · TRIGGER TAPS' },
   orc: { a: [], b: [], trig: 'ptr', help: 'POINT + TRIGGER TO TAP THE SCREEN' },
@@ -94,8 +96,13 @@ export function setupVR(A) {
   function panel(w, h, cw, ch) { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, toneMapped: false, depthTest: false, depthWrite: false }));
     m.renderOrder = 1001; m.userData = { cv, g: cv.getContext('2d'), tex, txt: '' }; return m; }
-  function drawPanel(m, lines, opts = {}) { const key = lines.join('|'); if (m.userData.txt === key) return; m.userData.txt = key;
-    const { cv, g, tex } = m.userData, W = cv.width, H = cv.height; g.clearRect(0, 0, W, H);
+  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : ''); if (m.userData.txt === key) return; m.userData.txt = key;
+    const { cv, g, tex } = m.userData, W = cv.width, H0 = cv.height, H = opts.bar ? Math.round(H0 * 0.72) : H0; g.clearRect(0, 0, W, H0);
+    if (opts.bar) { const b = opts.bar, y = H + 2, bh = H0 - H - 8, x = 150, bw = W - x - 16;   // t358u: jetpack ENERGY bar under the text
+      g.fillStyle = 'rgba(20,8,4,0.9)'; g.strokeStyle = '#ffb060'; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(4, y, W - 8, bh, bh * 0.3) : g.rect(4, y, W - 8, bh); g.fill(); g.stroke();
+      g.fillStyle = '#ffe0b0'; g.font = '900 ' + Math.round(bh * 0.5) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText('ENERGY', 16, y + bh / 2, x - 24);
+      const gr = g.createLinearGradient(x, 0, x + bw, 0); gr.addColorStop(0, '#ff3b1a'); gr.addColorStop(0.55, '#ffb020'); gr.addColorStop(1, '#ffe080');
+      g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y + 8, bw, bh - 16); g.fillStyle = b.low ? '#ff3030' : gr; g.fillRect(x, y + 8, Math.max(0, Math.min(1, b.v)) * bw, bh - 16); }
     g.fillStyle = 'rgba(10,6,24,0.86)'; g.strokeStyle = opts.border || '#3ff3ff'; g.lineWidth = Math.max(3, H * 0.03); g.beginPath(); g.roundRect ? g.roundRect(4, 4, W - 8, H - 8, H * 0.12) : g.rect(4, 4, W - 8, H - 8); g.fill(); g.stroke();
     const n = lines.length, lh = (H - 16) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
     lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, W / 2, 8 + lh * (i + 0.5), W - 24); });
@@ -112,7 +119,7 @@ export function setupVR(A) {
   const bar = panel(1.2, 0.16, 1024, 136); bar.name = 'vrStatus'; scr.add(bar);
   const G = { layoutT: 0, cvs: [], rect: null, aspect: 1, placed: false, w: 1, h: 1, ptrDown: false };
   const pwM = {};   // power-up buttons (right of the screen), one per power-up of the current game
-  function pwMesh(p, i) { let m = pwM[p.id]; if (!m) { m = pwM[p.id] = panel(0.5, 0.17, 512, 174); m.name = 'vrPower_' + p.id; m.renderOrder = 1001; scr.add(m); drawPanel(m, [p.name, 'PRESS ' + p.btn], { c0: '#ffe14a', border: '#ffe14a' }); }
+  function pwMesh(p, i) { let m = pwM[p.id]; if (!m) { m = pwM[p.id] = panel(0.5, 0.17, 512, 174); m.name = 'vrPower_' + p.id; m.renderOrder = 1001; scr.add(m); drawPanel(m, [p.name, (p.always ? 'HOLD ' : 'PRESS ') + p.btn], p.always ? { c0: '#7dfcff', border: '#3ff3ff' } : { c0: '#ffe14a', border: '#ffe14a' }); }
     m.position.set(G.w / 2 + 0.33, G.h / 2 - 0.1 - i * 0.21, 0.002); return m; }
   S.screen = scr; S.comp = comp;
   function placeScreen() {
@@ -330,19 +337,37 @@ export function setupVR(A) {
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
   addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
-  // t356u: the shop mirror's Reflector target is a fixed 512x420 (shop.js), which looks blurred from 1 m in a headset. In VR give it a sharp
-  // target: 1536 px on the long side (1024 on the low tier), matching the glass's aspect, linear filtering, no mipmaps. Put it back on exit.
-  // Cost stays sane: shop.js already skips it unless it is in view and facing you, and the VR kick below only runs within MIRROR_NEAR m.
-  const MIRROR_NEAR = 5;
-  function mirrorRes(on) { const m = mirrorMesh(); if (!m || !m.getRenderTarget) return; const rt = m.getRenderTarget(), u = m.userData;
-    if (!u.flatRes) u.flatRes = [rt.width, rt.height];
-    let w = u.flatRes[0], h = u.flatRes[1];
-    if (on) { const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 1024 : 1536;
-      if (gh >= gw) { h = L; w = Math.round(L * gw / gh); } else { w = L; h = Math.round(L * gh / gw); } }
-    if (rt.width !== w || rt.height !== h) { rt.setSize(w, h); S.mirrorResizes = (S.mirrorResizes || 0) + 1; }
-    const t = rt.texture; if (t.minFilter !== THREE.LinearFilter || t.generateMipmaps) { t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; }
-    u.vrRes = !!on; }
-  S.mirrorRT = () => { const m = mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: !!m.userData.vrRes, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
+  // t356u/t358u: the shop mirror. shop.js's Reflector is 512x420 (blurred in a headset) and its own hook only draws within 12 m of the
+  // camera, so in VR it stayed frozen after you beamed in until you walked halfway over. In VR a twin Reflector of vr.js's own takes
+  // its place (same geometry and transform; shop.js is not edited). It is sharp: 1536 px on the long side (1024 on the low tier), glass aspect,
+  // linear, no mipmaps. vr.js draws it once per frame with the head camera: every frame within MIRROR_NEAR m or while you are reflected in it,
+  // every MIRROR_FAR_EVERY frames out to MIRROR_FAR m, and only while it is in view and facing you. On exit the shop's own mirror comes back.
+  const MIRROR_NEAR = 8, MIRROR_FAR = 25, MIRROR_FAR_EVERY = 3, _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _mp = new THREE.Vector3(), _mn = new THREE.Vector3(), _mc = new THREE.Vector3();
+  const MV = { twin: null, src: null, draw: null, renders: 0, skips: 0, far: 0 };
+  function mirrorTwin() { const m = mirrorMesh(); if (!m || !m.parent) return null;
+    if (MV.twin && MV.src === m) return MV.twin;
+    const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 1024 : 1536;
+    const w = gh >= gw ? Math.round(L * gw / gh) : L, h = gh >= gw ? L : Math.round(L * gh / gw);
+    const col = (m.material && m.material.uniforms && m.material.uniforms.color) ? m.material.uniforms.color.value.getHex() : 0xa8c4d4;
+    const t = new Reflector(m.geometry, { textureWidth: w, textureHeight: h, color: col, multisample: 0 });
+    const tx = t.getRenderTarget().texture; tx.minFilter = THREE.LinearFilter; tx.magFilter = THREE.LinearFilter; tx.generateMipmaps = false;
+    t.name = 'vrMirrorTwin'; t.position.copy(m.position); t.quaternion.copy(m.quaternion); t.scale.copy(m.scale); m.parent.add(t);
+    MV.draw = t.onBeforeRender; t.onBeforeRender = () => {};   // never from the per-eye XR passes; post() draws it once per frame
+    MV.twin = t; MV.src = m; return t; }
+  function mirrorVR(on) { const m = mirrorMesh(), t = on ? mirrorTwin() : MV.twin; if (m) m.visible = !on || !t; if (t) t.visible = !!on; }
+  function mirrorFrame() { const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible) mirrorVR(true);
+    t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
+    const d = _mp.distanceTo(_mc); if (d > MIRROR_FAR || (_mn.x * (_mc.x - _mp.x) + _mn.y * (_mc.y - _mp.y) + _mn.z * (_mc.z - _mp.z)) <= 0) { MV.skips++; return; }
+    if (!t.geometry.boundingSphere) t.geometry.computeBoundingSphere();
+    _fr.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); if (!_fr.intersectsObject(t)) { MV.skips++; return; }
+    const mk = monkey.position, toMk = _mn.x * (mk.x - _mp.x) + _mn.z * (mk.z - _mp.z), seen = toMk > 0 && Math.hypot(mk.x - _mp.x, mk.z - _mp.z) < 12;
+    if (d > MIRROR_NEAR && !seen && (S.frames % MIRROR_FAR_EVERY)) { MV.skips++; return; }
+    if (d > MIRROR_NEAR && !seen) MV.far++;
+    const vis = monkey.visible; monkey.visible = true;   // you see yourself in it
+    try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; }
+    monkey.visible = vis; }
+  S.mirrorStats = () => ({ renders: MV.renders, skips: MV.skips, far: MV.far, twin: !!(MV.twin && MV.twin.visible), shopVisible: !!(mirrorMesh() && mirrorMesh().visible) });
+  S.mirrorRT = () => { const m = MV.twin && MV.twin.visible ? MV.twin : mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: m === MV.twin, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
   const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
@@ -388,7 +413,7 @@ export function setupVR(A) {
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
     document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
-    mirrorRes(false);
+    mirrorVR(false);
     A.resumeFlat();
   });
 
@@ -401,11 +426,48 @@ export function setupVR(A) {
   const jetOn = () => { try { return !!(window.__arcade && window.__arcade.jetpackOn && window.__arcade.jetpackOn()); } catch (e) { return false; } };
   const laserOn = () => { const rf = window.__roomFire; try { return !!(rf && rf.equipped && rf.equipped()); } catch (e) { return false; } };
   S.gear = () => ({ jet: jetOn(), laser: laserOn(), flying: !!S.vrFly, firing: !!S.vrFire, flyFrames: S.flyFrames || 0, laserPulls: S.laserPulls || 0 });
-  function gear(ok) { const R = IN.right, rf = window.__roomFire;
+  function gear(ok, dt) { const R = IN.right, rf = window.__roomFire;
     const jet = jetOn(), fly = !!(ok && jet && R && R.a);
     if (jet || S.vrFly) { if (st.fly) st.fly.hold = fly; if (fly) S.flyFrames = (S.flyFrames || 0) + 1; S.vrFly = fly; }
     const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown);
-    if ((las || S.vrFire) && rf && rf.setHeld) { if (fire !== !!S.vrFire) { rf.setHeld(fire); if (fire) { S.laserPulls = (S.laserPulls || 0) + 1; pulse(R.src, 0.4, 30); } } S.vrFire = fire; } }
+    if (las || S.vrFire || VL.beam || VL.glow) vrLaser(fire, dt, R); S.vrFire = fire; }
+  // ---------- t359u: the laser pistol fires from the RIGHT CONTROLLER (full 3D aim: hand down = shoots down) ----------
+  // roomfire.js aims from the avatar's body and takes no aim, so in VR vr.js runs the trigger cycle itself, with the same numbers as roomfire.js
+  // (hold charges for CHARGE_T s, release = one bolt scaled by the charge, a full charge = a BEAM_T s beam). It uses roomfire's own pieces:
+  // RF.fire() makes the real shot (bolt, zap, shot count, multiplayer zap), then the bolt is moved onto the controller's aim; playerCols() gives
+  // the colours (blue monkey, red alien). The charge glow sits on the controller and grows while you hold B.
+  const VL = { held: false, charge: 0, spent: false, beam: null, beamT: 0, glow: null, last: null, beams: 0, bolts: 0 };
+  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion();
+  function laserAim() { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null;
+    const c = ctrls[i], g = grips[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_lq); _ld.set(0, 0, -1).applyQuaternion(_lq).normalize();   // pointing direction = the controller's ray
+    (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
+    return { o: _lo, d: _ld }; }
+  function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
+  function laserGlow(k, aim, col) { if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); }
+    const on = k != null && !!aim; VL.glow.visible = on; if (!on) return;
+    VL.glow.position.copy(aim.o); VL.glow.scale.setScalar(0.5 + k * 2.2); VL.glow.material.color.setHex(col.a); VL.glow.children[0].material.color.setHex(col.b);
+    VL.glow.material.opacity = 0.5 + k * 0.45; VL.glow.children[0].material.opacity = 0.18 + k * 0.4 + Math.sin(S.frames * 0.5) * 0.05 * k; }
+  function laserBeam(aim, col) { const L = 28; if (!VL.beam) { const g = new THREE.Group(); g.name = 'vrLaserBeam';
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.a, toneMapped: false, depthWrite: false, fog: false }));
+      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.45, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      for (const m of [core, glow]) { m.rotation.x = Math.PI / 2; m.position.z = L / 2; m.renderOrder = 6; m.frustumCulled = false; g.add(m); } scene.add(g); VL.beam = g; VL.beamT = 3; VL.beams++; S.vrBeams = VL.beams; }
+    if (aim) { VL.beam.position.copy(aim.o); VL.beam.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), beam: true }; } }
+  function laserEndBeam() { if (!VL.beam) return; scene.remove(VL.beam); VL.beam.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); VL.beam = null; VL.beamT = 0; }
+  function vrLaser(held, dt, R) { const rf = window.__roomFire, aim = laserAim(), col = laserCols(), CT = (rf && rf.CHARGE_T) || 4;
+    if (VL.beam) { VL.beamT -= dt; laserBeam(aim, col); if (R && S.frames % 6 === 0) pulse(R.src, 0.5, 20); if (VL.beamT <= 0) laserEndBeam(); }
+    if (held && !VL.held) { VL.charge = 0; VL.spent = !!VL.beam; S.laserPulls = (S.laserPulls || 0) + 1; if (R) pulse(R.src, 0.4, 30); }
+    if (held && !VL.spent) { VL.charge += dt; const k = Math.min(1, VL.charge / CT); laserGlow(k, aim, col); if (R && S.frames % 8 === 0) pulse(R.src, 0.1 + k * 0.5, 15);
+      if (VL.charge >= CT) { VL.spent = true; laserGlow(null); laserBeam(aim, col); } }
+    else laserGlow(null);
+    if (!held && VL.held && !VL.spent && aim && rf && rf.fire) {   // release: the real shot, then put the bolt on the controller's aim
+      const k = Math.min(0.999, VL.charge / CT), L = rf.fire({ fromRelease: true, k });
+      if (L && L.mesh) { L.mesh.position.copy(aim.o); L.mesh.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); L.dir.copy(aim.d); L.o = aim.o.toArray();
+        if (rf.last) { rf.last.o = aim.o.toArray(); rf.last.d = aim.d.toArray(); } VL.bolts++; VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), k, char: col.char }; if (R) pulse(R.src, 0.7, 40); } }
+    VL.held = held; }
+  S.vrLaser = () => ({ held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
+    aim: (() => { const a = laserAim(); return a ? { o: a.o.toArray(), d: a.d.toArray() } : null; })() });
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
@@ -414,7 +476,7 @@ export function setupVR(A) {
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
     S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
-    gear(walk && !(A.nb && A.nb.playing));
+    gear(walk && !(A.nb && A.nb.playing), dt);
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
     const h = S.head, q = _v.set(h.x, monkey.position.y, h.z); A.collide(q); moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z;
@@ -440,8 +502,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    { const mr = mirrorMesh(); if (mr && !mr.userData.vrRes) mirrorRes(true);
-      if (mr && mr.onBeforeRender && S.head && Math.hypot(S.head.x - mr.matrixWorld.elements[12], S.head.z - mr.matrixWorld.elements[14]) < MIRROR_NEAR) { camera.updateMatrixWorld(true); const n0 = A.shop.wardrobe.mirror.renders; try { mr.onBeforeRender(renderer, scene, camera); } catch (e) { S.lastError = 'mirror ' + e; } if (A.shop.wardrobe.mirror.renders > n0) S.mirrorKicks++; } }
+    mirrorFrame();
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -513,7 +574,9 @@ export function setupVR(A) {
     S.msgT = Math.max(0, S.msgT - dt);
     const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS' };
     const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2]);
+    const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
+    if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
+    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], jb ? { bar: jb } : {});
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
@@ -549,6 +612,7 @@ export function setupVR(A) {
       if (!aim) trigAsA = true; }
     const prim = anyAB('a') || (trigAsA && !S.trigOnPw && any('trig'));
     for (const k of map.a) hold(k, prim, w);
+    if (map.trig === 'keys') for (const k of map.trigKeys) hold(k, !S.trigOnPw && any('trig'), w);   // t358u: the trigger has its own key (Berserker attack)
   }
   // ---- right stick = camera pan through the game's own drag-look (Sky Tower: lookDrag(dx, dy) in drag pixels, 0.0055 rad per px) ----
   function camPan(w, map, R, dt) { const api = w && w[map.pan]; if (!api || typeof api.lookDrag !== 'function' || !R) return;
@@ -556,13 +620,12 @@ export function setupVR(A) {
     const dx = f(R.x) * px, dy = f(R.y) * px * 0.6; if (dx || dy) { try { api.lookDrag(dx, dy); S.pans = (S.pans || 0) + 1; } catch (e) {} } }
   // ---- power-ups: ready = the game's own button is showing; fire = tap its key for a few frames ----
   const pwRel = {};
-  function pwReady(w, p) { try { const e = w.document.getElementById(p.el); return !!(e && e.style.display === 'flex'); } catch (e) { return false; } }
+  function pwReady(w, p) { if (p.always) return !!w; try { const e = w.document.getElementById(p.el); return !!(e && e.style.display === 'flex'); } catch (e) { return false; } }
   function pwFire(w, p) { if (!w || !pwReady(w, p)) return false; hold(p.code, true, w); pwRel[p.code] = 0.15; S.pwFired[p.id] = (S.pwFired[p.id] || 0) + 1; S.lastPw = p.id; return true; }
   function pwInput(w, map, L, R, dt) {
     for (const c in pwRel) { pwRel[c] -= dt; if (pwRel[c] <= 0) { delete pwRel[c]; hold(c, false, w); } }
-    // right grip: a short tap (< 0.35 s) = ODIN; holding it 0.6 s still leaves the machine
-    const rg = !!(R && R.grip); if (rg) S.rgT = (S.rgT || 0) + dt; let rgTap = false; if (!rg && S.rgWas) rgTap = (S.rgT || 0) < 0.35; if (!rg) S.rgT = 0; S.rgWas = rg;
-    for (const p of map.pw) { const go = (p.btn === 'X' && L && L.aDown) || (p.btn === 'Y' && L && L.bDown) || (p.btn === 'R-GRIP TAP' && rgTap); if (go) { if (pwFire(w, p)) pulse((p.btn === 'R-GRIP TAP' ? R : L).src, 0.6, 50); } } }
+    // t358u: B (right) / X / Y (left) fire their power-up when it is ready; A is DASH (held through map.a, like the game's own key)
+    for (const p of map.pw) { const P = p.btn === 'B' ? R : L, go = (p.btn === 'B' && R && R.bDown) || (p.btn === 'X' && L && L.aDown) || (p.btn === 'Y' && L && L.bDown); if (go && pwFire(w, p)) pulse(P.src, 0.6, 50); } }
   S.pw = { fire: id => { const m = MAPS[play.cur && play.cur.key] || {}, p = (m.pw || []).find(q => q.id === id); return p ? pwFire(gameWin(), p) : false; }, ready: () => { const m = MAPS[play.cur && play.cur.key] || {}, w = gameWin(); return (m.pw || []).filter(p => w && pwReady(w, p)).map(p => p.id); },
     world: id => { const m = pwM[id]; if (!m || !m.visible) return null; m.updateMatrixWorld(true); return m.getWorldPosition(new THREE.Vector3()).toArray(); } };
   S.sendKey = (code, type) => { const w = gameWin(); if (w) sendKey(w, type, code); };
