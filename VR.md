@@ -83,3 +83,36 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   In VR, vr.js resizes it to 1536 px on the long side (1024 on the low tier), matching the glass aspect (1002x1536). It uses linear filtering and no mipmaps.
   It goes back to 512x420 when you leave VR. shop.js still skips the pass unless the mirror is in view and facing you, and the VR redraw
   only runs within 5 m. Check: `test/vr_v4.js` "the mirror render target goes up in VR".
+
+## t358u: Live mirror, jetpack energy bar, Berserker buttons, smoother arcade (cache v6)
+- **Mirror**: in VR, vr.js swaps the shop mirror for its own Reflector twin with the same size and place (1536 px on the long side, 1024 on the low tier).
+  It draws as soon as you beam in: every frame within 8 m or whenever you're reflected in it, every 2nd frame out to 25 m when it's in view and facing you.
+  The shop's own mirror is hidden with a layer (shop.js keeps setting `.visible`) and comes back when you leave VR. `__gaVR.mirrorStats()`.
+- **Jetpack energy bar**: the left-controller display shows an ENERGY bar from the game's real fuel (`st.fly.e`) while the jetpack is on (red when low).
+- **Berserker**: TRIGGER = attack, **A = DASH** (always shown), **B = THOR**, **X = BERSERK**, **Y = ODIN**. Power-ups only fire when ready.
+  The grip-tap Odin was removed. Holding grip still exits.
+- **Performance**:
+  - Low tier uses framebuffer scale 0.85, and foveation is 1.
+  - At XR start, every program is compiled and linked for the XR target and the mirror target, and textures are uploaded.
+  - A new set of lit lights (the shop, back in the arcade) is compiled in one go the first frame it shows, instead of shader by shader.
+  - The Dead Signal station spotlight blinked on and off as its group was culled, which recompiled the cabinets' shaders while you turned. In VR it now
+    sits on an always-on holder and drops to intensity 0 when it should be off.
+  - Fewer per-frame allocations.
+  - Profile: `test/vr_perf.js` (GA_ROOT=<old checkout> profiles an older build).
+
+## t359u: Laser from the right controller (same v6)
+- The pistol shoots along the right controller's pointer in full 3D. Hand down shoots down, and the bolt starts at the controller.
+- Hold B to charge: the glow sits on the controller (blue for the monkey, red for the alien, from roomfire.js `playerCols()`), and grows over the
+  game's 4 s charge. A full charge fires the beam for 3 s. Releasing earlier fires the game's own bolt (`__roomFire.fire`), re-aimed along the controller.
+
+## t360u: Hands in the mirror, chat with Grok (same v6)
+- The avatar's arms follow the controllers (shoulder aimed at the grip, elbow bends with reach), with a small controller model in each hand, so the
+  mirror shows them.
+- A **CHAT WITH GROK** sign over the clerk in the shop (and over the visiting Grok in the arcade) opens a VR chat panel. It has the original's questions
+  (8 per page, PREV/NEXT) and shows your question and Grok's reply. It uses grokchat.js's `openChat` / `ask` / `close`.
+
+## t361u: Alien laser from its machine, headset battery (same v6)
+- As the alien, the bolt, beam and charge glow come from its floating machine. The aim still follows the right controller.
+- The left-controller display shows the headset battery % from `navigator.getBattery()` and updates live, with a lightning bolt while charging and red at 20% or less.
+  If the browser has no Battery API, the readout is hidden.
+- Tests: `test/vr_v6.js` (battery uses a mocked `getBattery`).

@@ -481,7 +481,7 @@ export function setupVR(A) {
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
     document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
-    mirrorVR(false); avatarHandsOff(); unadoptAll();
+    mirrorVR(false); avatarHandsOff(); unadoptAll(); LS.done.clear();
     A.resumeFlat();
   });
 
@@ -547,10 +547,11 @@ export function setupVR(A) {
   function warmXR(why) { const t0 = performance.now(), p0 = renderer.info.programs ? renderer.info.programs.length : 0; let tex = 0;
     try { mirrorTwin(); } catch (e) {}
     try { camera.updateMatrixWorld(true); renderer.compile(scene, camera); } catch (e) { S.lastError = 'warm ' + e; }
-    const t = MV.twin; if (t) { const prev = renderer.getRenderTarget(); try { renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.setRenderTarget(prev); } }
+    const t = MV.twin; if (t) { const prev = renderer.getRenderTarget(), mv = A.monkey && A.monkey.visible; const xe = renderer.xr.enabled; try { if (A.monkey) A.monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); if (A.monkey) A.monkey.visible = mv; } }   // as the Reflector pass draws (xr off, half-float target)
     if (renderer.initTexture) { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
       for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap']) { const x = m[k]; if (x && x.isTexture && !seen.has(x) && !x.isRenderTargetTexture && !x.isVideoTexture && !(x.image && x.image.tagName === 'CANVAS')) { seen.add(x); try { renderer.initTexture(x); tex++; } catch (e) {} } } }); }
-    if (why === 'start') for (const p of renderer.info.programs || []) { try { p.getUniforms(); } catch (e) {} }   // link now (entry), not on first sight
+    for (const p of renderer.info.programs || []) { try { p.getUniforms(); } catch (e) {} }   // link now (entry / beam cut / arrival), not on first sight; already-linked ones are cached
+    try { LS.done.add(lightSig()); } catch (e) {}
     const r = { why, ms: +(performance.now() - t0).toFixed(1), programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, textures: tex }; (S.warms = S.warms || []).push(r); return r; }
   S.warmXR = warmXR;
   // Light-count variants: three compiles a new program for EVERY lit material whenever the number of lit lights changes. In the arcade one spot
@@ -571,9 +572,8 @@ export function setupVR(A) {
   function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; } }
   function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); }
   S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
-  function warmCheck() { const w = A.tp ? A.tp.where : 0, idle = !A.tp || A.tp.state === 'idle';
+  function warmCheck() {
     if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
-    if (w !== S.warmWhere) { S.warmWhere = w; S.warmReq = S.warmReq || 'beam'; }   // at the teleport cut, while the beam effect plays
     if (S.warmReq && S.frames > 1) { const why = S.warmReq; S.warmReq = null; pinScan(); pinLights(); warmXR(why); unpinLights(); } }
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
@@ -690,7 +690,15 @@ export function setupVR(A) {
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
   }
-  function prerender() { pinScan(); pinLights(); }
+  // Light-set warm-up: three keys every lit program on the counts of lit lights, so the first frame a new set shows (the shop during the beam,
+  // back in the arcade) would compile dozens of programs one by one. Checked right before three gathers the lights (after main.js culled the rooms):
+  // a set never warmed before compiles + links everything for it in one go, also for the mirror pass.
+  const LS = { list: [], t: -1e9, done: new Set() };
+  function lightSig() { if (S.frames - LS.t > 120) { LS.t = S.frames; LS.list.length = 0; scene.traverse(o => { if (o.isLight && !o.isAmbientLight) LS.list.push(o); }); }
+    let p = 0, sp = 0, d = 0, h = 0, ra = 0, sh = 0; for (const l of LS.list) { if (!effVis(l)) continue; if (l.isPointLight) p++; else if (l.isSpotLight) sp++; else if (l.isDirectionalLight) d++; else if (l.isHemisphereLight) h++; else if (l.isRectAreaLight) ra++; if (l.castShadow) sh++; }
+    return p + 'p' + sp + 's' + d + 'd' + h + 'h' + ra + 'r' + sh + 'x'; }
+  S.lightSig = () => lightSig();
+  function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
   { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
     scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) prerender(); };
     scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
