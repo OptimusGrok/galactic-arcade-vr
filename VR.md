@@ -131,3 +131,10 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - mp.js changes (additive): `M.vrSnap` adds `v` to the snapshot; `p.v` / `p.vAt` are kept from received states. `M.posePeer` runs per peer after the pose,
   and `M.step` lets vr.js move remote players from the XR frame loop (the page's own animation loop pauses during an immersive session).
 - Test: `test/vr_mp.js`: two emulated headsets and a flat player in one mocked room.
+
+## t364u: Mirror shows only the avatar (same v7)
+- On a real Quest the mirror showed two big arms and big pink rings: your own first-person controller models (with their magenta rings), rays,
+  cursor, left-hand display, menu and charge glow were drawn in the mirror pass right in front of its camera. They're now hidden for the mirror pass only
+  (you still see them in your view), so the mirror shows the avatar with its small hand controllers. The avatar's hand controllers re-check their size
+  every frame, so they stay about 12 cm whatever the avatar's scale. The arms only rotate and are never stretched.
+- Test: `test/vr_v6.js` counts what the mirror pass draws: the avatar's hand controllers yes, first-person meshes none.
