@@ -118,8 +118,9 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
   // t753u cabinet presence: when I start a machine, remember when (wall clock) so every client orders the two players at a cabinet the same way
   let playKey = '', playSince = 0;
   function myPlay() { const a = animOf(), k = /^play:/.test(a) ? a.slice(5) : ''; if (k !== playKey) { playKey = k; playSince = k ? Date.now() : 0; } return k; }
+  function vrSnap() { try { return M.vrSnap ? M.vrSnap() : undefined; } catch (e) { return undefined; } }   // t362u: VR head + controllers (vr.js), body-relative
   function laserSnap() { try { const R = window.__roomFire; return R && R.laserSnap ? R.laserSnap() : undefined; } catch (e) { return undefined; } }
-  function snap() { const p = monkey.position, a = animOf(); myPlay(); return { i: id, x: r2(p.x), y: r2(p.y), z: r2(p.z), r: Math.round(monkey.rotation.y * 100) / 100, m: roomOf(p), a, ps: playKey ? playSince : undefined, gb: window.__minigolf && window.__minigolf.ballSnap ? window.__minigolf.ballSnap() : undefined, lz: laserSnap() }; }   // t275u gb; t798u lz: charge / beam
+  function snap() { const p = monkey.position, a = animOf(); myPlay(); return { i: id, x: r2(p.x), y: r2(p.y), z: r2(p.z), r: Math.round(monkey.rotation.y * 100) / 100, m: roomOf(p), a, ps: playKey ? playSince : undefined, gb: window.__minigolf && window.__minigolf.ballSnap ? window.__minigolf.ballSnap() : undefined, lz: laserSnap(), v: vrSnap() }; }   // t275u gb; t798u lz: charge / beam
   let ch = null, lib = null, client = null, lastSent = '', lastAt = 0, sendTimer = 0, joinedAt = 0, retry = 0, retryT = 0, joinT = 0, gen = 0;
   function send(event, payload) { if (!ch || M.state !== 'on') return false; try { const r = ch.send({ type: 'broadcast', event, payload }); if (r && r.catch) r.catch(() => {}); } catch (e) { return false; } M.sent++; M.bytes += JSON.stringify(payload).length; return true; }
   function tick() { if (M.state !== 'on') return; const s = snap(), j = JSON.stringify(s), now = performance.now();
@@ -179,7 +180,8 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
     p.tgt = { x: s.x, y: s.y || 0, z: s.z, r: s.r || 0 }; if (!p.cur) p.cur = Object.assign({}, p.tgt); p.a = String(s.a || 'idle'); p.m = String(s.m || 'room1');
     p.gb = Array.isArray(s.gb) && s.gb.length === 3 && s.gb.every(Number.isFinite) ? s.gb : null; p.ps = Number.isFinite(s.ps) && s.ps > 0 ? s.ps : undefined;
     p.lz = s.lz && typeof s.lz === 'object' && num3(s.lz.o) && num3(s.lz.d) ? { k: Math.max(0, Math.min(1, +s.lz.k || 0)), b: Math.max(0, +s.lz.b || 0), o: s.lz.o, d: s.lz.d, h: s.lz.h === 'red' ? 'red' : 'cyan' } : null;
-    try { if (window.__roomFire && window.__roomFire.syncPeer) window.__roomFire.syncPeer(s.i, p.lz); } catch (e) {} }
+    try { if (window.__roomFire && window.__roomFire.syncPeer) window.__roomFire.syncPeer(s.i, p.lz); } catch (e) {}
+    if (s.v && typeof s.v === 'object') { p.v = s.v; p.vAt = p.last; } }   // t362u: a VR player's head / hand poses
   // ---------- t753u: cabinet presence ----------
   // A player inside a machine still stands in front of it for everyone else, in Grok's playing pose (leaning in, one hand
   // circling the stick, the other tapping buttons). Two at one machine stand side by side: the one who started first
@@ -359,7 +361,9 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
   const V = new THREE.Vector3(); let lt = performance.now();
   function place(node, obj, h, dy) { V.set(obj.position.x, obj.position.y + h, obj.position.z).project(camera);
     if (V.z > 1 || !obj.visible) { node.style.display = 'none'; return; } node.style.display = 'block'; node.style.left = ((V.x + 1) / 2 * innerWidth).toFixed(1) + 'px'; node.style.top = ((1 - V.y) / 2 * innerHeight - (dy || 0)).toFixed(1) + 'px'; }
-  function frame(now) { if (document.hidden) { lt = now; requestAnimationFrame(frame); return; } const dt = Math.min(0.1, (now - lt) / 1000); lt = now; const k = 1 - Math.exp(-dt * 12);
+  function frame(now) { step(now); requestAnimationFrame(frame); }
+  M.step = now => step(now);   // t362u: vr.js drives this from the XR frame loop (window rAF pauses while the headset is on)
+  function step(now) { M.lastStep = now; if (document.hidden) { lt = now; return; } const dt = Math.max(0, Math.min(0.1, (now - lt) / 1000)); lt = now; const k = 1 - Math.exp(-dt * 12);
     for (const p of M.peers.values()) {
       if (now - p.last > 10000 && p.cur) { p.g.visible = false; p.tag.style.display = 'none'; continue; }   // went quiet: hide until it speaks again
       if (!p.cur) continue; const slot = /^play:/.test(p.a) ? slotOf(p.a.slice(5), p.id) : null; p.slot = slot;
@@ -383,6 +387,7 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
         if (u.arms) { u.arms[0].sh.rotation.x = fly ? -0.85 : -s * amp * 0.8; u.arms[1].sh.rotation.x = fly ? -0.85 : s * amp * 0.8; } }
       if (slot) playPose(p, u, g, now / 1000); else if (p.posed) unpose(p, u, g);
       if (!slot) try { const RF = window.__roomFire; if (RF && RF.poseRemote) RF.poseRemote(u, p, dt, now); } catch (e) {}   // t815u: their pistol arm up only while firing / charging
+      if (M.posePeer) try { M.posePeer(p, dt, now); } catch (e) {}   // t362u: VR players: head + arms follow their headset / controllers
       if (u.tail) { const tk = 0.15 + Math.min(1, sp / 2.4) * 0.35 + (p.a === 'jump' || p.a === 'fly' || p.a === 'glide' ? 0.4 : 0); u.tail.rotation.z = Math.sin(now / 625 + p.phase) * tk; const seat = /^seat:/.test(p.a), backOn = !!(p.look && p.look.back && p.look.back !== 'none'); u.tail.visible = !seat && !!u.tail.children.length; u.pack.visible = !seat && !backOn; }
       if (u.bot && window.__arcade && window.__arcade.tickBot) window.__arcade.tickBot(u, now / 1000);
       if (p.flameA !== p.a) { p.flameA = p.a; if (!(p.thG && p.thG.parent)) { p.th = []; const pack = p.g.getObjectByName('gaBk_jetpack'); p.thG = pack || null;
@@ -391,8 +396,7 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
       if (p.gb || p.ball) { if (!p.ball) { p.ball = new THREE.Mesh(new THREE.SphereGeometry(0.071, 12, 8), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x777777 })); p.ball.name = 'mpGolfBall'; scene.add(p.ball); }   // t275u: their mini golf ball
         p.ball.visible = !!p.gb && g.visible; if (p.gb) { if (!p.ball.userData.on) p.ball.position.fromArray(p.gb); else p.ball.position.lerp(GBV.fromArray(p.gb), k); } p.ball.userData.on = !!p.gb; }
       place(p.tag, g, p.top || 1.75); }
-    for (const p of [me, ...M.peers.values()]) for (const kd in p.bub) { const b = p.bub[kd]; if (now > b.until) { clearBub(p, kd); continue; } place(b.el, p.g, p.top || 1.75, kd === 'emo' ? 22 : 24); }
-    requestAnimationFrame(frame); }
+    for (const p of [me, ...M.peers.values()]) for (const kd in p.bub) { const b = p.bub[kd]; if (now > b.until) { clearBub(p, kd); continue; } place(b.el, p.g, p.top || 1.75, kd === 'emo' ? 22 : 24); } }
   requestAnimationFrame(frame);
   // multiplayer is off in automated test browsers unless a test opts in (keeps the suite off the network)
   const auto = navigator.webdriver && !window.__mpMock && !window.__mpLive;

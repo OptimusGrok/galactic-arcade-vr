@@ -413,20 +413,76 @@ export function setupVR(A) {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.09, 10).rotateX(Math.PI / 2 - 0.5), new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.5, metalness: 0.3 }));
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.005, 6, 18), new THREE.MeshBasicMaterial({ color: 0xff3fd2, toneMapped: false })); ring.position.set(0, 0.01, -0.025); ring.rotation.x = 0.6;
     m.add(body, ring); const ws = new THREE.Vector3(); hand.getWorldScale(ws); m.scale.setScalar(1 / Math.max(0.05, ws.x)); m.position.set(0, -0.02 / Math.max(0.05, ws.y), 0); m.rotation.x = -Math.PI / 2; hand.add(m); AH.models.set(hand, m); return m; }
-  function avatarHands() { const u = monkey.userData || {}, arms = u.arms; if (!arms || !S.head) return;
-    const h = S.head, rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
-    for (const arm of arms) { if (!arm || !arm.sh) continue; const hand = arm.sd > 0 ? 'right' : 'left', i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src), g = i >= 0 ? grips[i] : null;
-      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) mdl.visible = !!g;
-      if (!g) continue;
-      g.updateMatrixWorld(true); _ha.wp.setFromMatrixPosition(g.matrixWorld);
-      _ha.rs.set(h.x + rx * arm.sd * 0.18, h.y - 0.27, h.z + rz * arm.sd * 0.18);   // your real shoulder
+  // one arm solver for your own avatar (mirror) and other VR players' avatars (t362u): h = real head {x, y, z, yaw}, gripOf(hand) = {p, q} world grip pose
+  function armIK(arms, h, gripOf) { const rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
+    for (const arm of arms) { if (!arm || !arm.sh) continue; const G = gripOf(arm.sd > 0 ? 'right' : 'left');
+      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) mdl.visible = !!G;
+      if (!G) continue; _ha.wp.copy(G.p);
+      _ha.rs.set(h.x + rx * arm.sd * 0.18, h.y - 0.27, h.z + rz * arm.sd * 0.18);   // the real shoulder
       _ha.v.copy(_ha.wp).sub(_ha.rs); const reach = Math.min(1, _ha.v.length() / 0.62); if (_ha.v.lengthSq() < 1e-6) continue; _ha.v.normalize();
-      arm.sh.parent.updateMatrixWorld(true); arm.sh.parent.getWorldQuaternion(_ha.pq);
+      arm.sh.parent.getWorldQuaternion(_ha.pq);
       _ha.q.setFromUnitVectors(_ha.dn, _ha.v); arm.sh.quaternion.copy(_ha.pq).invert().multiply(_ha.q);
       const bend = Math.max(0, 1 - reach) * 1.9; arm.sh.rotateX(-bend * 0.5); if (arm.el) arm.el.rotation.set(-bend, 0, 0);   // hand near you: elbow bends, the upper arm tips back
-      if (arm.hand) { arm.hand.parent.updateMatrixWorld(true); arm.hand.parent.getWorldQuaternion(_ha.pq); g.getWorldQuaternion(_ha.gq); arm.hand.quaternion.copy(_ha.pq).invert().multiply(_ha.gq).multiply(_ha.fix); arm.hand.visible = true; } }
-    AH.frames++; }
+      if (arm.hand) { arm.sh.updateMatrixWorld(true); arm.hand.parent.getWorldQuaternion(_ha.pq); arm.hand.quaternion.copy(_ha.pq).invert().multiply(G.q).multiply(_ha.fix); arm.hand.visible = true; } } }
+  const _gp = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+  function myGrip(hand) { const i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src), g = i >= 0 ? grips[i] : null; if (!g) return null;
+    g.updateMatrixWorld(true); _gp.p.setFromMatrixPosition(g.matrixWorld); g.getWorldQuaternion(_gp.q); return _gp; }
+  function avatarHands() { const u = monkey.userData || {}, arms = u.arms; if (!arms || !S.head) return;
+    monkey.updateMatrixWorld(true); armIK(arms, S.head, myGrip); AH.frames++; }
   function avatarHandsOff() { for (const m of AH.models.values()) m.visible = false; }
+  // ---------- t362u: two (or more) people in the VR arcade: mp.js's shared room + VR poses ----------
+  // Sent: with each mp 'st' packet (mp.js ticks at 10 Hz, only when changed) a compact `v` = head + both grips relative to the body
+  // (position cm, rotation quaternion), so it lines up with the smoothed body the others draw. Flat / older clients ignore `v`.
+  // Received: the remote avatar's head turns with their headset, its arms reach for their controllers (same solver as the mirror), a small
+  // controller sits in each hand and a visor marks them as a VR player. Poses ease toward each packet (~70 ms), so 10 Hz looks smooth.
+  const MPV = { sent: 0, posed: 0, steps: 0, zaps: 0, Y: new THREE.Vector3(0, 1, 0), qa: new THREE.Quaternion(), qb: new THREE.Quaternion(), qpi: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI), e: new THREE.Euler(0, 0, 0, 'YXZ'), v: new THREE.Vector3() };
+  const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+  function poseEnc(p, q, base, yaw, head) { const c = Math.cos(yaw), sn = Math.sin(yaw), dx = p.x - base.x, dz = p.z - base.z;
+    MPV.qa.setFromAxisAngle(MPV.Y, -yaw).multiply(q); if (head) MPV.qa.multiply(MPV.qpi);   // head: identity = looking where the body faces
+    return [r2(dx * c - dz * sn), r2(p.y - base.y), r2(dx * sn + dz * c), r3(MPV.qa.x), r3(MPV.qa.y), r3(MPV.qa.z), r3(MPV.qa.w)]; }
+  function vrSnap() { if (!renderer.xr.isPresenting || !S.posed || !S.head) return undefined;
+    const base = monkey.position, yaw = monkey.rotation.y, out = { vr: 1 };
+    camera.updateMatrixWorld(true); camera.getWorldPosition(MPV.v); camera.getWorldQuaternion(MPV.qb); out.h = poseEnc(MPV.v, MPV.qb, base, yaw, true);
+    for (const hand of ['left', 'right']) { const g = myGrip(hand); if (g) out[hand[0]] = poseEnc(g.p, g.q, base, yaw, false); }
+    MPV.sent++; return out; }
+  const arr7 = a => Array.isArray(a) && a.length === 7 && a.every(x => typeof x === 'number' && isFinite(x) && Math.abs(x) < 30);
+  function visor(p, on) { const u = p.g.userData || {}, hd = u.head || p.g; if (!p.visor && on) {
+      const m = new THREE.Group(); m.name = 'vrVisor'; const ws = new THREE.Vector3(); p.g.updateMatrixWorld(true); hd.getWorldScale(ws);
+      const bx = new THREE.Box3().setFromObject(hd), sz = bx.getSize(new THREE.Vector3()), rad = Math.max(0.08, Math.min(0.3, Math.max(sz.x, sz.z) * 0.5)), sc = 1 / Math.max(0.05, ws.x);
+      const shell = new THREE.Mesh(new THREE.BoxGeometry(rad * 1.25, rad * 0.5, rad * 0.45), new THREE.MeshStandardMaterial({ color: 0x15151c, roughness: 0.35, metalness: 0.4 }));
+      const lens = new THREE.Mesh(new THREE.PlaneGeometry(rad * 1.1, rad * 0.32), new THREE.MeshBasicMaterial({ color: 0x2ae5ff, toneMapped: false })); lens.position.z = rad * 0.23;
+      shell.add(lens); m.add(shell); m.scale.setScalar(sc); m.position.set(0, (bx.getCenter(new THREE.Vector3()).y - hd.getWorldPosition(new THREE.Vector3()).y) / Math.max(0.05, ws.y) + 0.01 * sc, rad * 0.85 * sc); hd.add(m); p.visor = m; }
+    if (p.visor) p.visor.visible = on; }
+  function posePeer(p, dt, now) { const u = p.g.userData || {}, v = p.v, fresh = !!(v && now - (p.vAt || -1e9) < 2000 && arr7(v.h));
+    p.vr = fresh; visor(p, fresh && p.g.visible);
+    if (!fresh || !p.g.visible || p.slot || !u.arms) { if (p.vrS) { p.vrS = null; for (const arm of u.arms || []) { const m = arm.hand && AH.models.get(arm.hand); if (m) m.visible = false; } if (u.head) u.head.rotation.set(0, 0, 0); } return; }
+    const k = 1 - Math.exp(-Math.max(dt, 0) * 14), S0 = p.vrS || (p.vrS = { first: true });
+    for (const key of ['h', 'l', 'r']) { const a = v[key]; if (!arr7(a)) { S0[key] = null; continue; }
+      let e = S0[key]; if (!e) e = S0[key] = { p: new THREE.Vector3().fromArray(a), q: new THREE.Quaternion(a[3], a[4], a[5], a[6]).normalize(), snap: true };
+      MPV.qa.set(a[3], a[4], a[5], a[6]).normalize(); MPV.v.fromArray(a);
+      if (e.snap || e.p.distanceToSquared(MPV.v) > 4) { e.p.copy(MPV.v); e.q.copy(MPV.qa); e.snap = false; } else { e.p.lerp(MPV.v, k); e.q.slerp(MPV.qa, k); } }
+    const g = p.g, yaw = g.rotation.y, c = Math.cos(yaw), sn = Math.sin(yaw), bp = g.position, toW = (lp, out) => out.set(bp.x + lp.x * c + lp.z * sn, bp.y + lp.y, bp.z - lp.x * sn + lp.z * c);
+    g.updateMatrixWorld(true);
+    // head: turn + nod (clamped), on top of the body's facing
+    const H = S0.h; MPV.e.setFromQuaternion(H.q, 'YXZ'); const hy = Math.max(-1.3, Math.min(1.3, MPV.e.y)), hp = Math.max(-0.9, Math.min(0.9, MPV.e.x));
+    if (u.head) { MPV.e.set(hp, hy, 0, 'YXZ'); MPV.qb.setFromEuler(MPV.e); MPV.qa.setFromAxisAngle(MPV.Y, yaw).multiply(MPV.qb); u.head.parent.getWorldQuaternion(_ha.pq); u.head.quaternion.copy(_ha.pq).invert().multiply(MPV.qa); }
+    const hw = toW(H.p, new THREE.Vector3()), head = { x: hw.x, y: hw.y, z: hw.z, yaw: yaw - Math.PI + hy };
+    const grip = { p: new THREE.Vector3(), q: new THREE.Quaternion() };
+    armIK(u.arms, head, hand => { const e = S0[hand[0]]; if (!e) return null; toW(e.p, grip.p); grip.q.setFromAxisAngle(MPV.Y, yaw).multiply(e.q); return grip; });
+    MPV.posed++; }
+  let mpHooked = null, rfHooked = null;
+  function vrLaserSnap() { if (!renderer.xr.isPresenting) return undefined; const aim = (VL.beam || (VL.held && !VL.spent && VL.charge > 0.02)) ? laserAim() : null; if (!aim) return undefined;
+    const h = (monkey.userData || {}).char === 'alien' ? 'red' : 'cyan', o = aim.o.toArray().map(r3), d = aim.d.toArray().map(r3), CT = (window.__roomFire && window.__roomFire.CHARGE_T) || 4;
+    return VL.beam ? { k: 1, b: +Math.max(0.01, VL.beamT).toFixed(2), o, d, h } : { k: +Math.min(1, VL.charge / CT).toFixed(3), b: 0, o, d, h }; }
+  function mpHook() { const M = window.__mp; if (M && mpHooked !== M) { mpHooked = M; M.vrSnap = vrSnap; M.posePeer = posePeer; }
+    const R = window.__roomFire; if (R && R.laserSnap && rfHooked !== R) { rfHooked = R; const ls0 = R.laserSnap; R.laserSnap = function () { const v = vrLaserSnap(); return v !== undefined ? v : ls0.apply(this, arguments); }; } }
+  setInterval(mpHook, 1000);   // also for players in the VR edition who are not in a headset: they still see VR players' heads and hands
+  function mpStep() { mpHook(); const M = window.__mp; if (!M || !M.step) return; const now = performance.now();
+    if (now - (M.lastStep || 0) > 30) { M.step(now); MPV.steps++; } }   // the headset's frame loop keeps remote players moving (window rAF pauses in VR)
+  S.mp = () => { const M = window.__mp; const peers = M ? [...M.peers.values()].map(p => { const u = p.g.userData || {}, arm = u.arms && u.arms.find(a => a.sd > 0), arml = u.arms && u.arms.find(a => a.sd < 0), w = new THREE.Vector3();
+      const hp = o => o ? (p.g.updateMatrixWorld(true), o.getWorldPosition(w).toArray().map(r3)) : null, mdl = a => !!(a && a.hand && AH.models.get(a.hand) && AH.models.get(a.hand).visible);
+      return { id: p.id, vr: !!p.vr, visor: !!(p.visor && p.visor.visible), vis: p.g.visible, a: p.a, pos: p.g.position.toArray().map(r3), r: r3(p.g.rotation.y), headQ: u.head ? u.head.quaternion.toArray().map(r3) : null, handR: hp(arm && arm.hand), handL: hp(arml && arml.hand), ctrlR: mdl(arm), ctrlL: mdl(arml), lz: p.lz || null, v: p.v || null, pistol: (() => { const pg = p.g.getObjectByName('gaPistol'); if (!pg) return false; for (let o = pg; o; o = o.parent) if (!o.visible) return false; return true; })(), thr: (() => { let t = false; p.g.traverse(o => { if (o.name === 'gaThruster' && o.visible) t = true; }); return t; })() }; }) : [];
+    return { state: M && M.state, sent: MPV.sent, zaps: MPV.zaps, posed: MPV.posed, steps: MPV.steps, peers }; };
   S.avatarHands = () => { const u = monkey.userData || {}; monkey.updateMatrixWorld(true); return (u.arms || []).map(a => { const p = new THREE.Vector3(); (a.hand || a.el).getWorldPosition(p); const m = a.hand && AH.models.get(a.hand); return { sd: a.sd, hand: p.toArray(), model: !!(m && m.visible && m.parent === a.hand) }; }).concat([{ frames: AH.frames }]); };
   S.mirrorStats = () => ({ renders: MV.renders, skips: MV.skips, far: MV.far, twin: !!(MV.twin && MV.twin.visible), shopVisible: !!(mirrorMesh() && mirrorMesh().visible && mirrorMesh().layers.isEnabled(0)) });
   S.mirrorRT = () => { const m = MV.twin && MV.twin.visible ? MV.twin : mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: m === MV.twin, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
@@ -532,7 +588,10 @@ export function setupVR(A) {
       if (VL.charge >= CT) { VL.spent = true; laserGlow(null); laserBeam(aim, col); } }
     else laserGlow(null);
     if (!held && VL.held && !VL.spent && aim && rf && rf.fire) {   // release: the real shot, then put the bolt on the controller's aim
-      const k = Math.min(0.999, VL.charge / CT), L = rf.fire({ fromRelease: true, k });
+      // t362u: roomfire's own multiplayer zap would carry the flat facing; hold it, then send the shot along the controller's aim
+      const M = window.__mp, z0 = M && M.zap; let zh = null; if (z0) M.zap = (o, d, c) => { zh = c; return true; };
+      const k = Math.min(0.999, VL.charge / CT); let L = null; try { L = rf.fire({ fromRelease: true, k }); } finally { if (z0) M.zap = z0; }
+      if (L && z0 && zh) { try { if (z0(aim.o.toArray(), aim.d.toArray(), zh, k)) MPV.zaps++; } catch (e) {} }
       if (L && L.mesh) { L.mesh.position.copy(aim.o); L.mesh.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); L.dir.copy(aim.d); L.o = aim.o.toArray();
         if (rf.last) { rf.last.o = aim.o.toArray(); rf.last.d = aim.d.toArray(); } VL.bolts++; VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), k, char: col.char }; if (R) pulse(R.src, 0.7, 40); } }
     VL.held = held; }
@@ -610,7 +669,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    avatarHands(); mirrorFrame();
+    avatarHands(); mpStep(); mirrorFrame();
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
