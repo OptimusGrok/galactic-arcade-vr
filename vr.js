@@ -259,7 +259,7 @@ export function setupVR(A) {
         add('away_L', 'PUT L AWAY', 362, 475, 300, 85, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
         add('away', 'PUT BOTH AWAY', 684, 475, 300, 85, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
         add('prev', '<', 40, 650, 170, 90, UI.page > 0, () => { UI.page--; }); add('pward', 'ACCESSORIES', 230, 650, 564, 90, !!window.__gaPlayer, () => uiOpen('ward')); add('next', '>', 814, 650, 170, 90, UI.page < pages - 1, () => { UI.page++; }); } }
-    else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU';
+    else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
       add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 150, 800, 88, !!tp && tp.state === 'idle', beam);
       add('pack', 'MONKEY BACKPACK', 112, 250, 800, 88, true, () => uiOpen('pack'));
       if (!inShop) { add('tickets', 'BUY TICKETS', 112, 350, 800, 88, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 450, 800, 88, !!nbApi(), nbStart); }
@@ -269,6 +269,10 @@ export function setupVR(A) {
     return { title, sub, B }; }
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
   const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
+  // t355u: the menu shows your money (kiosk cash) and tickets, live (the panel redraws when the text changes)
+  function wallet() { const k = kiosk(); let cash = 0; try { if (k && k.refill) k.refill(); cash = k && k.C ? k.C.bal | 0 : 0; } catch (e) {} const t = play.tickets; return { cash, tickets: t ? t.total | 0 : 0 }; }
+  S.wallet = () => wallet();
+  S.uiSub = () => { try { return uiSpec().sub; } catch (e) { return null; } };
   function heldNow() { const v = J('neonarcade.held', null); if (typeof v === 'string') return { R: v, L: null }; return { R: (v && v.R) || null, L: (v && v.L) || null }; }
   const CLAWN = { bear: 'TEDDY BEAR', bunny: 'BUNNY', duck: 'DUCKY', frog: 'FROG', cat: 'KITTY', octopus: 'OCTOPUS', penguin: 'PENGUIN', alien: 'ALIEN', monkey: 'MONKEY', grok: 'GROK' };   // inventory.js CLAW names
   function packItems(sh) { const out = [], p = J('neonarcade.prizes', {}), byId = {}; for (const it of sh.ITEMS || []) byId[it.id] = it;
@@ -377,6 +381,17 @@ export function setupVR(A) {
   function pump() { const gf = play.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && (S.frames & 1)) continue;
     try { const w = f.contentWindow; if (w && w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} } }
 
+  // ---------- t355u: equipped gear in the arcade world (not in a cabinet): JETPACK -> hold A to fly, LASER PISTOL -> B shoots ----------
+  // Uses the flat game's own code: main.js flyIntegrate() reads st.fly.hold (same as the FLY button), roomfire.js setHeld() (same as
+  // the FIRE button: hold charges, release shoots). With the pistol on, B shoots and the menu moves to Y only.
+  const jetOn = () => { try { return !!(window.__arcade && window.__arcade.jetpackOn && window.__arcade.jetpackOn()); } catch (e) { return false; } };
+  const laserOn = () => { const rf = window.__roomFire; try { return !!(rf && rf.equipped && rf.equipped()); } catch (e) { return false; } };
+  S.gear = () => ({ jet: jetOn(), laser: laserOn(), flying: !!S.vrFly, firing: !!S.vrFire, flyFrames: S.flyFrames || 0, laserPulls: S.laserPulls || 0 });
+  function gear(ok) { const R = IN.right, rf = window.__roomFire;
+    const jet = jetOn(), fly = !!(ok && jet && R && R.a);
+    if (jet || S.vrFly) { if (st.fly) st.fly.hold = fly; if (fly) S.flyFrames = (S.flyFrames || 0) + 1; S.vrFly = fly; }
+    const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown);
+    if ((las || S.vrFire) && rf && rf.setHeld) { if (fire !== !!S.vrFire) { rf.setHeld(fire); if (fire) { S.laserPulls = (S.laserPulls || 0) + 1; pulse(R.src, 0.4, 30); } } S.vrFire = fire; } }
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
@@ -385,6 +400,7 @@ export function setupVR(A) {
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
     S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
+    gear(walk && !(A.nb && A.nb.playing));
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
     const h = S.head, q = _v.set(h.x, monkey.position.y, h.z); A.collide(q); moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z;
@@ -429,7 +445,7 @@ export function setupVR(A) {
       if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
-      if (anyP('bDown') && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu
+      if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
       UI.hover = null;
       for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
         if (UI.open) { const u = uiHit(ray);

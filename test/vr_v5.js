@@ -36,6 +36,40 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await tap('p_claw:bear'); await tap('p_cotton'); await tap('away'); h = await held(); chk(h.R === null && h.L === null, 'PUT BOTH AWAY empties both hands ' + JSON.stringify(h));
     const c = await page.evaluate(() => ({ e: window.__gaVR.packEquips, u: window.__gaVR.packUnequips })); chk(c.e === 5 && c.u === 3, 'equips ' + c.e + ', put-aways ' + c.u);
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk(!(await st()).panel, 'B closes the backpack');
+    // ---- t355u: money + tickets in the menu ----
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3);
+    const subOf = () => page.evaluate(() => { const c = window.__gaVR.ui; return c.kind === 'menu' ? window.__gaVR.uiSub() : null; });
+    let w = await page.evaluate(() => window.__gaVR.wallet()); let sb = await subOf();
+    chk(sb === '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS' && w.tickets > 0, 'the menu shows money + tickets: "' + sb + '"');
+    await page.evaluate(() => window.__arcade.play.addTickets(7)); await H.frames(page, 3); const w2 = await page.evaluate(() => window.__gaVR.wallet()); sb = await subOf();
+    chk(w2.tickets === w.tickets + 7 && sb.includes(w2.tickets + ' TICKETS'), 'tickets update live in the open menu (' + w.tickets + ' -> ' + w2.tickets + ')');
+    await page.evaluate(() => { window.__kiosk.C.bal = 3; }); await H.frames(page, 3); sb = await subOf(); chk(/^\$3 CASH/.test(sb), 'cash updates live ("' + sb + '")');
+    // ---- t355u: JETPACK on -> hold A flies (in the arcade world) ----
+    await tap('ward'); await tap('cat_back'); await tap('w_back_jetpack'); let gr = await page.evaluate(() => window.__gaVR.gear());
+    chk(gr.jet, 'JETPACK bought + worn from ACCESSORIES in VR'); await tap('close');
+    const fy0 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y }));
+    await H.btn(page, 'right', 'a-button', 1); await page.waitForTimeout(900); await H.frames(page, 4);
+    const fy1 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, r: window.__gaVR.rig.y, hold: window.__arcade.st.fly.hold, air: window.__arcade.st.fly.air }));
+    chk(fy1.hold && fy1.m > fy0.m + 0.8 && Math.abs(fy1.r - fy1.m) < 0.05, 'hold A flies: the player + headset rise (' + fy0.m.toFixed(2) + ' -> ' + fy1.m.toFixed(2) + ' m)');
+    await H.btn(page, 'right', 'a-button', 0); await page.waitForTimeout(1500); await H.frames(page, 4);
+    const fy2 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, hold: window.__arcade.st.fly.hold }));
+    chk(!fy2.hold && fy2.m < fy1.m - 0.5, 'let go of A and you come back down (' + fy2.m.toFixed(2) + ' m)');
+    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: B still opens the menu');
+    // ---- t355u: LASER PISTOL on -> B shoots, menu on Y only ----
+    await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
+    await H.frames(page, 6); const rs = await page.evaluate(() => window.__roomFire.shown); chk(rs, 'the pistol is live in VR');
+    const s0 = await page.evaluate(() => window.__roomFire.shots);
+    await H.btn(page, 'right', 'b-button', 1); await H.frames(page, 4); const hd = await page.evaluate(() => window.__roomFire.held); await page.waitForTimeout(250);
+    await H.btn(page, 'right', 'b-button', 0); await H.frames(page, 6); const s1 = await page.evaluate(() => window.__roomFire.shots);
+    chk(hd && s1 > s0 && !(await st()).panel, 'B shoots the laser (shots ' + s0 + ' -> ' + s1 + '), no menu');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'with the laser on, Y opens the menu');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); chk(!(await st()).panel, 'and Y closes it');
+    await H.btn(page, 'right', 'a-button', 1); await page.waitForTimeout(500); const both = await page.evaluate(() => window.__arcade.st.fly.hold); await H.btn(page, 'right', 'b-button', 1); await H.frames(page, 4);
+    const bothF = await page.evaluate(() => window.__roomFire.held); await H.btn(page, 'right', 'b-button', 0); await H.btn(page, 'right', 'a-button', 0); await page.waitForTimeout(1500);
+    chk(both && bothF, 'fly (A) and shoot (B) together');
+    await H.press(page, 'left', 'y-button'); await tap('ward'); await tap('cat_hand'); await tap('remove'); await tap('close');
+    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu' && !(await page.evaluate(() => window.__gaVR.gear().laser)), 'pistol off: B opens the menu again');
+    await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
     // ---- Sky Tower ----
     await page.evaluate(() => { window.__arcade.play.addTickets(20); const m = window.__arcade.play.machines.skytower; window.__gaVR.startCab(m.cab, m.cab.userData.centre); });
     await page.waitForFunction(() => window.__arcade.play.mode === 'game' && window.__arcade.play.sub === 'demo', null, { timeout: 90000 });
