@@ -72,8 +72,8 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     // t358u: trigger = attack (KeyJ), A = DASH (Space, its button always shows), B = THOR, X = BERSERK, Y = ODIN, no grip-tap Odin
     await H.btn(page, 'right', 'trigger', 1); await H.frames(page, 2); let ka = await page.evaluate(() => window.__gaVR.state().held.join()); await H.btn(page, 'right', 'trigger', 0); await H.frames(page, 3);
     chk(/KeyJ/.test(ka) && !/Space/.test(ka), 'trigger = attack (' + ka + ')');
-    await fr.evaluate('P.dashCd = 0; P.dashT = 0;'); await H.btn(page, 'right', 'a-button', 1); await H.frames(page, 2); ka = await page.evaluate(() => window.__gaVR.state().held.join()); const dt0 = await fr.evaluate('P.dashT'); await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 3);
-    chk(/Space/.test(ka) && !/KeyJ/.test(ka) && dt0 > 0, 'A = DASH (' + ka + ', dashT ' + (+dt0).toFixed(2) + ')');
+    await fr.evaluate('P.dashCd = 0; P.dashT = 0;'); await H.btn(page, 'right', 'a-button', 1); await H.frames(page, 2); ka = await page.evaluate(() => window.__gaVR.state().held.join()); const dt0 = await fr.evaluate('P.dashT'), dc0 = await fr.evaluate('P.dashCd'); await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 3);
+    chk(/Space/.test(ka) && !/KeyJ/.test(ka) && (dt0 > 0 || dc0 > 0), 'A = DASH (' + ka + ', dashT ' + (+dt0).toFixed(2) + ', dashCd ' + (+dc0).toFixed(2) + ')');   // the 0.18 s dash can end inside slow emulator frames; the cooldown proves it fired
     // nothing ready -> only the DASH button
     await fr.evaluate('P.energy = 0; G.rgReady = false; G.odReady = false;'); await H.frames(page, 6);
     chk((await page.evaluate(() => window.__gaVR.pw.ready())).join() === 'dash' && !!(await page.evaluate(() => window.__gaVR.pw.world('dash'))) && !(await page.evaluate(() => window.__gaVR.pw.world('thor'))), 'DASH button always shows; power-ups hidden until ready');
