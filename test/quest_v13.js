@@ -65,7 +65,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     b = await pose(); chk(Math.abs(b.yaw - a.yaw) < 1e-9, 'a ray hovering across the screen (buttons=0) never turns');
     // ---- ?qdbg=1: version + every yaw cause ----
     const t = await dbg();
-    chk(/VR v13 \| page vr13 \| sw /.test(t) && /STICKS: both WALK/.test(t) && /yaw by .*quest-look:turn=\d+/.test(t) && /trigger-drag=\d+/.test(t) && /stick look ignored /.test(t), '?qdbg=1: version, stick rule, yaw causes, ignored stick looks:\n' + t.split('\n').slice(0, 5).join('\n'));
+    chk(/VR v13 \| page vr1[34] \| sw /.test(t) && /STICKS: both WALK/.test(t) && /yaw by .*quest-look:turn=\d+/.test(t) && /trigger-drag=\d+/.test(t) && /stick look ignored /.test(t), '?qdbg=1: version, stick rule, yaw causes, ignored stick looks:\n' + t.split('\n').slice(0, 5).join('\n'));
     // ---- handed gamepads (a browser that exposes them): left stick walks, right stick turns; their wheel is ignored ----
     await reset(); await page.waitForTimeout(300); a = await pose();
     await page.evaluate(() => { window.__pads = [{ id: 'Oculus Touch (Left)', index: 0, hand: 'left', mapping: 'xr-standard', connected: true, axes: [0, 0, 0, -1], buttons: [] }]; });

@@ -226,3 +226,21 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   as far as the arm reaches (no stretching) and turn with them; the avatar's little controllers have no pink ring; your own controllers,
   rings, rays and HUD stay hidden in the mirror. **Laser**: with the pistol the gun replaces the little controller in the right hand, its
   barrel follows the controller ray and bolts / the beam leave the muzzle. Test: test/vr_mirror_ik.js.
+
+## v14 — voice chat (t396u)
+
+- **voice.js** (new): WebRTC peer audio between players in the shared room. Signalling (`hi` / `offer` / `answer` / `ice` / `bye`) rides the
+  existing Supabase Realtime channel as `rtc` broadcasts (mp.js `M.rtcSend` / `M.onRtc`). Full mesh (room cap 10); the lower player id
+  makes the offer, so there is no glare. ICE: public Google STUN only, no TURN.
+- **Mic only on a tap.** Flat: the **🎤 MIC** button above CHAT (tap again = mute 🔇 / unmute, **✕ VC** = leave voice). VR: Y menu, bottom row:
+  **MIC ON** → **MUTE MIC** / **UNMUTE MIC**, and **✕ VC**. A denied or missing mic leaves you **listening only** (🎧 / MIC BLOCKED) with a
+  message; tapping again retries. With no one else in voice you get a "no one else here yet" note and links form when others join.
+- **Positional:** each voice goes through a Web Audio HRTF panner placed at that player's head (updated 20×/s); the listener follows your
+  camera (headset in VR).
+- **Speaking indicator:** a green speaker sprite floats over a talking avatar's head (yours too, in the mirror / third person); the flat
+  🎤 button glows while you talk.
+- **Limits:** no TURN, so two players behind strict / symmetric NAT (some mobile carriers, corporate Wi-Fi) may not connect ("voice link
+  failed" message, two retries). Mesh audio = one upload per listener. Quest browser shows its own mic prompt the first time; doing it from the
+  flat screen first is the smoothest.
+- **Tests:** `test/voice.js` (three browsers, fake mic). The box's managed Chrome policy blocks non-proxied UDP, so real WebRTC is tested up to
+  offer/answer (two-way Opus negotiated); the media path (levels, indicator, mute, panner, listen-only) uses `test/fakertc.js`'s stand-in.
