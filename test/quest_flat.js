@@ -161,6 +161,13 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
       removeEventListener('keydown', h, true); Q.showDebug(true); const t = document.getElementById('gaQdbg').textContent; Q.showDebug(false);
       return { e1, e2, e3, backs: Q.backs, dbg: (t.match(/grip\/back[^\n]*/) || [''])[0] }; });
     chk(gb.e1 === 1 && gb.e2 === 2 && gb.e3 === 3 && gb.backs.contextmenu === 1 && gb.backs['gamepad grip right'] === 1 && /grip\/back .*contextmenu=1/.test(gb.dbg), 'flat Quest GRIP = back: contextmenu / gamepad grip / BrowserBack each send the game\'s Escape once, listed in ?qdbg=1 ' + JSON.stringify(gb));
+    // ---- v12: B/Y in the Quest 2D browser fires the browser's back (popstate) -> the trap turns it into FIRE (Space), not back ----
+    const bf = await page.evaluate(async () => { const Q = window.__gaQuestPad, w = ms => new Promise(r => setTimeout(r, ms)); let esc = 0, sp = 0, spUp = 0;
+      const h = e => { if (e.code === 'Escape') esc++; if (e.code === 'Space') sp++; }, hu = e => { if (e.code === 'Space') spUp++; }; addEventListener('keydown', h, true); addEventListener('keyup', hu, true);
+      const n0 = Q.bFires; window.dispatchEvent(new PopStateEvent('popstate', { state: null })); await w(400);
+      removeEventListener('keydown', h, true); removeEventListener('keyup', hu, true); Q.showDebug(true); const t = document.getElementById('gaQdbg').textContent; Q.showDebug(false);
+      return { esc, sp, spUp, n: Q.bFires - n0, dbg: (t.match(/B\/Y[^\n]*/) || [''])[0] }; });
+    chk(bf.sp === 1 && bf.spUp === 1 && bf.esc === 0 && bf.n === 1 && /FIRE x\d/.test(bf.dbg), 'flat Quest B/Y (browser back) = FIRE: one Space tap, no Escape, shown in ?qdbg=1 ' + JSON.stringify(bf));
     await page.waitForTimeout(600);
     // debug overlay shows raw events + class
     await rays2();

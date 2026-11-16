@@ -200,7 +200,8 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   3D view, the STICK WALK/LOOK toggle, or STICK SETUP. ?qdbg=1 shows MODE, the hand locks, drag-turns and ignored stick drags.
 - **GRIP = back**: VR short press closes any panel (menu, shop, accessories, tickets, chat, pack) and stands you up from chess; cabinet games
   and Neon Bricks keep the 0.6 s hold (no accidental exits mid-game). Flat Quest: every grip candidate (gamepad grip, non-primary pointer
-  button / contextmenu, BrowserBack key, browser back = B/Y via a history trap) sends the game's Escape; counted in ?qdbg=1.
+  button / contextmenu, BrowserBack key) sends the game's Escape; counted in ?qdbg=1. **B fires**: in VR B/Y = laser/fire; in the flat
+  Quest browser B/Y is the browser's back, caught by a one-entry history trap and turned into FIRE (a Space tap), shown in ?qdbg=1.
 - **Y menu (t388u)**: title MENU, subtitle "$cash CASH · N TICKETS". Left: the BACKPACK tile (the real monkey backpack art from the flat
   #bPack button); opens the backpack with PRIZES / ACCESSORIES tabs, both picture tiles (emoji pictures + names; tap = equip / wear / buy
   like before; PUT R/L/BOTH AWAY, REMOVE, < >). Right: the FLOOR + WALLS square showing a different floor picture every 5 s; opens the free

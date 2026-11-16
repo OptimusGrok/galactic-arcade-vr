@@ -109,11 +109,11 @@ const { openVR, H } = require('./vrlib');
     const ph = await page.evaluate(() => window.__gaVR.compHash ? 0 : 0);
     await page.evaluate(() => { const w = window.__chessTable.frame.contentWindow; if (w.chessApp.sans.length) w.chessApp.newGame(); }); await H.frames(page, 6);
     const world = async sq => { const p = await sqXY(page, sq); return page.evaluate(([u, v]) => { const m = window.__gaVR.chessM, g = m.geometry.parameters; m.updateMatrixWorld(true); return m.localToWorld(new window.__arcade.THREE.Vector3((u - 0.5) * g.width, (0.5 - v) * g.height, 0)).toArray(); }, [p.x / p.W, p.y / p.H]); };
+    const pm0 = await page.evaluate(() => { window.__robSeen = false; clearInterval(window.__robIv); window.__robIv = setInterval(() => { try { if (window.__chessTable.frame.contentWindow.chessApp.robot) window.__robSeen = true; } catch (e) {} }, 20); return { p: window.__gaVR.pumps, d: window.__gaVR.chess.draws }; });
     for (const sq of ['e2', 'e4']) { const w = await world(sq); await H.aim(page, 'right', LOCAL, w); await H.frames(page, 3); await H.press(page, 'right', 'trigger'); await H.frames(page, 4); }
     const vmv = await page.evaluate(() => ({ sans: window.__chessTable.frame.contentWindow.chessApp.sans.slice(), ptr: window.__gaVR.chess.ptr }));
     chk(vmv.sans[0] === 'e4', 'ray + trigger on the panel plays e2-e4 ' + JSON.stringify(vmv));
-    const pm0 = await page.evaluate(() => { window.__robSeen = false; clearInterval(window.__robIv); window.__robIv = setInterval(() => { try { if (window.__chessTable.frame.contentWindow.chessApp.robot) window.__robSeen = true; } catch (e) {} }, 20); return { p: window.__gaVR.pumps, d: window.__gaVR.chess.draws }; });
-    let rob = false; for (let i = 0; i < 90; i++) { const r = await page.evaluate(() => { const w = window.__chessTable.frame.contentWindow; return { r: !!w.chessApp.robot || window.__robSeen, n: w.chessApp.sans.length, live: !!w.chessApp.robot }; }); rob = rob || r.r; if (r.n >= 2 && !r.live) break; await page.waitForTimeout(500); }
+    let rob = false; for (let i = 0; i < 90; i++) { const r = await page.evaluate(() => { const w = window.__chessTable.frame.contentWindow; return { r: !!w.chessApp.robot || window.__robSeen, n: w.chessApp.sans.length, live: !!w.chessApp.robot }; }); rob = rob || r.r; if (r.n >= 2 && !r.live) break; await H.frames(page, 2); }
     const pm1 = await page.evaluate(() => ({ p: window.__gaVR.pumps, d: window.__gaVR.chess.draws })), robDrawn = pm1.p > pm0.p && pm1.d > pm0.d;
     const vr2 = await page.evaluate(() => window.__chessTable.frame.contentWindow.chessApp.sans.slice());
     chk(rob && robDrawn && vr2.length >= 2, 'headset: the robot arm moves the Computer\'s reply and the panel keeps repainting (' + vr2.join(' ') + '; arm seen ' + rob + ', pumps ' + pm0.p + '->' + pm1.p + ', draws ' + pm0.d + '->' + pm1.d + ')');
@@ -121,7 +121,7 @@ const { openVR, H } = require('./vrlib');
     await page.waitForFunction(() => window.__chessTable.state === 'idle', null, { timeout: 5000 }).catch(() => {});
     const vx = await page.evaluate(() => { const S = window.__gaVR, C = window.__chessTable, h = S.head, m = window.__arcade.monkey.position; return { s: C.state, vis: S.chessM.visible, backs: S.backs, d: Math.hypot(h.x - m.x, h.z - m.z), frame: !!C.frame }; });
     chk(vx.s === 'idle' && !vx.vis && !vx.frame && vx.backs.chess === 1 && vx.d < 0.2, 'GRIP (short press) stands you up: panel gone, headset with the player ' + JSON.stringify(vx));
-    await page.waitForFunction(() => window.__chessTable.gstate === 'home', null, { timeout: 25000 }).catch(() => {});
+    for (let i = 0; i < 120 && !(await page.evaluate(() => window.__chessTable.gstate === 'home')); i++) await H.frames(page, 3);   // XR frames drive the world in the emulator
     const vb = await grokAt(page);
     chk(vb.gs === 'home' && Math.hypot(vb.x - home.x, vb.z - home.z) < 0.1, 'headset: Grok walks back to the counter');
     // t382u: GRIP = back for the headset menu / panels too

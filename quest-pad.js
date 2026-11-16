@@ -394,7 +394,7 @@
   // ---- v12 (t382u): GRIP = BACK in flat Quest mode ----
   // The 2D Quest Browser does not document a page event for the grip, so every candidate is mapped to BACK and counted in ?qdbg=1:
   // a gamepad grip (xr-standard button 1, if the browser ever exposes the controllers), a non-primary pointer button (button 1/2/3+,
-  // contextmenu), a BrowserBack/GoBack key, and the browser's own back (B/Y on the Quest = history back) through a one-entry history trap.
+  // contextmenu), a BrowserBack/GoBack key. B/Y (the browser's own back) is trapped and FIRES instead.
   // BACK = the game's own Escape (it closes the open panel / overlay, leaves a cabinet game, stands up from chess, closes the pool table...).
   var backN = {}, backLast = '', backAt = 0, trapOn = false, padGrip = {};
   function inXR() { try { return !!(document.body && document.body.classList.contains('vr')); } catch (e) { return false; } }
@@ -407,9 +407,14 @@
       backN.sent = (backN.sent || 0) + 1; } catch (e) {}
     return true;
   }
+  // v12: B/Y in the Quest 2D browser = history back -> the trap turns it into FIRE (a Space tap + the on-screen FIRE button), not back;
+  // GRIP is the back button now.
+  var bFireN = 0;
+  function bFire() { if (inXR()) return; bFireN++; try { setKey('Space', true); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', true); } catch (e) {}
+    setTimeout(function () { try { if (!prevBtn.fire) setKey('Space', false); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', false); } catch (e) {} }, 120); }
   function backTrap() {
     if (trapOn || !isQuest()) return; trapOn = true;
-    try { history.pushState({ gaBackTrap: 1 }, ''); addEventListener('popstate', function () { backFire('browser back (B/Y)'); try { history.pushState({ gaBackTrap: 1 }, ''); } catch (e) {} }); } catch (e) {}
+    try { history.pushState({ gaBackTrap: 1 }, ''); addEventListener('popstate', function () { bFire(); try { history.pushState({ gaBackTrap: 1 }, ''); } catch (e) {} }); } catch (e) {}
   }
   function listenBack() {
     addEventListener('contextmenu', function (e) { if (!isQuest()) return; if (e.cancelable) e.preventDefault(); backFire('contextmenu'); }, true);
@@ -597,7 +602,7 @@
       + ' stick=' + (lookToggle ? 'LOOK' : 'WALK')
       + '\nvv.scale=' + (s.scale == null ? '-' : (+s.scale).toFixed(3))
       + ' dpr=' + (s.dpr == null ? '-' : (+s.dpr).toFixed(3))
-      + '\ngrip/back ' + (Object.keys(backN).length ? Object.keys(backN).map(function (k) { return k + '=' + backN[k]; }).join(' ') : 'none yet (press GRIP)') + (backLast ? ' last=' + backLast : '') + ' trap=' + (trapOn ? 1 : 0)
+      + '\ngrip/back ' + (Object.keys(backN).length ? Object.keys(backN).map(function (k) { return k + '=' + backN[k]; }).join(' ') : 'none yet (press GRIP)') + (backLast ? ' last=' + backLast : '') + ' trap=' + (trapOn ? 1 : 0) + ' | B/Y (browser back) = FIRE x' + bFireN
       + '\ngamepads ' + (s.n || 0) + ' ' + ((s.pads && s.pads.length) ? s.pads.join(' | ') : '-')
       + '\nkeys ' + ((s.keys && s.keys.length) ? s.keys.join(',') : '-')
       + '\nstart=' + (startUp() ? '1' : '0')
@@ -999,7 +1004,7 @@
     get calib() { return calib; },
     get calibrating() { return cal ? cal.phase : null; },
     get evLog() { return evLog.slice(); },
-    back: backFire,
+    back: backFire, bFire: bFire, get bFires() { return bFireN; },
     get backs() { return Object.assign({ last: backLast, trap: trapOn }, backN); },
     stickBusy: stickBusy,
     noteDragBlocked: function () { dragBlocked++; },
