@@ -65,6 +65,7 @@ export function setupVR(A) {
     if (S.presenting || !navigator.xr) return;
     try { const s = await navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor', 'layers'] });
       try { renderer.xr.setFoveation(1); } catch (e) {}
+      try { renderer.xr.setFramebufferScaleFactor(A.TIER && A.TIER.name === 'low' ? 0.85 : 1); } catch (e) {}   // t358u: low tier renders a bit smaller (set before the session)
       await renderer.xr.setSession(s);
     } catch (e) { console.warn('ENTER VR failed', e); S.lastError = String(e); }
   }
@@ -96,7 +97,7 @@ export function setupVR(A) {
   function panel(w, h, cw, ch) { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, toneMapped: false, depthTest: false, depthWrite: false }));
     m.renderOrder = 1001; m.userData = { cv, g: cv.getContext('2d'), tex, txt: '' }; return m; }
-  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : ''); if (m.userData.txt === key) return; m.userData.txt = key;
+  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : '') + (opts.bat ? '|bat' + opts.bat.pct + (opts.bat.charging ? 'c' : '') : ''); if (m.userData.txt === key) return; m.userData.txt = key;
     const { cv, g, tex } = m.userData, W = cv.width, H0 = cv.height, H = opts.bar ? Math.round(H0 * 0.72) : H0; g.clearRect(0, 0, W, H0);
     if (opts.bar) { const b = opts.bar, y = H + 2, bh = H0 - H - 8, x = 150, bw = W - x - 16;   // t358u: jetpack ENERGY bar under the text
       g.fillStyle = 'rgba(20,8,4,0.9)'; g.strokeStyle = '#ffb060'; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(4, y, W - 8, bh, bh * 0.3) : g.rect(4, y, W - 8, bh); g.fill(); g.stroke();
@@ -105,8 +106,18 @@ export function setupVR(A) {
       g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y + 8, bw, bh - 16); g.fillStyle = b.low ? '#ff3030' : gr; g.fillRect(x, y + 8, Math.max(0, Math.min(1, b.v)) * bw, bh - 16); }
     g.fillStyle = 'rgba(10,6,24,0.86)'; g.strokeStyle = opts.border || '#3ff3ff'; g.lineWidth = Math.max(3, H * 0.03); g.beginPath(); g.roundRect ? g.roundRect(4, 4, W - 8, H - 8, H * 0.12) : g.rect(4, 4, W - 8, H - 8); g.fill(); g.stroke();
     const n = lines.length, lh = (H - 16) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
-    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, W / 2, 8 + lh * (i + 0.5), W - 24); });
+    let bw = 0; if (opts.bat) { const B = opts.bat, lh0 = (H - 16) / lines.length, bh = lh0 * 0.5, bwid = bh * 2, x = W - 24 - bwid - 92, y = 8 + lh0 * 0.5 - bh / 2, col = B.charging ? '#7dff9a' : B.pct <= 20 ? '#ff4040' : '#e8f6ff';   // battery icon + %, top right
+      g.strokeStyle = col; g.lineWidth = 4; g.strokeRect(x, y, bwid, bh); g.fillStyle = col; g.fillRect(x + bwid, y + bh * 0.3, 6, bh * 0.4); g.fillRect(x + 4, y + 4, Math.max(0, (bwid - 8) * B.pct / 100), bh - 8);
+      if (B.charging) { g.fillStyle = '#ffe14a'; g.strokeStyle = '#1a1030'; g.lineWidth = 2; const cx = x + bwid / 2, cy = y + bh / 2; g.beginPath(); g.moveTo(cx + 4, cy - bh * 0.62); g.lineTo(cx - 9, cy + 3); g.lineTo(cx - 1, cy + 3); g.lineTo(cx - 5, cy + bh * 0.62); g.lineTo(cx + 9, cy - 3); g.lineTo(cx + 1, cy - 3); g.closePath(); g.fill(); g.stroke(); }
+      g.fillStyle = col; g.font = '900 ' + Math.round(bh * 0.95) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(B.pct + '%', x + bwid + 14, y + bh / 2 + 1, 84); g.textAlign = 'center'; bw = bwid + 120; }
+    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, i === 0 && bw ? (W - bw) / 2 : W / 2, 8 + lh * (i + 0.5), i === 0 && bw ? W - 24 - bw : W - 24); });
     tex.needsUpdate = true; }
+  // t361u: headset battery on the left-controller display (navigator.getBattery, live via its events). Hidden when the browser has no Battery API.
+  const BAT = { supported: false, level: null, charging: false, tried: false, updates: 0 };
+  function batteryInit() { if (BAT.tried) return; BAT.tried = true; try { if (!navigator.getBattery) return; navigator.getBattery().then(b => { if (!b) return; BAT.supported = true; BAT.mgr = b;
+      const up = () => { BAT.level = typeof b.level === 'number' ? b.level : null; BAT.charging = !!b.charging; BAT.updates++; }; up(); for (const ev of ['levelchange', 'chargingchange']) try { b.addEventListener(ev, up); } catch (e) {} }).catch(() => {}); } catch (e) {} }
+  S.battery = () => ({ supported: BAT.supported, level: BAT.level, charging: BAT.charging, updates: BAT.updates, shown: !!(hud.userData.txt && /\|bat/.test(hud.userData.txt)) });
+  const HUD_TILT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0));
   const hud = panel(0.2, 0.09, 512, 230); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
 
   // ---------- the game screen (shown while a cabinet game runs) ----------
@@ -390,7 +401,7 @@ export function setupVR(A) {
     if (d > MIRROR_NEAR && !seen && (S.frames % MIRROR_FAR_EVERY)) { MV.skips++; return; }
     if (d > MIRROR_NEAR && !seen) MV.far++;
     const vis = monkey.visible; monkey.visible = true;   // you see yourself in it
-    try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; }
+    S.inMirror = true; pinScan(); pinLights(); try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; } S.inMirror = false; unpinLights();
     monkey.visible = vis; }
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
   // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
@@ -458,6 +469,8 @@ export function setupVR(A) {
     try { renderer.xr.setFoveation(1); } catch (e) {}
     document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
+    S.warmReq = 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop;
+    try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
   });
   renderer.xr.addEventListener('sessionend', () => {
@@ -492,10 +505,12 @@ export function setupVR(A) {
   // RF.fire() makes the real shot (bolt, zap, shot count, multiplayer zap), then the bolt is moved onto the controller's aim; playerCols() gives
   // the colours (blue monkey, red alien). The charge glow sits on the controller and grows while you hold B.
   const VL = { held: false, charge: 0, spent: false, beam: null, beamT: 0, glow: null, last: null, beams: 0, bolts: 0 };
-  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion();
+  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion(), _le = new THREE.Vector3(), _lt = new THREE.Vector3();
   function laserAim() { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null;
     const c = ctrls[i], g = grips[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_lq); _ld.set(0, 0, -1).applyQuaternion(_lq).normalize();   // pointing direction = the controller's ray
     (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
+    // t361u: the alien's shot leaves its floating machine (botEye, as roomfire.js does), aimed at where the right controller points
+    const u = monkey.userData || {}; if (u.char === 'alien') { const eye = monkey.getObjectByName('botEye') || u.bot; if (eye) { monkey.updateMatrixWorld(true); eye.getWorldPosition(_le); _lt.copy(_lo).addScaledVector(_ld, 20); _ld.copy(_lt).sub(_le).normalize(); _lo.copy(_le).addScaledVector(_ld, 0.12); return { o: _lo, d: _ld, alien: true }; } }
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
   function laserGlow(k, aim, col) { if (k == null && !VL.glow) return; if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
@@ -521,11 +536,40 @@ export function setupVR(A) {
       if (L && L.mesh) { L.mesh.position.copy(aim.o); L.mesh.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); L.dir.copy(aim.d); L.o = aim.o.toArray();
         if (rf.last) { rf.last.o = aim.o.toArray(); rf.last.d = aim.d.toArray(); } VL.bolts++; VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), k, char: col.char }; if (R) pulse(R.src, 0.7, 40); } }
     VL.held = held; }
-  S.vrLaser = () => ({ held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
+  S.vrLaser = () => ({ ctrl: (() => { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null; const c = ctrls[i]; c.updateMatrixWorld(true); const q = c.getWorldQuaternion(new THREE.Quaternion()); return { d: new THREE.Vector3(0, 0, -1).applyQuaternion(q).toArray(), o: new THREE.Vector3().setFromMatrixPosition((grips[i] || c).matrixWorld).toArray() }; })(),
+    eye: (() => { const e = monkey.getObjectByName('botEye'); if (!e || (monkey.userData || {}).char !== 'alien') return null; monkey.updateMatrixWorld(true); return e.getWorldPosition(new THREE.Vector3()).toArray(); })(), held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
     aim: (() => { const a = laserAim(); return a ? { o: a.o.toArray(), d: a.d.toArray() } : null; })() });
+  // ---------- t358u: warm-up so walking / turning / beaming doesn't freeze ----------
+  // The flat game compiles its shaders for the post-processing target (linear, no tone mapping); the headset draws straight into the XR
+  // framebuffer (sRGB + tone mapping), so every material compiled AGAIN the first time it came into view in VR (turn = freeze), and again for
+  // the mirror's own target. Here, inside an XR frame (three has bound the XR target), compile the whole scene for that target and for the
+  // mirror's target, and upload the textures, at session start, when the shop arrives, and right after each teleport (the lit area changes).
+  function warmXR(why) { const t0 = performance.now(), p0 = renderer.info.programs ? renderer.info.programs.length : 0; let tex = 0;
+    try { mirrorTwin(); } catch (e) {}
+    try { camera.updateMatrixWorld(true); renderer.compile(scene, camera); } catch (e) { S.lastError = 'warm ' + e; }
+    const t = MV.twin; if (t) { const prev = renderer.getRenderTarget(); try { renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.setRenderTarget(prev); } }
+    if (renderer.initTexture) { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
+      for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap']) { const x = m[k]; if (x && x.isTexture && !seen.has(x) && !x.isRenderTargetTexture && !x.isVideoTexture && !(x.image && x.image.tagName === 'CANVAS')) { seen.add(x); try { renderer.initTexture(x); tex++; } catch (e) {} } } }); }
+    if (why === 'start') for (const p of renderer.info.programs || []) { try { p.getUniforms(); } catch (e) {} }   // link now (entry), not on first sight
+    const r = { why, ms: +(performance.now() - t0).toFixed(1), programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, textures: tex }; (S.warms = S.warms || []).push(r); return r; }
+  S.warmXR = warmXR;
+  // Light-count variants: three compiles a new program for EVERY lit material whenever the number of lights changes. In the arcade one spot
+  // (dsSpot) blinks on/off as you move, so turning around recompiled ~100 programs (13 vs 14 spots). In VR any light that switches its own
+  // .visible stays counted: shown at intensity 0 while the game wants it off (restored before the game's next step, so its logic is unchanged).
+  const PIN = { lights: new Set(), seen: new Map(), pins: 0 };
+  function pinScan() { if (S.frames % 30 !== 1 && PIN.seen.size) return; scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight) return; const v = !!o.visible, was = PIN.seen.get(o);
+      if (was !== undefined && was !== v) PIN.lights.add(o); PIN.seen.set(o, v); if (/^dsSpot$/.test(o.name)) PIN.lights.add(o); }); }
+  function pinLights() { for (const l of PIN.lights) { PIN.seen.set(l, !!l.visible); if (!l.visible) { l.userData.vrPinI = l.intensity; l.intensity = 0; l.visible = true; PIN.pins++; } } }
+  function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.userData.vrPinI = null; l.visible = false; } }
+  S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
+  function warmCheck() { const w = A.tp ? A.tp.where : 0, idle = !A.tp || A.tp.state === 'idle';
+    if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
+    if (w !== S.warmWhere) { S.warmWhere = w; S.warmReq = S.warmReq || 'beam'; }   // at the teleport cut, while the beam effect plays
+    if (S.warmReq && S.frames > 1) { const why = S.warmReq; S.warmReq = null; pinScan(); pinLights(); warmXR(why); unpinLights(); } }
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
+    unpinLights(); if (xf) warmCheck();
     const ref = renderer.xr.getReferenceSpace(), vp = xf && ref ? xf.getViewerPose(ref) : null;
     if (vp) { const p = vp.transform.position, o = vp.transform.orientation; _e.setFromQuaternion(_q.set(o.x, o.y, o.z, o.w), 'YXZ'); S.head = { x: p.x, y: p.y, z: p.z, yaw: _e.y, pitch: _e.x }; S.posed = true; }
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
@@ -618,12 +662,12 @@ export function setupVR(A) {
       gameInput(w, aimScreen, dt);
     } else { if (Object.keys(S.held).length || G.ptrDown) releaseAll(); G.placed = false; G.rect = null; S.gripT = 0; }
     // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
-    const surf = [uiM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)];
+    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
       for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
     // HUD on the left controller (or under your view when there is none)
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
-    if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0))); }
+    if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(HUD_TILT); }
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
@@ -631,11 +675,16 @@ export function setupVR(A) {
     const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], jb ? { bar: jb } : {});
+    batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
+    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({}, jb ? { bar: jb } : {}, bat ? { bat } : {}));
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
   }
+  function prerender() { pinScan(); pinLights(); }
+  { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
+    scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) prerender(); };
+    scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
   function contCan(w) { try { const C = w && w.__gaContinue, m = play.cur; return !!(play.sub === 'play' && m && m.cont && C && C.can && C.can()); } catch (e) { return false; } }
 
   function gameInput(w, aim, dt) {
