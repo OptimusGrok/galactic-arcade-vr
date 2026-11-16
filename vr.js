@@ -215,10 +215,11 @@ export function setupVR(A) {
   const uiM = panel(1.0, 0.75, 1024, 768); uiM.name = 'vrMenu'; uiM.renderOrder = 1003; uiM.visible = false; scene.add(uiM);
   const kiosk = () => window.__kiosk || null, nbApi = () => A.nb || null;
   function uiOpen(kind) { const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 0.9;
+    if (UI.open === 'chat' && kind !== 'chat') chatEnd();
     UI.open = kind; UI.page = 0; UI.msg = ''; UI.msgT = 0; UI.key = '';
     uiM.position.set(h.x - Math.sin(h.yaw) * d, Math.max(0.9, h.y - 0.12), h.z - Math.cos(h.yaw) * d); uiM.rotation.set(0, h.yaw, 0); uiM.visible = true; uiM.updateMatrixWorld(true);
     S.panels[kind] = (S.panels[kind] || 0) + 1; }
-  function uiClose() { UI.open = null; uiM.visible = false; UI.btns = []; }
+  function uiClose() { chatEnd(); UI.open = null; uiM.visible = false; UI.btns = []; }
   function say(m) { UI.msg = m; UI.msgT = 3; }
   function beam() { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(); S.beams++; return true; }
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
@@ -229,7 +230,7 @@ export function setupVR(A) {
     btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
   function uiSpec() {
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
-    let title = '', sub = '';
+    let title = '', sub = '', body = '';
     add('close', 'X', 900, 22, 100, 90, true, uiClose);
     if (UI.open === 'tickets') { const K = kiosk(); title = 'TICKET EXCHANGE';
       if (!K) sub = 'NOT READY'; else { const bal = K.C.bal, left = Math.max(0, Math.ceil((K.C.at + 36e5 - Date.now()) / 6e4));
@@ -254,6 +255,13 @@ export function setupVR(A) {
             else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } }); });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 640, 564, 96, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 640, 170, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 640, 170, 96, UI.page < pages - 1, () => { UI.page++; }); } }
+    else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();
+      if (!C || !C.open) { sub = 'GROK HAS GONE'; } else {
+        sub = UI.chatQ ? 'YOU: ' + UI.chatQ : 'PICK A QUESTION'; body = 'GROK: ' + (UI.chatA || '...');
+        const per = 8, pages = Math.ceil(CHAT_QS.length / per); UI.page = Math.min(UI.page, pages - 1);
+        CHAT_QS.slice(UI.page * per, UI.page * per + per).forEach((q, i) => add('q_' + (UI.page * per + i), q, 30 + (i % 2) * 488, 382 + Math.floor(i / 2) * 68, 476, 60, true, () => chatAsk(q))); 
+        add('prev', '<', 30, 660, 170, 90, UI.page > 0, () => { UI.page--; }); add('next', '>', 824, 660, 170, 90, UI.page < pages - 1, () => { UI.page++; }); }
+      add('close', 'CLOSE', 220, 660, 584, 90, true, uiClose); }
     else if (UI.open === 'pack') { title = 'MONKEY BACKPACK'; const sh = A.shop || window.__shop;
       if (!sh || !sh.hold) { sub = 'OPENING THE BACKPACK...'; try { window.__arcade && window.__arcade.loadShop && window.__arcade.loadShop(); } catch (e) {} } else {
         const items = packItems(sh), h = heldNow(), per = 6, pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
@@ -273,7 +281,7 @@ export function setupVR(A) {
       else add('shop', 'PRIZE SHOP', 112, 350, 800, 88, !!A.shop, () => uiOpen('shop'));
       add('ward', 'ACCESSORIES', 112, inShop ? 450 : 550, 800, 88, !!window.__gaPlayer, () => uiOpen('ward'));
       add('close2', 'CLOSE', 112, 655, 800, 88, true, uiClose); }
-    return { title, sub, B }; }
+    return { title, sub, body, B }; }
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
   const J = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } };
   // t355u: the menu shows your money (kiosk cash) and tickets, live (the panel redraws when the text changes)
@@ -300,8 +308,21 @@ export function setupVR(A) {
     g.fillStyle = '#9a6a3e'; g.beginPath(); g.arc(0, 8, 19, 0, 7); g.fill(); g.beginPath(); g.arc(-19, -2, 8, 0, 7); g.arc(19, -2, 8, 0, 7); g.fill();
     g.fillStyle = '#f0c99a'; g.beginPath(); g.ellipse(0, 13, 13, 10, 0, 0, 7); g.fill(); g.fillStyle = '#1a0d05'; g.beginPath(); g.arc(-6, 3, 3, 0, 7); g.arc(6, 3, 3, 0, 7); g.fill();
     g.restore(); }
+  // ---------- t360u: CHAT WITH GROK in VR. Same chat as the flat game (grokchat.js: openChat(source) makes Grok face you, ask(text) answers from
+  // its offline knowledge base and makes him talk). There is no keyboard in the headset, so the typed box becomes ray-clickable questions. ----------
+  const CHAT_QS = ['WHAT GAMES ARE THERE?', 'HOW DO I GET TICKETS?', 'WHAT CAN I WIN IN THE SHOP?', 'WHAT ARE YOU DOING?', 'TELL ME A JOKE', 'WHO ARE YOU?', 'HOW DO I OPEN LEVEL 2?', 'HOW DOES THE WARDROBE WORK?',
+    'HOW DOES THE BACKPACK WORK?', 'HOW DO I CHANGE CHARACTER?', 'HOW DO I PLAY BERSERKER?', 'HOW DO I PLAY SKY TOWER?', 'HOW DO I PLAY NEON BRICKS?', 'HOW DO I PLAY GOLF?', 'HOW DOES THE CLAW MACHINE WORK?', 'WHAT ARE VIKING TICKETS?',
+    'HOW DO I GET CASH?', 'CAN I PLAY WITH FRIENDS?', 'WHAT TIME IS IT?', 'WHAT DO YOU LIKE TO EAT?', 'WHO IS DAVE?', 'THANKS GROK!', 'BYE GROK!'];
+  const chatApi = () => window.__grokChat || null;
+  function chatStart(src) { const C = chatApi(); if (!C || !C.hooks || !C.hooks[src]) return false; if (C.open && C.ctx && C.ctx.source !== src) C.close('vr');
+    if (!C.open) C.openChat(src); if (!C.open) return false; try { C.input && C.input.blur(); } catch (e) {}
+    UI.chatSrc = src; uiOpen('chat'); UI.chatQ = ''; const lg = C.log.filter(e => e.who === 'g'); UI.chatA = lg.length ? lg[lg.length - 1].text : ''; S.chatOpens = (S.chatOpens || 0) + 1; return true; }
+  function chatEnd() { if (UI.open !== 'chat') return; const C = chatApi(); try { if (C && C.open) C.close('vr'); } catch (e) {} UI.chatSrc = null; }
+  function chatAsk(q) { const C = chatApi(); if (!C || !C.open) return; UI.chatQ = q; UI.chatA = C.ask(q) || ''; S.chatAsks = (S.chatAsks || 0) + 1; UI.key = ''; }
+  S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
+  function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
-    const key = sp.title + '|' + sp.sub + '|' + msg + '|' + UI.hover + '|' + sp.B.map(b => b.id + b.label + b.on).join(','); if (key === UI.key) return; UI.key = key;
+    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + sp.B.map(b => b.id + b.label + b.on).join(','); if (key === UI.key) return; UI.key = key;
     const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
     g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, UI.open === 'pack' ? 500 : 470, 70, UI.open === 'pack' ? 740 : 820);
@@ -311,6 +332,9 @@ export function setupVR(A) {
       g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(48, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 + 2, b.w - 24);
       if (b.id === 'pack') drawPackIcon(g, b.x + 60, b.y + b.h / 2, b.h / 80); }
     if (UI.open === 'pack') drawPackIcon(g, 70, 72, 0.95);
+    if (sp.body) { g.save(); g.fillStyle = 'rgba(13,42,64,0.9)'; g.strokeStyle = '#00e5ff'; g.lineWidth = 3; g.beginPath(); g.roundRect ? g.roundRect(30, 168, 964, 196, 18) : g.rect(30, 168, 964, 196); g.fill(); g.stroke();
+      let fs = 30, lines; for (; fs >= 20; fs -= 2) { g.font = '600 ' + fs + 'px Arial, sans-serif'; lines = wrapText(g, sp.body, 920); if (lines.length * fs * 1.22 <= 176) break; }
+      g.textAlign = 'left'; g.fillStyle = '#e8f6ff'; lines.slice(0, 8).forEach((l, i) => g.fillText(l, 52, 190 + fs * 0.6 + i * fs * 1.22)); g.restore(); }
     if (msg) { g.fillStyle = '#ffe14a'; g.font = '900 38px "Arial Black", Arial, sans-serif'; g.fillText(msg, 512, UI.open === 'pack' ? 605 : UI.open === 'ward' ? 318 : UI.open === 'shop' ? 688 : 715, UI.open === 'ward' || UI.open === 'pack' ? 940 : 640); }
     tex.needsUpdate = true; }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
@@ -342,7 +366,7 @@ export function setupVR(A) {
   // its place (same geometry and transform; shop.js is not edited). It is sharp: 1536 px on the long side (1024 on the low tier), glass aspect,
   // linear, no mipmaps. vr.js draws it once per frame with the head camera: every frame within MIRROR_NEAR m or while you are reflected in it,
   // every MIRROR_FAR_EVERY frames out to MIRROR_FAR m, and only while it is in view and facing you. On exit the shop's own mirror comes back.
-  const MIRROR_NEAR = 8, MIRROR_FAR = 25, MIRROR_FAR_EVERY = 3, _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _mp = new THREE.Vector3(), _mn = new THREE.Vector3(), _mc = new THREE.Vector3();
+  const MIRROR_NEAR = 8, MIRROR_FAR = 25, MIRROR_FAR_EVERY = 2, _fr = new THREE.Frustum(), _pm = new THREE.Matrix4(), _mp = new THREE.Vector3(), _mn = new THREE.Vector3(), _mc = new THREE.Vector3();
   const MV = { twin: null, src: null, draw: null, renders: 0, skips: 0, far: 0 };
   function mirrorTwin() { const m = mirrorMesh(); if (!m || !m.parent) return null;
     if (MV.twin && MV.src === m) return MV.twin;
@@ -354,8 +378,10 @@ export function setupVR(A) {
     t.name = 'vrMirrorTwin'; t.position.copy(m.position); t.quaternion.copy(m.quaternion); t.scale.copy(m.scale); m.parent.add(t);
     MV.draw = t.onBeforeRender; t.onBeforeRender = () => {};   // never from the per-eye XR passes; post() draws it once per frame
     MV.twin = t; MV.src = m; return t; }
-  function mirrorVR(on) { const m = mirrorMesh(), t = on ? mirrorTwin() : MV.twin; if (m) m.visible = !on || !t; if (t) t.visible = !!on; }
-  function mirrorFrame() { const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible) mirrorVR(true);
+  function mirrorVR(on) { const m = mirrorMesh(), t = on ? mirrorTwin() : MV.twin; if (t) t.visible = !!on;
+    if (m) { if (on && t) { if (m.userData.vrLayers == null) m.userData.vrLayers = m.layers.mask; m.layers.set(31); }   // shop.js keeps toggling .visible, so hide it from every camera by layer
+      else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
+  function mirrorFrame() { const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
     t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
     const d = _mp.distanceTo(_mc); if (d > MIRROR_FAR || (_mn.x * (_mc.x - _mp.x) + _mn.y * (_mc.y - _mp.y) + _mn.z * (_mc.z - _mp.z)) <= 0) { MV.skips++; return; }
     if (!t.geometry.boundingSphere) t.geometry.computeBoundingSphere();
@@ -366,9 +392,38 @@ export function setupVR(A) {
     const vis = monkey.visible; monkey.visible = true;   // you see yourself in it
     try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; }
     monkey.visible = vis; }
-  S.mirrorStats = () => ({ renders: MV.renders, skips: MV.skips, far: MV.far, twin: !!(MV.twin && MV.twin.visible), shopVisible: !!(mirrorMesh() && mirrorMesh().visible) });
+  // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
+  // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
+  // when the hand is close to the body, the hand takes the grip's rotation, and a small controller model sits in each avatar hand.
+  const _ha = { ws: new THREE.Vector3(), wp: new THREE.Vector3(), rs: new THREE.Vector3(), v: new THREE.Vector3(), q: new THREE.Quaternion(), pq: new THREE.Quaternion(), gq: new THREE.Quaternion(), dn: new THREE.Vector3(0, -1, 0), fix: new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)) };
+  const AH = { frames: 0, models: new Map() };
+  function handModel(hand) { let m = AH.models.get(hand); if (m && m.parent === hand) return m;
+    m = new THREE.Group(); m.name = 'vrAvatarCtrl';
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.09, 10).rotateX(Math.PI / 2 - 0.5), new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.5, metalness: 0.3 }));
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.032, 0.005, 6, 18), new THREE.MeshBasicMaterial({ color: 0xff3fd2, toneMapped: false })); ring.position.set(0, 0.01, -0.025); ring.rotation.x = 0.6;
+    m.add(body, ring); const ws = new THREE.Vector3(); hand.getWorldScale(ws); m.scale.setScalar(1 / Math.max(0.05, ws.x)); m.position.set(0, -0.02 / Math.max(0.05, ws.y), 0); m.rotation.x = -Math.PI / 2; hand.add(m); AH.models.set(hand, m); return m; }
+  function avatarHands() { const u = monkey.userData || {}, arms = u.arms; if (!arms || !S.head) return;
+    const h = S.head, rx = Math.cos(h.yaw), rz = -Math.sin(h.yaw);   // your right, flat
+    for (const arm of arms) { if (!arm || !arm.sh) continue; const hand = arm.sd > 0 ? 'right' : 'left', i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src), g = i >= 0 ? grips[i] : null;
+      const mdl = arm.hand ? handModel(arm.hand) : null; if (mdl) mdl.visible = !!g;
+      if (!g) continue;
+      g.updateMatrixWorld(true); _ha.wp.setFromMatrixPosition(g.matrixWorld);
+      _ha.rs.set(h.x + rx * arm.sd * 0.18, h.y - 0.27, h.z + rz * arm.sd * 0.18);   // your real shoulder
+      _ha.v.copy(_ha.wp).sub(_ha.rs); const reach = Math.min(1, _ha.v.length() / 0.62); if (_ha.v.lengthSq() < 1e-6) continue; _ha.v.normalize();
+      arm.sh.parent.updateMatrixWorld(true); arm.sh.parent.getWorldQuaternion(_ha.pq);
+      _ha.q.setFromUnitVectors(_ha.dn, _ha.v); arm.sh.quaternion.copy(_ha.pq).invert().multiply(_ha.q);
+      const bend = Math.max(0, 1 - reach) * 1.9; arm.sh.rotateX(-bend * 0.5); if (arm.el) arm.el.rotation.set(-bend, 0, 0);   // hand near you: elbow bends, the upper arm tips back
+      if (arm.hand) { arm.hand.parent.updateMatrixWorld(true); arm.hand.parent.getWorldQuaternion(_ha.pq); g.getWorldQuaternion(_ha.gq); arm.hand.quaternion.copy(_ha.pq).invert().multiply(_ha.gq).multiply(_ha.fix); arm.hand.visible = true; } }
+    AH.frames++; }
+  function avatarHandsOff() { for (const m of AH.models.values()) m.visible = false; }
+  S.avatarHands = () => { const u = monkey.userData || {}; monkey.updateMatrixWorld(true); return (u.arms || []).map(a => { const p = new THREE.Vector3(); (a.hand || a.el).getWorldPosition(p); const m = a.hand && AH.models.get(a.hand); return { sd: a.sd, hand: p.toArray(), model: !!(m && m.visible && m.parent === a.hand) }; }).concat([{ frames: AH.frames }]); };
+  S.mirrorStats = () => ({ renders: MV.renders, skips: MV.skips, far: MV.far, twin: !!(MV.twin && MV.twin.visible), shopVisible: !!(mirrorMesh() && mirrorMesh().visible && mirrorMesh().layers.isEnabled(0)) });
   S.mirrorRT = () => { const m = MV.twin && MV.twin.visible ? MV.twin : mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: m === MV.twin, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
   const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
+  // t360u: CHAT WITH GROK over the shop clerk (above PRIZE SHOP) and over the visiting Grok in the arcade
+  addSign('chatClerk', 'CHAT WITH GROK', '#7dfcff', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()), h = S.head, k = h ? Math.min(3, Math.max(1, Math.hypot(h.x - p.x, h.z - p.z) / 6)) : 1; return [p.x, p.y + 2.3 + 0.33 * k, p.z]; }, () => chatStart('clerk'), () => A.tp && A.tp.where === 2 && !!A.shop && !!(chatApi() && chatApi().hooks.clerk) && UI.open !== 'chat');
+  addSign('chatVisitor', 'CHAT WITH GROK', '#7dfcff', () => { const v = window.__grokVisit, g = v && v.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => chatStart('visitor'),
+    () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || UI.open === 'chat' || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
   S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
@@ -413,7 +468,7 @@ export function setupVR(A) {
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
     document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
-    mirrorVR(false);
+    mirrorVR(false); avatarHandsOff();
     A.resumeFlat();
   });
 
@@ -443,7 +498,7 @@ export function setupVR(A) {
     (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
-  function laserGlow(k, aim, col) { if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  function laserGlow(k, aim, col) { if (k == null && !VL.glow) return; if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
       VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
       halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); }
     const on = k != null && !!aim; VL.glow.visible = on; if (!on) return;
@@ -502,7 +557,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    mirrorFrame();
+    avatarHands(); mirrorFrame();
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -572,7 +627,7 @@ export function setupVR(A) {
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS' };
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK' };
     const line2 = S.msgT > 0 ? S.msg : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
