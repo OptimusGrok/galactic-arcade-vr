@@ -285,12 +285,19 @@ export function setupVR(A) {
         add('away_L', 'PUT L AWAY', 362, 475, 300, 85, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
         add('away', 'PUT BOTH AWAY', 684, 475, 300, 85, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
         add('prev', '<', 40, 650, 170, 90, UI.page > 0, () => { UI.page--; }); add('pward', 'ACCESSORIES', 230, 650, 564, 90, !!window.__gaPlayer, () => uiOpen('ward')); add('next', '>', 814, 650, 170, 90, UI.page < pages - 1, () => { UI.page++; }); } }
+    else if (UI.open === 'room') { title = 'FLOOR + WALLS'; sub = 'FREE  ·  LASTS UNTIL YOU RELOAD'; const tb = UI.roomTab === 'walls' ? 'walls' : 'floor';
+      add('rt_floor', tb === 'floor' ? '> FLOOR <' : 'FLOOR', 40, 165, 460, 70, true, () => { UI.roomTab = 'floor'; });
+      add('rt_walls', tb === 'walls' ? '> WALLS <' : 'WALLS', 524, 165, 460, 70, true, () => { UI.roomTab = 'walls'; });
+      const L = tb === 'floor' ? roomFloors() : ROOM_WALLS, cur = roomNow(tb);
+      L.forEach(([v, nm], i) => add((tb === 'floor' ? 'fl_' : 'wl_') + v, nm + (cur === v ? '  ·  ON' : ''), 40 + (i % 2) * 484, 265 + Math.floor(i / 2) * 95, 460, 85, true, () => roomPick(tb, v, nm)));
+      add('rback', 'BACK', 230, 640, 564, 96, true, () => uiOpen('menu')); }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
       add('beam', inShop ? 'BEAM TO ARCADE' : 'BEAM TO SHOP', 112, 150, 800, 88, !!tp && tp.state === 'idle', beam);
       add('pack', 'MONKEY BACKPACK', 112, 250, 800, 88, true, () => uiOpen('pack'));
       if (!inShop) { add('tickets', 'BUY TICKETS', 112, 350, 800, 88, !!kiosk(), () => uiOpen('tickets')); add('nb', 'PLAY NEON BRICKS', 112, 450, 800, 88, !!nbApi(), nbStart); }
       else add('shop', 'PRIZE SHOP', 112, 350, 800, 88, !!A.shop, () => uiOpen('shop'));
-      add('ward', 'ACCESSORIES', 112, inShop ? 450 : 550, 800, 88, !!window.__gaPlayer, () => uiOpen('ward'));
+      add('ward', 'ACCESSORIES', 112, inShop ? 450 : 550, 390, 88, !!window.__gaPlayer, () => uiOpen('ward'));
+      add('room', 'FLOOR + WALLS', 522, inShop ? 450 : 550, 390, 88, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); });   // t365u: free
       add('close2', 'CLOSE', 112, 655, 800, 88, true, uiClose); }
     return { title, sub, body, B }; }
   // ---- backpack: Grok Shop prizes + claw plushes, held through shop.js's two-hand API (hold(id, 'R'|'L') / unhold(slot)) ----
@@ -298,6 +305,14 @@ export function setupVR(A) {
   // t355u: the menu shows your money (kiosk cash) and tickets, live (the panel redraws when the text changes)
   function wallet() { const k = kiosk(); let cash = 0; try { if (k && k.refill) k.refill(); cash = k && k.C ? k.C.bal | 0 : 0; } catch (e) {} const t = play.tickets; return { cash, tickets: t ? t.total | 0 : 0 }; }
   S.wallet = () => wallet();
+  // ---- t365u: floor + walls from the headset menu, free (main.js setFloor / setWalls; index.html resets to cobble + medieval on every load) ----
+  const ROOM_FLOORS = [['cobble', 'COBBLESTONE'], ['neon', 'NEON'], ['carpet', 'CHARACTER CARPET'], ['checkers', 'CHECKERS'], ['lava', 'LAVA'], ['ice', 'ICE']];
+  const ROOM_WALLS = [['medieval', 'MEDIEVAL'], ['current', 'NEON PANELS'], ['viking', 'VIKING RUNES'], ['portals', 'PORTALS']];
+  function roomFloors() { return ROOM_FLOORS; }
+  const roomNow = k => { try { return localStorage.getItem('neonarcade.' + k); } catch (e) { return null; } };   // main.js setFloor / setWalls write these
+  function roomPick(kind, v, nm) { try { if (kind === 'floor') window.__setFloor(v); else window.__setWalls(v); } catch (e) { S.lastError = 'room ' + e; return; }
+    S.roomPicks = (S.roomPicks || 0) + 1; say((kind === 'floor' ? 'FLOOR: ' : 'WALLS: ') + nm); }
+  S.room = () => ({ floor: roomNow('floor'), walls: roomNow('walls'), picks: S.roomPicks || 0, floors: roomFloors().map(f => f[0]), wallsList: ROOM_WALLS.map(w => w[0]), random: !window.__noRandomRoom });
   S.uiSub = () => { try { return uiSpec().sub; } catch (e) { return null; } };
   function heldNow() { const v = J('neonarcade.held', null); if (typeof v === 'string') return { R: v, L: null }; return { R: (v && v.R) || null, L: (v && v.L) || null }; }
   const CLAWN = { bear: 'TEDDY BEAR', bunny: 'BUNNY', duck: 'DUCKY', frog: 'FROG', cat: 'KITTY', octopus: 'OCTOPUS', penguin: 'PENGUIN', alien: 'ALIEN', monkey: 'MONKEY', grok: 'GROK' };   // inventory.js CLAW names
@@ -481,7 +496,69 @@ export function setupVR(A) {
     return VL.beam ? { k: 1, b: +Math.max(0.01, VL.beamT).toFixed(2), o, d, h } : { k: +Math.min(1, VL.charge / CT).toFixed(3), b: 0, o, d, h }; }
   function mpHook() { const M = window.__mp; if (M && mpHooked !== M) { mpHooked = M; M.vrSnap = vrSnap; M.posePeer = posePeer; }
     const R = window.__roomFire; if (R && R.laserSnap && rfHooked !== R) { rfHooked = R; const ls0 = R.laserSnap; R.laserSnap = function () { const v = vrLaserSnap(); return v !== undefined ? v : ls0.apply(this, arguments); }; } }
-  setInterval(mpHook, 1000);   // also for players in the VR edition who are not in a headset: they still see VR players' heads and hands
+  setInterval(mpHook, 1000);
+  // ---------- t366u/t367u: new pictures above the cabinets + the claw icon's black-panel fix ----------
+  // The wall pictures above each cabinet (neonsigns.js icon atlas: simple canvas-drawn shapes, the same as the live original) are
+  // replaced by new painted neon art, one picture per game (tex/icons/<key>.webp, 512 px, transparent background). They go into a
+  // fresh power-of-two atlas with the SAME 4x4 cell layout (the icon quads' UVs are fractions, so they keep working); each picture is
+  // fitted to its quad's own shape so it is never squashed. neonsigns.js is not edited. If a picture fails to load, its old icon stays.
+  // The free-standing claw's animated icon used a 2560x256 canvas strip that was re-uploaded (with mipmaps) on every claw frame, also
+  // mid-XR; on the Quest a failed upload leaves an incomplete texture, which samples as an opaque BLACK panel hanging under the ceiling.
+  // It now gets a power-of-two copy uploaded once and animates by sharing the old texture's offset (a uniform; no re-uploads).
+  const ICON_KEYS = ['strike', 'ghost', 'cyber', 'orc', 'pip', 'berserker', 'monkey', 'nova', 'blaster', 'bb', 'rockfall', 'skytower', 'roadster', 'claw'];
+  const IC = { done: false, loaded: [], failed: [], cell: 0, claw: false, k: 0 };
+  function iconArt() { const icons = window.__neonIcons; if (!icons || !icons.material || !icons.material.map || IC.started) return; IC.started = true;
+    const old = icons.material.map, oc = old.image, low = (A.TIER && A.TIER.name === 'low') || !oc || oc.width <= 512, S0 = oc ? oc.width / 4 : 256;
+    const C = IC.cell = low ? 256 : 512, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
+    if (oc) g.drawImage(oc, 0, 0, cv.width, cv.height);   // start from the old icons (fallback for any picture that fails)
+    const info = {}; (icons.userData.icons || []).forEach(i => { info[i.key] = i; });
+    const load = k => new Promise(res => { const im = new Image(); im.onload = () => res([k, im]); im.onerror = () => res([k, null]); im.src = 'tex/icons/' + k + '.webp'; });
+    Promise.all(ICON_KEYS.filter(k => k !== 'claw').map(load)).then(list => { try {
+      for (const [k, im] of list) { if (!im) { IC.failed.push(k); continue; }
+        const i = ICON_KEYS.indexOf(k), x = (i % 4) * C, y = Math.floor(i / 4) * C, pad = 12 * C / S0, inner = C - 2 * pad, q = info[k];
+        // the quad shows the cell's inner square stretched to w x h: draw the picture at h/w of the height (or w/h of the width) so it looks square
+        const r = q && q.w > 0 && q.h > 0 ? q.w / q.h : 1, dw = r >= 1 ? inner / r : inner, dh = r >= 1 ? inner : inner * r;
+        g.clearRect(x, y, C, C); g.drawImage(im, x + pad + (inner - dw) / 2, y + pad + (inner - dh) / 2, dw, dh); IC.loaded.push(k); }
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4;
+      try { renderer.initTexture(t); } catch (e) {}
+      icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8));   // painted art: a bit brighter than the dim neon (0.55)
+      icons.material.needsUpdate = false; old.dispose(); IC.done = true;
+    } catch (e) { S.lastError = 'icons ' + e; IC.done = true; } });
+    clawFix(); }
+  function clawFix() { const claw = window.__neonClawIcon; if (!claw || !claw.material || !claw.material.map || IC.claw) return;
+    const ot = claw.material.map, src = ot.image; if (!src || !src.width) return;
+    const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 256; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ot.anisotropy || 4; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+    t.repeat.copy(ot.repeat); t.offset = ot.offset;   // shared Vector2: neonsigns.js's tick moves the frame, nothing is re-uploaded
+    try { renderer.initTexture(t); } catch (e) {}
+    claw.material.map = t; ot.dispose(); IC.claw = true; }
+  const icT = setInterval(() => { iconArt(); clawFix(); if (IC.done && (IC.claw || !window.__neonClawIcon)) clearInterval(icT); }, 500);
+  S.icons = () => ({ done: IC.done, loaded: IC.loaded.slice(), failed: IC.failed.slice(), cell: IC.cell, claw: IC.claw, k: IC.k,
+    atlas: window.__neonIcons && window.__neonIcons.material.map && window.__neonIcons.material.map.image ? window.__neonIcons.material.map.image.width : 0,
+    clawTex: window.__neonClawIcon && window.__neonClawIcon.material.map.image ? window.__neonClawIcon.material.map.image.width : 0 });
+  // ---------- t365u: Quest Browser 2D (on the screen, not in VR): left stick walks, right stick looks ----------
+  // quest-pad.js (ported from the original v242) turns the Quest's stick input (wheel / scroll / zoom channels, or real gamepads when exposed)
+  // into read() = { move, look }. Applied here like the original main.js applyQuestPad: move -> the on-screen stick's st.joy, look -> the
+  // camera yaw / pitch. Nothing while an XR session is on (vr.js drives the sticks there) or on the start screen / inside a cabinet.
+  const QF = { joy: false, moves: 0, looks: 0, frames: 0, xrSkips: 0, lastT: 0 };
+  const QJ = { DEAD: 12, REACH: 176, GENTLE: 1.05, SPRINT: 5.2 };
+  function qfJoyOff() { if (!QF.joy) return; QF.joy = false; st.joy.on = false; st.joy.x = 0; st.joy.y = 0; st.joy.dist = 0; st.joy.vmax = 0; }
+  function questFlat(s) { const Q = window.__gaQuestPad; if (!Q || !Q.isQuest || !Q.isQuest()) return; QF.frames++;
+    const now = performance.now(), ms = Math.min(50, Math.max(1, now - (QF.lastT || now - 16))); QF.lastT = now;
+    if (renderer.xr.isPresenting) { qfJoyOff(); QF.xrSkips++; return; }
+    const S0 = window.__start, startUp = !!(S0 && S0.shown && !S0.dismissed && document.getElementById('start')), walking = play.mode === 'walk' && !(A.nb && A.nb.playing);
+    const mv = (s && s.move) || { x: 0, y: 0 }, lk = (s && s.look) || { x: 0, y: 0 }, dead = Q.DEAD || 0.18, mag = Math.hypot(mv.x || 0, mv.y || 0);
+    if (startUp || !walking) { qfJoyOff(); return; }
+    if (mag >= dead && (QF.joy || !st.joy.on)) {   // never fight a finger on the touch stick
+      const t = Math.min(1, (mag - dead) / (1 - dead)), dist = QJ.DEAD + t * (QJ.REACH - QJ.DEAD), u = Math.min(1, (dist - QJ.DEAD) / (QJ.REACH - QJ.DEAD)), sm = u * u * (3 - 2 * u);
+      QF.joy = true; st.joy.on = true; st.joy.x = mv.x / mag; st.joy.y = mv.y / mag; st.joy.dist = dist; st.joy.vmax = QJ.GENTLE + (QJ.SPRINT - QJ.GENTLE) * sm; QF.moves++;
+    } else qfJoyOff();
+    const lm = Math.hypot(lk.x || 0, lk.y || 0);
+    if (lm > 0) { const dx = (lk.x || 0) * 0.6 * ms, dy = (lk.y || 0) * 0.6 * ms;   // same as main.js look(): yaw -= dx * 0.005, pitch += dy * 0.004 (clamped)
+      st.lookT = st.t; st.yaw -= dx * 0.005; st.pitch = Math.max(-0.6, Math.min(1.25, st.pitch + dy * 0.004)); QF.looks++; } }
+  function qfHook() { const Q = window.__gaQuestPad; if (Q && Q.onFrame !== questFlat && (!Q.onFrame || Q.onFrame.__ga !== 1)) { questFlat.__ga = 1; Q.onFrame = questFlat; } }
+  qfHook(); setInterval(qfHook, 1000);
+  S.questFlat = () => Object.assign({}, QF, { quest: !!(window.__gaQuestPad && window.__gaQuestPad.isQuest()), joy: { on: st.joy.on, x: st.joy.x, y: st.joy.y, vmax: st.joy.vmax }, yaw: st.yaw, pitch: st.pitch });   // also for players in the VR edition who are not in a headset: they still see VR players' heads and hands
   function mpStep() { mpHook(); const M = window.__mp; if (!M || !M.step) return; const now = performance.now();
     if (now - (M.lastStep || 0) > 30) { M.step(now); MPV.steps++; } }   // the headset's frame loop keeps remote players moving (window rAF pauses in VR)
   S.mp = () => { const M = window.__mp; const peers = M ? [...M.peers.values()].map(p => { const u = p.g.userData || {}, arm = u.arms && u.arms.find(a => a.sd > 0), arml = u.arms && u.arms.find(a => a.sd < 0), w = new THREE.Vector3();

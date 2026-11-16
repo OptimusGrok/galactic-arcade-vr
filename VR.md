@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v7`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v8`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -138,3 +138,24 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   (you still see them in your view), so the mirror shows the avatar with its small hand controllers. The avatar's hand controllers re-check their size
   every frame, so they stay about 12 cm whatever the avatar's scale. The arms only rotate and are never stretched.
 - Test: `test/vr_v6.js` counts what the mirror pass draws: the avatar's hand controllers yes, first-person meshes none.
+
+## t365u: Quest sticks on the screen, cobblestone + medieval for everyone, free floor/walls picker (cache v8)
+- Meta Quest Browser, flat (on the screen, not in VR): the left thumbstick walks and the right thumbstick turns the camera. `quest-pad.js` is ported unchanged
+  from the original Galactic Arcade (v242). The Quest's 2D browser sends sticks as wheel/scroll/zoom input (plain wheel = move; ctrl/zoom-wheel, pinch/zoom gesture
+  or the STICK LOOK toggle = look), or as real gamepads when it exposes the Touch controllers (left = move, right = look). vr.js applies it like the original's
+  `applyQuestPad`: move -> the on-screen stick (`st.joy`, same gentle-to-sprint speed curve), look -> camera yaw/pitch. Not on the start screen or inside a cabinet,
+  and nothing at all during an XR session (vr.js drives the sticks there). The v1 Quest wheel block still stops wheel-zoom; it never stopped propagation, so quest-pad
+  still sees the wheel. `?qdbg=1` shows quest-pad's live input overlay.
+- Every load starts on COBBLESTONE floor + MEDIEVAL walls, overriding what an earlier visit saved, and the 30 s random floor/walls shuffle is off (the
+  shuffle was the likely reason two headsets on the same link showed different floors). Head script in index.html.
+- Floor + walls are free: in-game OPTIONS (opts.js skips the ticket when `window.__gaRoomFree`; note reads FREE · TAP TO CHANGE), the start-screen options (already free) and
+  the headset Y/B menu (new FLOOR + WALLS button: FLOOR / WALLS tabs, applies at once). A choice lasts until the next load.
+
+## t366u/t367u: New pictures above the cabinets, claw icon black-panel fix (same v8)
+- The live original still shows the simple canvas-drawn shapes above the cabinets (its neonsigns.js is byte-identical to this repo's), so all 13 are NEW painted
+  neon art in `tex/icons/<key>.webp` (512 px, transparent background): Strike, Berserker, Monkey Crossing, Nova Tether, Super Pip Quest, Blaster, Cybercity,
+  Orc Attack, Ghost 256, Mars Roadster, Sky Tower, Rockfall Rush, Burrow Buster. vr.js redraws them into a 2048 px atlas (1024 on the low tier) with the same
+  cell layout, fitted to each quad's shape, a bit brighter than the dim neon. The neon game titles under them are unchanged. neonsigns.js is not edited.
+- The free-standing claw's animated neon icon (a 3.5 m panel up to the ceiling band) re-uploaded a 2560x256 canvas with mipmaps on every claw frame, also in XR;
+  a failed upload on the Quest leaves an incomplete texture that samples opaque black. It now uses a 2048x256 copy uploaded once and animates by offset only.
+- Test: `test/quest_flat.js` (Quest UA flat sticks via wheel + gamepad stubs, XR non-interference, default floor/walls, free OPTIONS + headset menu, new icons, claw texture).

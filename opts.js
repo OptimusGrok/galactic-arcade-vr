@@ -66,7 +66,7 @@ export function setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor,
     const n = $('opRoomNote'); if (!n) return;
     n.classList.toggle('need', !!need);
     if (inGame()) { n.textContent = 'EXIT THE GAME TO CHANGE FLOOR OR WALLS'; return; }
-    n.textContent = need ? 'NEED 1 TICKET · YOU HAVE 0 🎟' : 'CHANGING COSTS 1 🎟 · YOU HAVE ' + tickets() + ' 🎟';
+    n.textContent = window.__gaRoomFree ? 'FREE · TAP TO CHANGE' : need ? 'NEED 1 TICKET · YOU HAVE 0 🎟' : 'CHANGING COSTS 1 🎟 · YOU HAVE ' + tickets() + ' 🎟';
     if (need) { n.style.animation = 'none'; void n.offsetWidth; n.style.animation = ''; }
   }
   function roomSel() {
@@ -85,10 +85,11 @@ export function setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor,
     if (!v || inGame()) { roomNote(false); return; }
     const cur = kind === 'floor' ? getFloor() : kind === 'window' ? (getWindow ? getWindow() : 'space') : (getWalls ? getWalls() : 'medieval');
     if (v === cur) return;
+    if (!window.__gaRoomFree) {   // t365u: free in the VR edition (index.html sets __gaRoomFree)
     if (tickets() < 1) { if (window.__floorBtn) window.__floorBtn.need++; roomNote(true); return; }
     try { localStorage.setItem('neonarcade.tickets', String(tickets() - 1)); } catch (e) {}
     if (window.__neonSync) window.__neonSync();
-    if (window.__floorBtn) window.__floorBtn.spent++;
+    if (window.__floorBtn) window.__floorBtn.spent++; }
     if (kind === 'floor') setFloor(v); else if (kind === 'window' && setWindow) setWindow(v); else if (setWalls) setWalls(v);
     roomSel(); roomNote(false);
   }
