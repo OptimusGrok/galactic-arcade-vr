@@ -481,7 +481,7 @@ export function setupVR(A) {
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
     document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
-    mirrorVR(false); avatarHandsOff();
+    mirrorVR(false); avatarHandsOff(); unadoptAll();
     A.resumeFlat();
   });
 
@@ -553,14 +553,23 @@ export function setupVR(A) {
     if (why === 'start') for (const p of renderer.info.programs || []) { try { p.getUniforms(); } catch (e) {} }   // link now (entry), not on first sight
     const r = { why, ms: +(performance.now() - t0).toFixed(1), programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, textures: tex }; (S.warms = S.warms || []).push(r); return r; }
   S.warmXR = warmXR;
-  // Light-count variants: three compiles a new program for EVERY lit material whenever the number of lights changes. In the arcade one spot
-  // (dsSpot) blinks on/off as you move, so turning around recompiled ~100 programs (13 vs 14 spots). In VR any light that switches its own
-  // .visible stays counted: shown at intensity 0 while the game wants it off (restored before the game's next step, so its logic is unchanged).
-  const PIN = { lights: new Set(), seen: new Map(), pins: 0 };
-  function pinScan() { if (S.frames % 30 !== 1 && PIN.seen.size) return; scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight) return; const v = !!o.visible, was = PIN.seen.get(o);
-      if (was !== undefined && was !== v) PIN.lights.add(o); PIN.seen.set(o, v); if (/^dsSpot$/.test(o.name)) PIN.lights.add(o); }); }
-  function pinLights() { for (const l of PIN.lights) { PIN.seen.set(l, !!l.visible); if (!l.visible) { l.userData.vrPinI = l.intensity; l.intensity = 0; l.visible = true; PIN.pins++; } } }
-  function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.userData.vrPinI = null; l.visible = false; } }
+  // Light-count variants: three compiles a new program for EVERY lit material whenever the number of lit lights changes. In the arcade one spot
+  // (dsSpot) blinks on/off as its station group is culled, so turning around recompiled the cabinets (13 vs 14 spots). In VR such a light moves
+  // onto an always-visible holder (following its old parent's transform) and is drawn at intensity 0 while it should be off, right around the
+  // frame's render only; it goes back home when VR ends. Whole-room culls (beaming) are left alone.
+  const PIN = { lights: new Set(), seen: new Map(), pins: 0, holder: null, lastArea: 0, areaT: 0 };
+  const effVis = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
+  function adopt(l) { if (PIN.lights.has(l) || !l.parent) return; if (!PIN.holder) { PIN.holder = new THREE.Group(); PIN.holder.name = 'vrPinnedLights'; scene.add(PIN.holder); }
+    const home = l.parent; l.userData.vrHome = { parent: home, pos: l.position.clone(), quat: l.quaternion.clone(), scale: l.scale.clone() }; PIN.holder.attach(l); PIN.lights.add(l); }
+  function pinScan() { if (!PIN.seeded) { PIN.seeded = true; const ds = []; scene.traverse(o => { if (o.isLight && o.name === 'dsSpot') ds.push(o); }); ds.forEach(adopt); }   // known blinker: Dead Signal station spot (its group is culled by distance)
+    const area = A.tp ? A.tp.where : 0; if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
+    if (S.frames % 15 !== 0 && PIN.seen.size) return; const flips = [];
+    scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight || PIN.lights.has(o)) return; const v = effVis(o), was = PIN.seen.get(o); if (was !== undefined && was !== v) flips.push(o); PIN.seen.set(o, v); });
+    if (S.frames - PIN.areaT > 60 && flips.length && flips.length < 3) for (const l of flips) adopt(l); }   // a light blinking on its own (not a whole room being culled)
+  function pinLights() { for (const l of PIN.lights) { const h = l.userData.vrHome; if (!h || !h.parent) continue; h.parent.updateMatrixWorld(); _v.copy(h.pos).applyMatrix4(h.parent.matrixWorld); l.position.copy(_v);
+      const on = l.visible && effVis(h.parent); if (!on) { l.userData.vrPinI = l.intensity; l.userData.vrPinV = l.visible; l.intensity = 0; l.visible = true; PIN.pins++; } } }
+  function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; } }
+  function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); }
   S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
   function warmCheck() { const w = A.tp ? A.tp.where : 0, idle = !A.tp || A.tp.state === 'idle';
     if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
