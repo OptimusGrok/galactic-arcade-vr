@@ -77,3 +77,9 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   With the **LASER PISTOL** (Accessories, hand) on, **B shoots**. This uses roomfire.js's `setHeld` (same as the flat FIRE button: tap = bolt, hold = charge,
   4 s = beam). While the pistol is on, the menu opens with **Y only**. Without it, Y or B opens the menu as before.
 - Tests: in `test/vr_v5.js` (40 checks in total).
+
+## t356u: Sharper mirror in VR (same v5)
+- The shop mirror's Reflector target is a fixed 512x420 in shop.js. That's only 420 px for 1.9 m of glass, and the wrong aspect, so it looked blurred in a headset.
+  In VR, vr.js resizes it to 1536 px on the long side (1024 on the low tier), matching the glass aspect (1002x1536). It uses linear filtering and no mipmaps.
+  It goes back to 512x420 when you leave VR. shop.js still skips the pass unless the mirror is in view and facing you, and the VR redraw
+  only runs within 5 m. Check: `test/vr_v4.js` "the mirror render target goes up in VR".
