@@ -39,6 +39,10 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     chk(mir.renders > r0 + 3 && mir.kicks > 3, 'the mirror renders in VR (' + r0 + ' -> ' + mir.renders + ' renders)');
     const hs = await page.evaluate(() => window.__hsRead(0.3, 0.3, 0.7, 0.7));
     chk(hs && hs.left.lit > 30 && hs.right.lit > 30 && hs.left.mean > 25 && hs.right.mean > 25, 'the headset sees a lit (not black) mirror where you look ' + JSON.stringify(hs && { l: hs.left, r: hs.right }));
+    // t356u: sharper mirror in VR - its render target goes from shop.js's 512x420 to ~1536 px tall, same aspect, linear, no mipmaps
+    const rt = await page.evaluate(() => { const r = window.__gaVR.mirrorRT(), g = window.__gaVR.ui.shop().wardrobe.mirror.mesh.geometry.parameters; return Object.assign({ asp: g.width / g.height }, r); });
+    chk(rt && rt.vr && Math.max(rt.w, rt.h) >= 1024 && rt.w * rt.h > 512 * 420 * 4 && Math.abs(rt.w / rt.h - rt.asp) < 0.01 && rt.filter === 'linear' && !rt.mips,
+      'the mirror render target goes up in VR: 512x420 -> ' + (rt && rt.w + 'x' + rt.h) + ' (glass aspect ' + (rt && rt.asp.toFixed(3)) + ', ' + (rt && rt.filter) + ')');
     if (process.env.MIRROR_ONLY) { await close(); process.exit(ok ? 0 : 1); }
     // ---- accessories ----
     await place(M.p[0] + M.n[0] * 2.2, M.p[2] + M.n[2] * 2.2, yaw);

@@ -330,6 +330,19 @@ export function setupVR(A) {
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
   addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop);
+  // t356u: the shop mirror's Reflector target is a fixed 512x420 (shop.js), which looks blurred from 1 m in a headset. In VR give it a sharp
+  // target: 1536 px on the long side (1024 on the low tier), matching the glass's aspect, linear filtering, no mipmaps. Put it back on exit.
+  // Cost stays sane: shop.js already skips it unless it is in view and facing you, and the VR kick below only runs within MIRROR_NEAR m.
+  const MIRROR_NEAR = 5;
+  function mirrorRes(on) { const m = mirrorMesh(); if (!m || !m.getRenderTarget) return; const rt = m.getRenderTarget(), u = m.userData;
+    if (!u.flatRes) u.flatRes = [rt.width, rt.height];
+    let w = u.flatRes[0], h = u.flatRes[1];
+    if (on) { const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 1024 : 1536;
+      if (gh >= gw) { h = L; w = Math.round(L * gw / gh); } else { w = L; h = Math.round(L * gh / gw); } }
+    if (rt.width !== w || rt.height !== h) { rt.setSize(w, h); S.mirrorResizes = (S.mirrorResizes || 0) + 1; }
+    const t = rt.texture; if (t.minFilter !== THREE.LinearFilter || t.generateMipmaps) { t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = false; t.needsUpdate = true; }
+    u.vrRes = !!on; }
+  S.mirrorRT = () => { const m = mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: !!m.userData.vrRes, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
   const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
@@ -375,6 +388,7 @@ export function setupVR(A) {
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
     document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
+    mirrorRes(false);
     A.resumeFlat();
   });
 
@@ -426,7 +440,8 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    { const mr = mirrorMesh(); if (mr && mr.onBeforeRender && S.head) { camera.updateMatrixWorld(true); const n0 = A.shop.wardrobe.mirror.renders; try { mr.onBeforeRender(renderer, scene, camera); } catch (e) { S.lastError = 'mirror ' + e; } if (A.shop.wardrobe.mirror.renders > n0) S.mirrorKicks++; } }
+    { const mr = mirrorMesh(); if (mr && !mr.userData.vrRes) mirrorRes(true);
+      if (mr && mr.onBeforeRender && S.head && Math.hypot(S.head.x - mr.matrixWorld.elements[12], S.head.z - mr.matrixWorld.elements[14]) < MIRROR_NEAR) { camera.updateMatrixWorld(true); const n0 = A.shop.wardrobe.mirror.renders; try { mr.onBeforeRender(renderer, scene, camera); } catch (e) { S.lastError = 'mirror ' + e; } if (A.shop.wardrobe.mirror.renders > n0) S.mirrorKicks++; } }
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);

@@ -9,7 +9,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
   const LOCAL = [0.2, 1.3, -0.2];
   const aim = async (target, hand = 'right') => { await H.aim(page, hand, LOCAL, target); await H.frames(page, 3); };
   const btnAt = id => page.evaluate(id => window.__gaVR.ui.btnWorld(id), id);
-  const tap = async id => { const w = await btnAt(id); if (!w) throw new Error('no button ' + id + ' in ' + (await page.evaluate(() => window.__gaVR.ui.kind + ': ' + window.__gaVR.ui.btns.map(b => b.id).join(',')))); await aim(w); await H.press(page, 'right', 'trigger'); await H.frames(page, 3); };
+  const tap = async id => { const w = await btnAt(id); if (!w) throw new Error('no button ' + id + ' in ' + (await page.evaluate(() => window.__gaVR.ui.kind + ': ' + window.__gaVR.ui.btns.map(b => b.id).join(',')))); for (let i = 0; i < 3; i++) { await aim(await btnAt(id) || w); await H.press(page, 'right', 'trigger'); await H.frames(page, 3); if ((await page.evaluate(() => window.__gaVR.lastPress)) === id) break; await page.evaluate(() => { window.__gaVR.lastPress = null; }); } await page.evaluate(() => { window.__gaVR.lastPress = null; }); };
   const held = () => page.evaluate(() => { const h = window.__shop && window.__shop.held; return h ? { R: h.R || null, L: h.L || null } : null; });
   const ids = () => page.evaluate(() => window.__gaVR.ui.btns.map(b => b.id));
   try {
@@ -55,6 +55,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 90);
     const fy2 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, hold: window.__arcade.st.fly.hold }));
     chk(!fy2.hold && fy2.m < fy1.m - 0.3, 'let go of A and you come back down (' + fy2.m.toFixed(2) + ' m)');
+    await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 30000 }); await H.frames(page, 6);
     await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: B still opens the menu');
     // ---- t355u: LASER PISTOL on -> B shoots, menu on Y only ----
     await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
