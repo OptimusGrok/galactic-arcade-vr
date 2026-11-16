@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v8`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v9`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -159,3 +159,14 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - The free-standing claw's animated neon icon (a 3.5 m panel up to the ceiling band) re-uploaded a 2560x256 canvas with mipmaps on every claw frame, also in XR;
   a failed upload on the Quest leaves an incomplete texture that samples opaque black. It now uses a 2048x256 copy uploaded once and animates by offset only.
 - Test: `test/quest_flat.js` (Quest UA flat sticks via wheel + gamepad stubs, XR non-interference, default floor/walls, free OPTIONS + headset menu, new icons, claw texture).
+
+## t368u: Right stick only turns the camera on the Quest screen (cache v9)
+- Dave's real Quest: both thumbsticks walked. In the Quest's 2D browser both sticks are the same plain wheel scroll (no gamepads in 2D), so quest-pad.js
+  (VR repo copy, now "VR v9") classifies every stick event: STICK LOOK toggle -> look; ctrl/meta/alt -> look; saved STICK SETUP calibration; two-ray rule
+  (each controller's ray sends its own pointer events; a scroll landing on the ray further RIGHT on screen is the right stick) -> look; else walk.
+  Looked-at events feed only the camera (yaw/pitch), never `st.joy`. Gamepads with handedness are still used if the browser ever exposes them.
+- STICK SETUP button (above STICK WALK, bottom right, not on the start screen): hold the left stick, let go, hold the right stick. Whatever differs (ray, screen side,
+  channel, deltaMode, step size) becomes the rule, saved on the device (`localStorage gaQuest.stickCal`). Nothing moves while it listens.
+- `?qdbg=1` now shows every ray seen (id, type, x,y, age), the setup rules, and the last 8 stick events: raw dx/dy/dz, deltaMode, modifiers, x,y,
+  the matched ray, and MOVE/LOOK with the reason (toggle / mod / cal:... / 2ray / default). Gamepads list id, hand and axes.
+- Test: `test/quest_flat.js` (two rays: right-ray scroll pans and does not move; left-ray scroll walks; calibration by deltaMode; overlay text).

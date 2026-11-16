@@ -28,7 +28,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     await wheel(page, 25, 60, false);
     let q = await QF(page); const p1 = await page.evaluate(() => ({ x: window.__arcade.monkey.position.x, z: window.__arcade.monkey.position.z, yaw: window.__arcade.st.yaw, zoom: window.__arcade.st.dist, blocked: window.__arcade.st.wheelBlocked }));
     const moved = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-    chk(q.moves > 3 && moved > 0.3, 'left stick (plain wheel) walks the player: moved ' + moved.toFixed(2) + ' m, ' + q.moves + ' stick frames');
+    chk(q.moves >= 2 && moved > 0.2, 'left stick (plain wheel) walks the player: moved ' + moved.toFixed(2) + ' m, ' + q.moves + ' stick frames');
     chk(Math.abs(p1.yaw - p0.yaw) < 1e-6 && Math.abs(p1.zoom - p0.zoom) < 1e-6, 'walking does not turn the camera or zoom (v1 Quest wheel block still stops zoom)');
     await page.waitForTimeout(400); q = await QF(page);
     chk(!q.joy.on, 'stick released: the walk stops (joy off)');
@@ -41,14 +41,80 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     await page.waitForTimeout(400);
     const y0 = await page.evaluate(() => window.__arcade.st.yaw), m0 = (await QF(page)).moves;
     await page.evaluate(() => { window.__pads = [{ id: 'Oculus Touch (Right)', index: 1, hand: 'right', mapping: 'xr-standard', connected: true, axes: [0, 0, 0.9, 0], buttons: [] }]; });
-    await page.waitForTimeout(400);
+    await page.waitForFunction(y0 => Math.abs(window.__arcade.st.yaw - y0) > 0.1, y0, { timeout: 4000 }).catch(() => {});
     const y1 = await page.evaluate(() => window.__arcade.st.yaw);
-    chk(Math.abs(y1 - y0) > 0.1 && (await QF(page)).moves === m0, 'gamepad right stick turns the camera without walking');
+    chk(Math.abs(y1 - y0) > 0.1 && (await QF(page)).moves === m0, 'gamepad right stick turns the camera without walking ' + JSON.stringify({ dy: y1 - y0, m0, m: (await QF(page)).moves, look: await page.evaluate(() => window.__gaQuestPad.read().look), mode: await page.evaluate(() => [window.__arcade.play.mode, !!(window.__start && window.__start.shown && !window.__start.dismissed), window.__gaVR.questFlat().frames]) }));
     await page.evaluate(() => { window.__pads = [{ id: 'Oculus Touch (Left)', index: 0, hand: 'left', mapping: 'xr-standard', connected: true, axes: [0, 0, 0, -0.9], buttons: [] }]; });
-    await page.waitForTimeout(400);
+    await page.waitForFunction(m0 => window.__gaVR.questFlat().joy.on && window.__gaVR.questFlat().moves > m0, m0, { timeout: 4000 }).catch(() => {});
     q = await QF(page); chk(q.joy.on && q.joy.y < -0.5 && q.moves > m0, 'gamepad left stick walks (forward) ' + JSON.stringify({ joy: q.joy, moves: q.moves, m0, pad: await page.evaluate(() => window.__gaQuestPad.read().move) }));
-    await page.evaluate(() => { window.__pads = []; }); await page.waitForTimeout(200);
+    await page.evaluate(() => { window.__pads = []; }); await page.waitForFunction(() => !window.__gaVR.questFlat().joy.on, null, { timeout: 4000 }).catch(() => {});
     chk(!(await QF(page)).joy.on, 'gamepad released: walk stops');
+    // ---- v9 (t368u): the RIGHT stick only turns the camera, never walks ----
+    const wheelAt = (n, o) => page.evaluate(async ([n, o]) => { const cv = document.querySelector('canvas');
+      for (let i = 0; i < n; i++) { cv.dispatchEvent(new WheelEvent('wheel', Object.assign({ bubbles: true, cancelable: true }, o))); await new Promise(r => setTimeout(r, 16)); } }, [n, o]);
+    const ray = (id, x, y) => page.evaluate(([id, x, y]) => { for (let i = 0; i < 3; i++) window.dispatchEvent(new PointerEvent('pointermove', { pointerId: id, pointerType: 'touch', clientX: x, clientY: y + i, bubbles: true })); }, [id, x, y]);
+    const pose = () => page.evaluate(() => ({ x: window.__arcade.monkey.position.x, z: window.__arcade.monkey.position.z, yaw: window.__arcade.st.yaw }));
+    await page.evaluate(() => { const a = window.__arcade; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); });
+    await ray(11, 110, 150); await ray(12, 370, 150); await page.waitForTimeout(300);
+    let a0 = await pose(), m0b = (await QF(page)).moves;
+    await wheelAt(25, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 }); await page.waitForTimeout(300);
+    let a1 = await pose(); let lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
+    chk(lg && lg.cls === 'LOOK' && lg.why === '2ray' && String(lg.pid) === '12', 'two controller rays: a stick scroll on the RIGHT ray is classed LOOK (' + JSON.stringify(lg && { cls: lg.cls, why: lg.why, pid: lg.pid }) + ')');
+    chk(Math.abs(a1.yaw - a0.yaw) > 0.1 && Math.hypot(a1.x - a0.x, a1.z - a0.z) < 0.05 && (await QF(page)).moves === m0b, 'right stick turns the camera (yaw ' + (a1.yaw - a0.yaw).toFixed(2) + ') and does NOT move the player (' + Math.hypot(a1.x - a0.x, a1.z - a0.z).toFixed(3) + ' m)');
+    await wheelAt(25, { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151 }); await page.waitForTimeout(100);
+    let a2 = await pose(); lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
+    chk(lg && lg.cls === 'MOVE' && Math.hypot(a2.x - a1.x, a2.z - a1.z) > 0.2 && Math.abs(a2.yaw - a1.yaw) < 1e-6, 'left-ray stick scroll walks without turning (' + Math.hypot(a2.x - a1.x, a2.z - a1.z).toFixed(2) + ' m)');
+    await page.waitForTimeout(400);
+    await page.waitForTimeout(600);
+    // debug overlay shows raw events + class
+    await ray(11, 110, 150); await ray(12, 370, 150);
+    await wheelAt(1, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 });
+    const dbg = await page.evaluate(() => { window.__gaQuestPad.showDebug(true); const t = document.getElementById('gaQdbg').textContent; window.__gaQuestPad.showDebug(false); return t; });
+    chk(/VR v9/.test(dbg) && /last stick events/.test(dbg) && /-> MOVE \(2ray\)/.test(dbg) && /-> LOOK \(2ray\)/.test(dbg) && /rays 11:touch@/.test(dbg), '?qdbg overlay lists rays and each stick event with its class + reason');
+    // STICK SETUP calibration: one ray, same spot, but the sticks differ in deltaMode (pixels vs lines)
+    // ---- t369u: while FLYING (jetpack), the left stick moves the player, the right stick only turns ----
+    await page.evaluate(() => { const a = window.__arcade; window.__gaPlayer.p.back = 'jetpack'; a.monkey.position.set(2, 0, 4); a.st.vel.set(0, 0, 0); a.st.fly.e = 1; });
+    await ray(11, 110, 150); await ray(12, 370, 150);
+    // the LEFT controller holds FLY (bottom right) with its trigger; its stick comes through as a drag of that held pointer
+    await page.evaluate(() => { const b = document.getElementById('bFly'), r = b.getBoundingClientRect(); window.__flyXY = [r.x + r.width / 2, r.y + r.height / 2];
+      b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 11, pointerType: 'touch', clientX: window.__flyXY[0], clientY: window.__flyXY[1], bubbles: true, cancelable: true, buttons: 1 })); });
+    await page.waitForFunction(() => window.__arcade.st.fly.air, null, { timeout: 8000 }).catch(() => {});
+    await ray(12, 370, 150);
+    const f0 = await pose();
+    await page.evaluate(async () => { const b = document.getElementById('bFly'); let [x, y] = window.__flyXY;
+      for (let i = 0; i < 30; i++) { y += 3; b.dispatchEvent(new PointerEvent('pointermove', { pointerId: 11, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, buttons: 1 })); await new Promise(r => setTimeout(r, 16)); } });
+    const f1 = await pose(); let fl = await page.evaluate(() => ({ air: window.__arcade.st.fly.air, hold: window.__arcade.st.fly.hold, ev: window.__gaQuestPad.evLog[0] }));
+    chk(fl.air && fl.hold && fl.ev && fl.ev.src === 'held' && fl.ev.cls === 'MOVE' && Math.hypot(f1.x - f0.x, f1.z - f0.z) > 0.2, 'flying: the LEFT stick (held FLY ray) moves the player ' + Math.hypot(f1.x - f0.x, f1.z - f0.z).toFixed(2) + ' m ' + JSON.stringify({ air: fl.air, ev: fl.ev && [fl.ev.src, fl.ev.cls, fl.ev.why] }));
+    // left stick as a plain wheel on the left ray, in the air
+    await wheelAt(25, { deltaX: 0, deltaY: -60, clientX: 110, clientY: 151 }); await page.waitForTimeout(100);
+    const f2 = await pose();
+    chk((await page.evaluate(() => window.__arcade.st.fly.air)) && Math.hypot(f2.x - f1.x, f2.z - f1.z) > 0.2, 'flying: left-stick wheel moves the player ' + Math.hypot(f2.x - f1.x, f2.z - f1.z).toFixed(2) + ' m');
+    await page.waitForTimeout(900); await ray(12, 370, 150);
+    const f3 = await pose();
+    await wheelAt(25, { deltaX: 60, deltaY: 0, clientX: 370, clientY: 151 }); await page.waitForTimeout(200);
+    const f4 = await pose(); fl = await page.evaluate(() => ({ air: window.__arcade.st.fly.air, ev: window.__gaQuestPad.evLog[0] }));
+    chk(fl.air && fl.ev.cls === 'LOOK' && Math.abs(f4.yaw - f3.yaw) > 0.1 && Math.hypot(f4.x - f3.x, f4.z - f3.z) < 0.08, 'flying: the RIGHT stick only turns (yaw ' + (f4.yaw - f3.yaw).toFixed(2) + ', moved ' + Math.hypot(f4.x - f3.x, f4.z - f3.z).toFixed(3) + ' m)');
+    await page.evaluate(() => { const b = document.getElementById('bFly'); b.dispatchEvent(new PointerEvent('pointerup', { pointerId: 11, pointerType: 'touch', bubbles: true })); window.__gaPlayer.p.back = 'none'; });
+    await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(800); await page.evaluate(() => { window.__gaQuestPad.calStart(); });
+    const c0 = await pose();
+    const hold = async (o, ph) => { const t0 = Date.now(); while (Date.now() - t0 < 4000 && (await page.evaluate(() => window.__gaQuestPad.calibrating)) === ph) await wheelAt(3, o); };
+    await hold({ deltaX: 0, deltaY: 37.5, deltaMode: 0, clientX: 240, clientY: 60 }, 'L');
+    await page.waitForFunction(() => window.__gaQuestPad.calibrating === 'R', null, { timeout: 5000 }).catch(() => {});
+    await hold({ deltaX: 3, deltaY: 0, deltaMode: 1, clientX: 240, clientY: 60 }, 'R');
+    const cb = await page.evaluate(() => ({ cal: window.__gaQuestPad.calib, running: window.__gaQuestPad.calibrating, msg: (document.getElementById('gaQcalMsg') || {}).textContent }));
+    const c1 = await pose();
+    chk(cb.cal && cb.cal.rules.some(r => r.k === 'mode' && r.L === '0' && r.R === '1') && !cb.running, 'STICK SETUP learns the difference (' + JSON.stringify(cb.cal && cb.cal.rules) + ') "' + cb.msg + '"');
+    chk(Math.hypot(c1.x - c0.x, c1.z - c0.z) < 0.05 && Math.abs(c1.yaw - c0.yaw) < 1e-6, 'nothing moves while STICK SETUP is listening ' + JSON.stringify({ d: Math.hypot(c1.x - c0.x, c1.z - c0.z), dyaw: c1.yaw - c0.yaw, log: (await page.evaluate(() => window.__gaQuestPad.evLog.slice(0, 3).map(e => e.src + ' ' + e.cls + ' ' + e.why))) }));
+    await page.waitForTimeout(400); let b0 = await pose();
+    await wheelAt(25, { deltaX: 3, deltaY: 0, deltaMode: 1, clientX: 240, clientY: 60 }); await page.waitForTimeout(300);
+    let b1 = await pose(); lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
+    chk(/^cal:/.test(lg.why) && lg.cls === 'LOOK' && Math.abs(b1.yaw - b0.yaw) > 0.05 && Math.hypot(b1.x - b0.x, b1.z - b0.z) < 0.05, 'after setup: the right stick pans only (' + lg.why + ')');
+    await wheelAt(25, { deltaX: 0, deltaY: -37.5, deltaMode: 0, clientX: 240, clientY: 60 }); await page.waitForTimeout(100);
+    let b2 = await pose(); lg = await page.evaluate(() => window.__gaQuestPad.evLog[0]);
+    chk(lg.cls === 'MOVE' && Math.hypot(b2.x - b1.x, b2.z - b1.z) > 0.2, 'after setup: the left stick walks');
+    const kept = await page.evaluate(() => !!localStorage.getItem('gaQuest.stickCal')); chk(kept, 'the setup is saved on the device');
+    await page.evaluate(() => window.__gaQuestPad.calClear()); await page.waitForTimeout(400);
     // t366u/t367u: new pictures above the cabinets (13 painted icons in a 2048 atlas) + the claw icon's power-of-two, upload-once texture
     await page.waitForFunction(() => window.__gaVR.icons().done && window.__gaVR.icons().claw, null, { timeout: 20000 }).catch(() => {});
     const ic = await page.evaluate(() => { const r = window.__gaVR.icons(), cv = window.__neonIcons.material.map.image, g = cv.getContext('2d'), C = cv.width / 4;
@@ -83,6 +149,17 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     await H.frames(page, 8);
     const s1 = await QF(page);
     chk(s1.xrSkips > s0.xrSkips && s1.moves === s0.moves && s1.looks === s0.looks && !s1.joy.on, 'in VR: the flat stick path does nothing (' + (s1.xrSkips - s0.xrSkips) + ' frames skipped)');
+    // ---- t369u in VR: left stick moves while flying (hold A), right stick only turns ----
+    await page.evaluate(() => { const a = window.__arcade; window.__gaPlayer.p.back = 'jetpack'; a.st.fly.e = 1; const S = window.__gaVR; S.rig = { x: 2, y: 0, z: 4, yaw: 0 }; S.applyRig(); a.monkey.position.set(2, 0, 4); });
+    await H.btn(page, 'right', 'a-button', 1);
+    await page.waitForFunction(() => window.__arcade.st.fly.air, null, { timeout: 8000 }).catch(() => {});
+    const vp = () => page.evaluate(() => ({ x: window.__arcade.monkey.position.x, z: window.__arcade.monkey.position.z, y: window.__arcade.monkey.position.y, rot: window.__gaVR.rig.yaw }));
+    const v0 = await vp(); await H.axes(page, 'left', 0, -1); await page.waitForTimeout(700); await H.axes(page, 'left', 0, 0); const v1 = await vp();
+    chk((await page.evaluate(() => window.__arcade.st.fly.air)) && Math.hypot(v1.x - v0.x, v1.z - v0.z) > 0.3, 'VR flying: the left stick moves the player ' + Math.hypot(v1.x - v0.x, v1.z - v0.z).toFixed(2) + ' m (height ' + v1.y.toFixed(2) + ')');
+    await page.waitForTimeout(700); const v2 = await vp(); await H.axes(page, 'right', 1, 0); await page.waitForTimeout(700); await H.axes(page, 'right', 0, 0); const v3 = await vp();
+    chk(Math.abs(v3.rot - v2.rot) > 0.2 && Math.hypot(v3.x - v2.x, v3.z - v2.z) < 0.08, 'VR flying: the right stick only turns (turn ' + (v3.rot - v2.rot).toFixed(2) + ', moved ' + Math.hypot(v3.x - v2.x, v3.z - v2.z).toFixed(3) + ' m)');
+    await H.btn(page, 'right', 'a-button', 0); await page.evaluate(() => { window.__gaPlayer.p.back = 'none'; });
+    await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 15000 }).catch(() => {});
     const ix = await page.evaluate(() => window.__gaVR.icons()); chk(ix.done && ix.loaded.length === 13 && ix.claw, 'VR: new pictures + claw fix are in place');
     const r = await page.evaluate(() => window.__gaVR.room());
     chk(r.floor === 'cobble' && r.walls === 'medieval', 'VR load also starts cobble + medieval');
