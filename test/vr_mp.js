@@ -22,17 +22,26 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const moc
     // B: right hand up high, left hand low, head turned to its left
     const handsB = async (rUp) => { await b.evaluate(rUp => { const C = window.__xrd.controllers; const set = (h, x, y, z) => { C[h].position.set(x, y, z); };
         set('right', 0.25, rUp ? 1.9 : 0.85, -0.3); set('left', -0.25, rUp ? 0.85 : 1.9, -0.3); }, rUp); await H.frames(b, 4); };
-    await handsB(true); await b.evaluate(() => { const s = Math.sin(0.35), c0 = Math.cos(0.35); window.__xrd.quaternion.set(0, s, 0, c0); }); await H.frames(b, 4);
-    const sent = await b.evaluate(() => window.__gaVR.mp().sent); chk(sent > 0, 'B (in VR) sends its head + controller poses (' + sent + ' packets)');
+    await handsB(true);
     const vB = await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p && p.vr && p.visor && p.ctrlR && p.ctrlL && p.handR && p.handL && p.handR[1] > p.handL[1] + 0.25; });
+    const sent = await b.evaluate(() => window.__gaVR.mp().sent); chk(sent > 0, 'B (in VR) sends its head + controller poses (' + sent + ' packets)');
     let pb = await peer(a, 'bbbb2222');
     chk(vB, 'A sees B as a VR player (visor) holding two controllers, right hand up (' + (pb && pb.handR ? pb.handR[1].toFixed(2) : '?') + ' m) above the left (' + (pb && pb.handL ? pb.handL[1].toFixed(2) : '?') + ' m)');
-    chk(pb && pb.headQ && Math.abs(pb.headQ[1]) > 0.15, 'B\'s head turn shows on A (head quaternion ' + JSON.stringify(pb && pb.headQ) + ')');
-    // swap hands: A's copy eases across (in-between frames), then left is up
-    await handsB(false); const ys = [];
-    for (let i = 0; i < 40 && ys.length < 60; i++) { const q = await peer(a, 'bbbb2222'); if (q && q.handR) ys.push(q.handR[1]); if (q && q.handL && q.handR && q.handL[1] > q.handR[1] + 0.25) break; await H.frames(a, 1); }
-    pb = await peer(a, 'bbbb2222'); const hi = ys[0], lo = pb.handR[1], mid = ys.filter(y => y < hi - 0.05 && y > lo + 0.05).length;
-    chk(pb.handL[1] > pb.handR[1] + 0.25 && mid >= 1, 'B swaps hands: A\'s copy follows smoothly (' + mid + ' in-between frames, right ' + hi.toFixed(2) + ' -> ' + lo.toFixed(2) + ')');
+    // head: turning turns B's avatar (the body faces where you look); nodding tips its head
+    const r0 = pb.r; await b.evaluate(() => { const s = Math.sin(0.35), c0 = Math.cos(0.35); window.__xrd.quaternion.set(0, s, 0, c0); }); await H.frames(b, 4);
+    const turned = await until(a, r0 => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); const d = Math.abs(((p.r - r0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI); return d > 0.6 && d < 0.8; }, r0);
+    chk(turned, 'B turns its head 40 degrees: A sees B\'s avatar turn (' + r0.toFixed(2) + ' -> ' + (await peer(a, 'bbbb2222')).r.toFixed(2) + ')');
+    await b.evaluate(() => { const s = Math.sin(-0.25), c0 = Math.cos(-0.25); window.__xrd.quaternion.set(s, 0, 0, c0); }); await H.frames(b, 4);   // look down 29 degrees
+    const nod = await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p.headQ && p.headQ[0] * Math.sign(p.headQ[3] || 1) > 0.15; });
+    pb = await peer(a, 'bbbb2222'); chk(nod, 'B looks down: A sees B\'s head tip down (head quaternion ' + JSON.stringify(pb.headQ) + ')');
+    // swap hands: A's copy eases across (recorded every pose on A), then left is up
+    await a.evaluate(() => { const M = window.__mp, f = M.posePeer, w = new window.__arcade.THREE.Vector3(); window.__ys = []; M.posePeer = function (p, dt, now) { f(p, dt, now); if (p.id === 'bbbb2222') { const arm = p.g.userData.arms.find(x => x.sd > 0); window.__ys.push(arm.hand.getWorldPosition(w).y); } }; });
+    await handsB(false);
+    await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p.handL[1] > p.handR[1] + 0.25 && Math.abs(window.__ys[window.__ys.length - 1] - p.handR[1]) < 0.01 && window.__ys.length > 5; });
+    const ys = await a.evaluate(() => window.__ys.slice(-200)); pb = await peer(a, 'bbbb2222');
+    const hi = Math.max(...ys), lo = Math.min(...ys), mid = ys.filter(y => y < hi - 0.08 && y > lo + 0.08).length;
+    chk(pb.handL[1] > pb.handR[1] + 0.25 && mid >= 2, 'B swaps hands: A\'s copy follows smoothly (' + mid + ' in-between frames, right ' + hi.toFixed(2) + ' -> ' + lo.toFixed(2) + ')');
+    await b.evaluate(() => window.__xrd.quaternion.set(0, 0, 0, 1)); await H.frames(b, 3);
     // B walks 1.5 m: A sees it move
     const x0 = pb.pos[0]; await place(b, 3.5, 1.5, Math.PI);
     const mv = await until(a, x0 => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p && Math.abs(p.pos[0] - x0 - 1.5) < 0.1; }, x0);
@@ -51,12 +60,13 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const moc
     await H.press(b, 'left', 'y-button'); await H.frames(b, 3); await tapB('ward'); await tapB('cat_hand'); await tapB('w_hand_pistol'); await tapB('cat_back'); await tapB('w_back_jetpack'); await tapB('close');
     const gB = await b.evaluate(() => window.__gaVR.gear()); chk(gB.laser && gB.jet, 'B holds the laser pistol and wears the jetpack');
     chk(await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p && p.pistol; }), 'A sees the pistol in B\'s hand');
-    const z0 = await a.evaluate(() => window.__mp.zapRecv || 0), rig = await b.evaluate(() => window.__gaVR.rig);
-    await aimB([rig.x - 0.25, 0.05, rig.z + 0.6]); await H.btn(b, 'right', 'b-button', 1); await H.frames(b, 4); await b.waitForTimeout(250); await H.btn(b, 'right', 'b-button', 0); await H.frames(b, 4);
-    const zp = await until(a, z0 => (window.__mp.zapRecv || 0) > z0, z0, 8000);
-    const rl = await a.evaluate(() => { const L = window.__roomFire.lasers; const r = L.filter(l => l.remote || l.mesh && /emote|Remote/i.test(l.mesh.name)); const l = (r.length ? r : L)[(r.length ? r : L).length - 1]; return l ? { dir: l.dir.toArray(), y: l.mesh.position.y } : null; });
-    const bz = await b.evaluate(() => window.__gaVR.mp().zaps);
-    chk(zp && bz >= 1 && rl && rl.dir[1] < -0.5, 'B shoots with the hand pointing down: A sees the bolt fly down (dir y ' + (rl ? rl.dir[1].toFixed(2) : '?') + ')');
+    await a.evaluate(() => { const R = window.__roomFire, f = R.spawn; window.__rs = []; R.spawn = function (o, d, hue, remote) { if (remote) window.__rs.push({ o, d, hue }); return f.apply(this, arguments); }; });
+    const rig = await b.evaluate(() => window.__gaVR.rig); let rl = null, bz = 0;
+    for (let i = 0; i < 3 && !rl; i++) { await aimB([rig.x - 0.25, 0.05, rig.z + 0.6]); await b.waitForTimeout(300); await H.btn(b, 'right', 'b-button', 1); await H.frames(b, 4); await b.waitForTimeout(250); await H.btn(b, 'right', 'b-button', 0); await H.frames(b, 4);
+      if (await until(a, () => window.__rs.length > 0, null, 6000)) rl = await a.evaluate(() => window.__rs[window.__rs.length - 1]); }
+    bz = await b.evaluate(() => window.__gaVR.mp().zaps);
+    const n = rl ? Math.hypot(...rl.d) : 1;
+    chk(rl && bz >= 1 && rl.d[1] / n < -0.5, 'B shoots with the hand pointing down: A sees the bolt fly down (dir y ' + (rl ? (rl.d[1] / n).toFixed(2) : '?') + ', ' + (rl ? rl.hue : '') + ')');
     await aimB([rig.x, 1.3, rig.z + 3]); await H.btn(b, 'right', 'b-button', 1); await H.frames(b, 10); await b.waitForTimeout(400);
     const chg = await until(a, () => { const p = window.__gaVR.mp().peers.find(q => q.id === 'bbbb2222'); return p && p.lz && p.lz.k > 0.02 && window.__roomFire.remoteState().some(r => r.id === 'bbbb2222' && r.hasBall); }, null, 8000);
     const lz = (await peer(a, 'bbbb2222')).lz; const cB = await b.evaluate(() => window.__gaVR.vrLaser().aim);

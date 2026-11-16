@@ -21,7 +21,7 @@ Planned URL (not published): https://optimusgrok.github.io/galactic-arcade-vr/
 - `vr-frame-shim.js`: loaded first in every cabinet page. It lets the XR loop run the game's requestAnimationFrame callbacks.
   Re-run `python3 tools_vr_inject_shim.py` after rebuilding any `*-play` or `*-demo` copy.
 - `main.js` hooks: renderer.xr, setAnimationLoop handoff, bloom/Reflector off in XR, no dpr changes in XR, Quest caps the tier at mid.
-- Cache: `galactic-arcade_vr-v6`. The cleanup only touches `galactic-arcade_vr-*`.
+- Cache: `galactic-arcade_vr-v7`. The cleanup only touches `galactic-arcade_vr-*`.
   It isn't `galactic-arcade-vr-*` because the live game's cleanup deletes every cache starting with `galactic-arcade-v`.
 - Tests (emulated Quest 3 via IWER, `test/vendor/iwer.min.js`): `test/vr.js`, `test/vr_all.js`, `test/sw_reload.js`.
 
@@ -116,3 +116,18 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - The left-controller display shows the headset battery % from `navigator.getBattery()` and updates live, with a lightning bolt while charging and red at 20% or less.
   If the browser has no Battery API, the readout is hidden.
 - Tests: `test/vr_v6.js` (battery uses a mocked `getBattery`).
+
+## t362u: Two (or more) people in the VR arcade (cache v7)
+- How to join: everyone opens the same link (https://optimusgrok.github.io/galactic-arcade-vr/) and is automatically in the one public room
+  (mp.js, Supabase Realtime channel `galactic-arcade-public`, up to 10 players). That's the same room as the flat game, so headset players, phone and PC players all see each other.
+  Nothing needs pairing or a code. Press ENTER VR whenever you like; you stay in the room.
+- In a headset, each state packet (10 Hz, only when something changed) also carries `v`: head + left/right controller poses relative to the
+  body (cm positions, quaternions, ~150 bytes). Flat and older clients ignore it.
+- Everyone else sees a VR player with a visor on the avatar, the body facing where they look, the head nodding, and both arms reaching for their
+  controllers (the same solver as the mirror), with a small controller in each hand. Poses ease toward each packet so 10 Hz looks smooth.
+- Their laser shots fly along their controller's aim (the multiplayer zap carries the VR aim). The charge ball shows at their controller (or the
+  alien's machine), and their 3 s beam shows too. The remote beam is drawn level, as roomfire.js always draws other players' beams.
+  Jetpack flight (height, flying pose, thrusters) and held items (pistol, hats, backpack) come through as before.
+- mp.js changes (additive): `M.vrSnap` adds `v` to the snapshot; `p.v` / `p.vAt` are kept from received states. `M.posePeer` runs per peer after the pose,
+  and `M.step` lets vr.js move remote players from the XR frame loop (the page's own animation loop pauses during an immersive session).
+- Test: `test/vr_mp.js`: two emulated headsets and a flat player in one mocked room.
