@@ -9,7 +9,7 @@
 <script>/* t855u / v233: if an older galactic-arcade-v* cache is still on this phone, clear it and reload ONCE
    before the start screen is interactive — never mid-session (v228 did this 6s after the room started drawing). */
 (function(){if(!('caches'in window)||location.protocol==='file:')return;
-  var want='galactic-arcade_vrtest-v5',key='gavrReloaded.'+want,skip=false;   /* VR edition: only its own galactic-arcade_vrtest-* caches */
+  var want='galactic-arcade_vrtest-v6',key='gavrReloaded.'+want,skip=false;   /* VR edition: only its own galactic-arcade_vrtest-* caches */
   try{skip=!!sessionStorage.getItem(key);}catch(e){skip=true;}
   window.__gaUpdate={want:want,checked:!!skip,reloading:false};
   if(skip)return;
@@ -31,7 +31,7 @@
 <script src="player.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Galactic Arcade VR — TEST BUILD (memory test v5)</title>
+<title>Galactic Arcade VR — TEST BUILD (memory test v6)</title>
 <meta name="theme-color" content="#07040c">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -181,7 +181,7 @@ body.ingame #flBtn,body.ingame #wdBtn{display:none}
 @keyframes vpop{0%{opacity:0;transform:translate(-50%,-50%) scale(.4) rotate(-8deg)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.08)}20%{transform:translate(-50%,-50%) scale(1)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%) scale(1)}}
 .tpop{position:fixed;z-index:24;font:900 18px 'Courier New',monospace;color:#ffe08a;text-shadow:0 0 8px #ffb000,0 0 2px #000;pointer-events:none;animation:tpop 1.4s ease-out forwards}
 @keyframes tpop{0%{transform:translateY(6px) scale(.7);opacity:0}15%{transform:translateY(0) scale(1.15);opacity:1}70%{opacity:1}100%{transform:translateY(-34px) scale(1);opacity:0}}
-</style>
+@media (max-height:420px){#stTest{font-size:10px!important;padding:2px 7px!important;box-shadow:0 0 0 2px #ff2bd6!important;top:2px!important;left:2px!important}}</style>
 <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}</script>
 <!-- FAST LOAD (t229): fetch the whole module graph in parallel instead of import-by-import (shop.js / windows.js load later on demand) -->
 <link rel="modulepreload" href="main.js"><link rel="modulepreload" href="vendor/three.module.js"><link rel="modulepreload" href="vendor/addons/objects/Reflector.js"><link rel="modulepreload" href="vendor/addons/postprocessing/EffectComposer.js"><link rel="modulepreload" href="vendor/addons/postprocessing/RenderPass.js"><link rel="modulepreload" href="vendor/addons/postprocessing/UnrealBloomPass.js"><link rel="modulepreload" href="vendor/addons/postprocessing/OutputPass.js"><link rel="modulepreload" href="vendor/addons/postprocessing/Pass.js"><link rel="modulepreload" href="vendor/addons/postprocessing/ShaderPass.js"><link rel="modulepreload" href="vendor/addons/postprocessing/MaskPass.js"><link rel="modulepreload" href="vendor/addons/shaders/CopyShader.js"><link rel="modulepreload" href="vendor/addons/shaders/LuminosityHighPassShader.js"><link rel="modulepreload" href="vendor/addons/shaders/OutputShader.js"><link rel="modulepreload" href="vendor/addons/utils/BufferGeometryUtils.js"><link rel="modulepreload" href="grid.js"><link rel="modulepreload" href="strikecab.js"><link rel="modulepreload" href="ghostcab.js"><link rel="modulepreload" href="berserkcab.js"><link rel="modulepreload" href="monkeycab.js"><link rel="modulepreload" href="spacewin.js"><link rel="modulepreload" href="orccab.js"><link rel="modulepreload" href="cybercitycab.js"><link rel="modulepreload" href="blastercab.js"><link rel="modulepreload" href="pipcab.js"><link rel="modulepreload" href="clawcab.js"><link rel="modulepreload" href="mp.js"><link rel="modulepreload" href="voice.js"><link rel="modulepreload" href="novacab.js"><link rel="modulepreload" href="roadstercab.js"><link rel="modulepreload" href="dscab.js"><link rel="modulepreload" href="play.js"><link rel="modulepreload" href="shield.js"><link rel="modulepreload" href="golf.js"><link rel="modulepreload" href="kiosk.js"><link rel="modulepreload" href="opts.js"><link rel="modulepreload" href="teleport.js"><link rel="modulepreload" href="lavapaths.js"><link rel="modulepreload" href="bbcab.js"><link rel="modulepreload" href="rfcab.js"><link rel="modulepreload" href="skytowercab.js">
@@ -235,7 +235,7 @@ html.ga-updating #start,html.ga-updating #start *{pointer-events:none!important}
 </style>
 <link rel="stylesheet" href="cabinet-demo.css">
 </head><body>
-<div id="start" role="dialog" aria-label="Galactic Arcade start screen"><div id="stBg"></div><div id="stBox"><picture><source srcset="img/start.webp" type="image/webp"><img src="img/start.jpg" alt="Galactic Arcade — tap to start" draggable="false"></picture><div id="stTest" style="position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:5;background:#ffde00;color:#120018;font:900 clamp(13px,2.4vw,22px)/1.2 system-ui,sans-serif;letter-spacing:.08em;padding:5px 14px;border-radius:8px;box-shadow:0 0 0 3px #ff2bd6;pointer-events:none;white-space:nowrap">TEST BUILD · VR MEMORY TEST v5</div><div id="stBtns"><button class="stB" id="stStart">START</button><button class="stB" id="stOpt">OPTIONS</button></div></div>
+<div id="start" role="dialog" aria-label="Galactic Arcade start screen"><div id="stTest" style="position:fixed;top:max(6px,env(safe-area-inset-top));left:8px;z-index:50;background:#ffde00;color:#120018;font:900 clamp(13px,1.9vw,20px)/1.2 system-ui,sans-serif;letter-spacing:.06em;padding:5px 12px;border-radius:8px;box-shadow:0 0 0 3px #ff2bd6;pointer-events:none;white-space:nowrap;visibility:visible;opacity:1">TEST BUILD · VR MEMORY TEST v6</div><!-- vrtest-v6 (t463u): direct child of #start (not inside #stBox, which player.js hides), top-left so it clears the logo + buttons on the player select screen --><div id="stBg"></div><div id="stBox"><picture><source srcset="img/start.webp" type="image/webp"><img src="img/start.jpg" alt="Galactic Arcade — tap to start" draggable="false"></picture><div id="stBtns"><button class="stB" id="stStart">START</button><button class="stB" id="stOpt">OPTIONS</button></div></div>
 <div id="opt" aria-hidden="true"><div id="optP"><div id="optHd"><div id="optT">OPTIONS</div><button id="optX" title="Back">✕</button></div>
 <div id="optTabs"><button class="optTab" id="tabFloor">FLOOR</button><button class="optTab off" id="tabWalls">WALLS</button><button class="optTab off" id="tabWin">WINDOW</button></div>
 <div id="optNote"></div><button class="flT" id="optWard" style="display:block;margin:0 auto 10px;width:min(100%,300px)">WARDROBE</button><div id="flTiles"><div class="flT" data-floor="neon" id="flNeon"><img loading="lazy" src="img/floor_neon.webp" alt="" draggable="false">CURRENT<span class="now">NEON</span></div><div class="flT" data-floor="carpet" id="flCarpet"><img loading="lazy" src="img/floor_carpet.webp" alt="" draggable="false">ARCADE<span class="now">CHARACTER CARPET</span></div><div class="flT" data-floor="checkers" id="flChk"><img loading="lazy" src="img/floor_checkers.webp" alt="" draggable="false">CHECKERS<span class="now">BLACK + GOLD</span></div><div class="flT" data-floor="lava" id="flLava"><img loading="lazy" src="img/floor_lava.webp" alt="" draggable="false">LAVA<span class="now">CAVE PATHS</span></div><div class="flT" data-floor="cobble" id="flCob"><img loading="lazy" src="img/floor_cobble.webp" alt="" draggable="false">MEDIEVAL<span class="now">COBBLESTONE</span></div><div class="flT" data-floor="ice" id="flIce"><img loading="lazy" src="img/floor_ice.webp" alt="" draggable="false">ICE<span class="now">SLIPPERY</span></div></div>
@@ -420,7 +420,7 @@ if (document.getElementById('flBtn')) flBtnInit(); else document.addEventListene
 <script src="quest-pad.js"></script><!-- Quest Browser 2D (not in VR): v13 both sticks walk, turn with the on-screen turn buttons / trigger-drag (vr.js applies it) -->
 <script>/* FAST LOAD (t229): register the service worker (its install pre-caches ~7 MB) only after the room is drawing and things settle, so it never competes with the first load */
 if('serviceWorker' in navigator&&location.protocol!=='file:'){(function(){window.__GA_VER=window.__GA_VER||'v235';
-var done=0,want='galactic-arcade_vrtest-v5';
+var done=0,want='galactic-arcade_vrtest-v6';
 var reg=function(){if(done)return;done=1;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(){
   return caches.keys();}).then(function(ks){var stale=ks.filter(function(k){return k.indexOf('galactic-arcade_vrtest-')===0&&k!==want;});
   if(!stale.length)return;return Promise.all(stale.map(function(k){return caches.delete(k);}));
