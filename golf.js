@@ -113,7 +113,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
 #gfToast{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:12;font:900 clamp(20px,6vw,30px)/1.15 'Courier New',monospace;color:#fff;text-align:center;text-shadow:0 0 14px #ff2bd6;pointer-events:none;opacity:0;transition:opacity .3s}#gfToast.on{opacity:1}`;
   document.head.appendChild(css);
   const pop = document.createElement('div'); pop.id = 'gfPop';
-  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">5 TICKETS PER VISIT · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 🎟</button><div id="gfHint"></div>';
+  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">5 TICKETS PER VISIT · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 TICKETS</button><div id="gfHint"></div>';
   document.body.appendChild(pop);
   const btn = pop.querySelector('#gfBtn'), hint = pop.querySelector('#gfHint'), coarse = matchMedia('(pointer:coarse)').matches;
   const swallow = e => e.stopPropagation(); pop.addEventListener('pointerdown', swallow); pop.addEventListener('touchstart', swallow, { passive: true });
@@ -121,7 +121,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   addEventListener('keydown', e => { if (!S.popShown || S.open || play.mode !== 'walk' || (play.view && play.view.open)) return;
     if (/^(Enter|KeyE|Space)$/.test(e.code)) { e.stopImmediatePropagation(); e.preventDefault(); if (!e.repeat) unlock(); } }, true);
   const tickets = () => play.tickets.total;
-  function refresh() { const ok = tickets() >= GOLF_COST; btn.textContent = ok ? 'PAY 5 🎟' : 'NEED 5 🎟'; btn.classList.toggle('need', !ok);
+  function refresh() { const ok = tickets() >= GOLF_COST; btn.textContent = ok ? 'PAY 5 TICKETS' : 'NEED 5 TICKETS';   // v19 (t411u): spelled out btn.classList.toggle('need', !ok);
     hint.textContent = ok ? (coarse ? 'TAP TO OPEN THE SHIELD · YOU HAVE ' : 'ENTER / E / SPACE · YOU HAVE ') + tickets() + ' 🎟' : 'NOT ENOUGH TICKETS · YOU HAVE ' + tickets() + ' 🎟'; }
   let ac = null; const ctx = () => (ac = ac || new (window.AudioContext || window.webkitAudioContext)());
   const tone = (f0, f1, dur, type, vol) => { try { const c = ctx(), t = c.currentTime, o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
