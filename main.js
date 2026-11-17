@@ -1863,14 +1863,21 @@ window.__stillScreens = !LIVE_SCREENS;
 // for a 1x1 placeholder (never nulled), so no material changes shader program: no compiles on a beam (v18 pre-warm keeps working), and a
 // beam to the shop starts the upload when the beam starts (tp.locked), before the cut.
 const STREAM = window.__gaStream = { shop: 'off', room2: 'off', wantShop: false, wantRoom2: false, ups: 0, evicts: 0 };
-function streamHold() { const ms = window.__gaStreamHold; return ms != null ? Math.max(200, +ms) : 8000; }
+// vrtest-v2 (Dave t446u: freezes on the start screen and near Grok): longer holds + a wider deadband (no load/evict thrash around the pad
+// or the hallway door), never evict inside the shop, nothing is evicted while the start screen / the VR pre-warm is up, and uploads go
+// one per frame inside a time budget (no 'everything at once' when a beam starts).
+function streamHold(which) { const ms = window.__gaStreamHold; return ms != null ? Math.max(200, +ms) : which === 'shop' ? 30000 : 15000; }
+function streamReady() { const S = window.__start, V = window.__gaVR, pw = V && V.prewarm;
+  return !(S && S.shown && !S.dismissed && document.getElementById('start')) && !(pw && pw.busy); }
 function streamWant() {
   const m = renderer.xr.isPresenting ? viewPos() : monkey.position, pad = tp && tp.PAD1;   // VR: the head; flat: the player (not the chase camera)
   const inShop = (tp && tp.where === 2) || m.x > WX - 14;
   const padD = pad ? Math.hypot(m.x - pad.x, m.z - pad.z) : 99;
   const locking = !!(tp && tp.locked);
-  return { wantShop: inShop || padD < 8 || locking, evictShop: !inShop && padD > 10 && !locking,
-    wantRoom2: m.z < -HALF + 5 || (tp && tp.where === 1 && m.z < -HALF), evictRoom2: m.z > -HALF + 7 };
+  return { wantShop: inShop || padD < 8 || locking, evictShop: !inShop && padD > 14 && !locking,
+    // v2: room 2 only from room 1's side (the shop sits at x > WX - 14 with its own z range: walking round Grok's counter used to stream
+    // Dead Signal + its floor mirror in and out while you were in the shop)
+    wantRoom2: !inShop && (m.z < -HALF + 5 || (tp && tp.where === 1 && m.z < -HALF)), evictRoom2: inShop || m.z > -HALF + 9 };
 }
 function setRoom2Gpu(on) {
   on = !!on;
@@ -1878,7 +1885,7 @@ function setRoom2Gpu(on) {
   const mir = room2 && room2.userData && room2.userData.mirror;
   if (mir && typeof mir.getRenderTarget === 'function') { const rt = mir.getRenderTarget();
     if (rt) { if (!rt.__gaSz) rt.__gaSz = [rt.width, rt.height]; try { rt.setSize(on ? rt.__gaSz[0] : 1, on ? rt.__gaSz[1] : 1); } catch (e) {} } }
-  if ((STREAM.room2 === 'on') !== on) { if (on) STREAM.ups++; else STREAM.evicts++; }
+  if ((STREAM.room2 === 'on') !== on) { if (on) { STREAM.ups++; STREAM.ups2 = (STREAM.ups2 || 0) + 1; } else { STREAM.evicts++; STREAM.evicts2 = (STREAM.evicts2 || 0) + 1; } }
   STREAM.room2 = on ? 'on' : 'off';
 }
 let _shopGpuGen = 0;
@@ -1893,12 +1900,14 @@ function setShopGpu(on) {
 const _streamT = { shop: 0, room2: 0 };
 function tickRoomStream(now) {
   const w = streamWant(); STREAM.wantShop = w.wantShop; STREAM.wantRoom2 = w.wantRoom2;
-  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); try { if (shop && shop.gpu && shop.gpu.pump) STREAM.queued = shop.gpu.pump(tp && tp.locked ? 99 : 2); } catch (e) {} }
-  else if (w.evictShop) { if (!_streamT.shop) _streamT.shop = now; else if (now - _streamT.shop >= streamHold()) setShopGpu(false); }
+  const ready = streamReady(), B = renderer.xr.isPresenting ? 4 : 8;   // ms of uploads per frame (the first upload always goes); a beam charge gets 3 per frame / 2x budget so the shop is ready at the cut
+  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); try { if (shop && shop.gpu && shop.gpu.pump) STREAM.queued = shop.gpu.pump(tp && tp.locked ? 3 : 1, tp && tp.locked ? B * 2 : B); } catch (e) {} }
+  else if (w.evictShop && ready) { if (!_streamT.shop) _streamT.shop = now; else if (now - _streamT.shop >= streamHold('shop')) setShopGpu(false); }
   else _streamT.shop = 0;
   if (w.wantRoom2) { _streamT.room2 = 0; setRoom2Gpu(true); }
-  else if (w.evictRoom2) { if (!_streamT.room2) _streamT.room2 = now; else if (now - _streamT.room2 >= streamHold()) setRoom2Gpu(false); }
+  else if (w.evictRoom2 && ready) { if (!_streamT.room2) _streamT.room2 = now; else if (now - _streamT.room2 >= streamHold('room2')) setRoom2Gpu(false); }
   else _streamT.room2 = 0;
+  try { const g2 = dsCab && dsCab.userData && dsCab.userData.gpu; if (g2 && g2.queue.length) STREAM.queued2 = g2.pump(1, B); } catch (e) {}
 }
 try { setRoom2Gpu(false); } catch (e) {}
 try { applyLowBudget(); } catch (e) {}

@@ -38,7 +38,10 @@ const { open } = require('./lib');
 
   const put = (x, z, wait = 400) => page.evaluate(([x, z]) => {
     const A = window.__arcade; A.monkey.position.set(x, 0, z); A.st.vel.set(0, 0, 0);
-  }, [x, z]).then(() => page.waitForTimeout(wait));
+  }, [x, z]).then(() => page.waitForTimeout(wait))
+    // vrtest-v2: uploads go one per frame, so wait until both stream queues are empty
+    .then(() => page.waitForFunction(() => { const A = window.__arcade, sh = window.__shop, d = A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu;
+      return !(sh && sh.gpu && sh.gpu.queue.length) && !(d && d.queue.length); }, null, { timeout: 30000 })).then(() => page.waitForTimeout(200));
 
   // shop idle-loads after the first frames, then should evict at spawn (0, 5)
   await page.evaluate(() => window.__arcade.loadShop()); await page.waitForTimeout(1500);

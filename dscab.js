@@ -152,6 +152,6 @@ export function buildDeadSignalStation() {
       }
     } };
   updateCable();
-  g.userData.gpu = bindStreamGpu(g, { minEdge: 0, alsoNames: ['screen'] });
+  g.userData.gpu = bindStreamGpu(g, { stagger: true, minEdge: 0, alsoNames: ['screen'] });   // vrtest-v2: uploads one per frame (main.js pumps it)
   return g;
 }

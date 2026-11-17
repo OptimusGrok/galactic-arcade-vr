@@ -186,21 +186,49 @@ export function bindStreamGpu(root, opt = {}) {
       }
     }
   });
+  // vrtest-v2 (Dave t446u freezes): re-uploading a JPEG <img> after dispose() made the browser decode it again ON the main thread inside
+  // texImage2D (~40-60 ms per shop mural at 4x CPU, worse on the Quest). Each streamed <img> is decoded ONCE off the main thread into an
+  // ImageBitmap (createImageBitmap, flipped there, so flipY = false); it is swapped in only while the texture is off the GPU, so a later
+  // upload is a plain copy. Canvases are left alone (they may be redrawn).
+  const stats = { ups: 0, upMs: 0, maxMs: 0, last: 0, bitmaps: 0 };
+  const isImg = im => typeof HTMLImageElement !== 'undefined' && im instanceof HTMLImageElement;
+  const toBitmap = it => {
+    if (it.kind !== 'map' || it.bmp || typeof createImageBitmap !== 'function') return;
+    const im = it.tex.image; if (!isImg(im)) return;
+    const go = () => { if (it.bmp || !im.naturalWidth) return; it.bmp = 'busy';
+      createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        .then(b => { it.bmp = b; stats.bitmaps++; if (!it.onGpu) swapIn(it); }).catch(() => { it.bmp = 'no'; }); };
+    if (im.complete && im.naturalWidth) go(); else im.addEventListener('load', go, { once: true });
+  };
+  const swapIn = it => { const b = it.bmp; if (!b || typeof b === 'string' || it.tex.image === b) return;
+    for (const o of items) if (o.tex === it.tex) o.onGpu = false;   // the same texture can sit in two slots
+    it.tex.image = b; it.tex.flipY = false; };
   const restore = it => {
     try {
+      const t0 = performance.now();
       it.mat[it.slot] = it.tex;
       if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.orig || 0xffffff);
       it.tex.needsUpdate = true;
       const R = opt.renderer || (window.__arcade && window.__arcade.renderer); if (R && R.initTexture) R.initTexture(it.tex);
-    } catch (e) {}
+      for (const o of items) if (o.tex === it.tex) o.onGpu = true;
+      const ms = performance.now() - t0; stats.ups++; stats.upMs += ms; stats.last = ms; if (ms > stats.maxMs) stats.maxMs = ms;
+      return ms;
+    } catch (e) { return 0; }
   };
+  for (const it of items) { it.onGpu = true; toBitmap(it); }
   const api = {
     on: true,
     items,
     queue: [],
     // TEST v1 (VR): with opt.stagger, set(true) only queues the maps; pump(n) uploads n per frame (placeholder until then), so walking up
     // to the pad never stalls one headset frame on ~10 uploads. A beam pumps everything at once at the start of the charge.
-    pump(n) { let k = 0; while (api.queue.length && k < n) { const it = api.queue.shift(); if (it.kind !== 'rt') restore(it); k++; } return api.queue.length; },
+    // v2: pump(n, budgetMs): at most n uploads and stop once budgetMs is used (the first always goes); after a slow upload the next frames
+    // rest (one frame per 12 ms spent), so the headset never stacks two slow uploads back to back.
+    stats,
+    pump(n, budgetMs) { if (api.rest > 0) { api.rest--; return api.queue.length; } const t0 = performance.now(), B = budgetMs == null ? 1e9 : budgetMs; let k = 0;
+      while (api.queue.length && k < n) { const it = api.queue.shift(); if (it.kind !== 'rt') { if (it.tex.image !== it.bmp) swapIn(it); restore(it); } k++; if (performance.now() - t0 >= B) break; }
+      const ms = performance.now() - t0; api.rest = ms > 12 ? Math.min(6, Math.floor(ms / 12)) : 0; return api.queue.length; },
+    rest: 0,
     set(on) {
       on = !!on;
       if (on === api.on) return api;
@@ -208,15 +236,17 @@ export function bindStreamGpu(root, opt = {}) {
       api.queue.length = 0;
       for (const it of items) {
         try {
+          toBitmap(it);   // TextureLoader sets .image only once the file has loaded, so try again here
           if (on && opt.stagger && it.kind !== 'rt') { api.queue.push(it); continue; }
           if (it.kind === 'rt') { it.rt.setSize(on ? it.w : 1, on ? it.h : 1); continue; }
           // VR test build: swap in a 1x1 placeholder of the same kind instead of null, so the material keeps its shader program
           // (a null map changes USE_MAP -> a shader compile on every stream in/out, the v18 beam stall). On: re-upload right away.
-          if (on) restore(it);
+          if (on) { swapIn(it); restore(it); }
           else {
             it.mat[it.slot] = placeholderFor(it.tex, THREE_REF || opt.THREE);
             if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.color);
             try { it.tex.dispose(); } catch (e) {}
+            it.onGpu = false; swapIn(it);
           }
         } catch (e) {}
       }
