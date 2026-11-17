@@ -1172,17 +1172,17 @@ export function setupVR(A) {
   // four ways from the pad, so the GPU driver builds its draw state and the meshes' vertex buffers are uploaded before the first real frame.
   // Reflector passes are switched off for it (the headset doesn't draw them either); the next normal frame repaints those pixels.
   const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300);
-  function drawWarm(area) { if (S.presenting) return; stageArea(area, () => { const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
+  function drawWarm(area, spot, restage) { if (S.presenting) return; stageArea(area, () => { const undoG = restage ? restage() : null; const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
       const vp = new THREE.Vector4(), sc = new THREE.Vector4(), st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(vp); renderer.getScissor(sc);
       try { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true);
-        _wc.position.copy(camera.position);
-        for (let k = 0; k < 4; k++) { _wc.rotation.set(-0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws = (PW.draws || 0) + 1; }
+        _wc.position.copy(camera.position); if (spot) _wc.position.set(spot.x, 1.6, spot.z);
+        for (let k = 0; k < (spot ? 8 : 4); k++) { _wc.rotation.set(spot && k >= 4 ? -0.9 : -0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws = (PW.draws || 0) + 1; }
         const tw = area === 2 ? MV.twin : null;   // the shop mirror's own pass (its half-float target, xr off) as the headset draws it
         if (tw) { const rt = tw.getRenderTarget(), mv = monkey.visible, xe = renderer.xr.enabled; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(rt); rt.scissor.set(0, 0, 2, 2); rt.scissorTest = true; rt.viewport.set(0, 0, 2, 2);
             for (let k = 0; k < 4; k++) { _wc.rotation.set(-0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws++; } }
           finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } } }
       catch (e) { PW.err = 'draw ' + e; }
-      finally { renderer.setScissorTest(st0); renderer.setScissor(sc); renderer.setViewport(vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; } }); }
+      finally { renderer.setScissorTest(st0); renderer.setScissor(sc); renderer.setViewport(vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; if (undoG) undoG(); } }); }
   async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
     try {
       try { if (window.__arcade && window.__arcade.loadShop) await window.__arcade.loadShop(); } catch (e) {}
@@ -1196,6 +1196,17 @@ export function setupVR(A) {
         if (job) await job; await nextFrame();
         drawWarm(area); await nextFrame();
         PW.areas.push({ area, sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
+      // vrtest-v5 (t458u): the shop's other light sets: the golf basement in view (from ~8 m before the stairs) and the golf lamps on (from 3 m)
+      const G = window.__minigolf;
+      if (G && G.warmStage && scene.getObjectByName('golfRoom')) for (const [show, lit] of [[true, false], [true, true]]) {
+        const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '', undo = G.warmStage(show, lit);
+        try { stageArea(2, () => { undo(); undo = G.warmStage(show, lit); LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
+            try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
+            const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } });
+          if (job) await job; await nextFrame();
+          undo(); undo = G.warmStage(show, lit); drawWarm(2, G.warmSpot(), () => G.warmStage(show, lit)); await nextFrame();
+        } catch (e) { PW.err = 'golf ' + e; } finally { undo(); LS.t = -1e9; }
+        PW.areas.push({ area: 'golf' + (lit ? 'Lit' : 'Room'), sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
       // link + read uniforms a handful of programs per frame (the first draw would otherwise do it)
       const progs = (renderer.info.programs || []).slice(); for (let i = 0; i < progs.length; i++) { try { progs[i].getUniforms(); } catch (e) {} if (i % 12 === 11) await nextFrame(); }
       // upload every texture (hidden rooms too), a few per frame

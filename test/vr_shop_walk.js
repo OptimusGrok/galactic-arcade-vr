@@ -21,13 +21,18 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
   await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 60000);
   await E(() => { const A = window.__arcade, r = A.renderer, o = r.render.bind(r), R = window.__walk = { f: [], last: 0, t0: performance.now(), on: false };
     r.render = function (s, c) { const out = o(s, c); if (r.xr.isPresenting && s === A.scene && R.on) { const n = performance.now(), i = r.info;
-        if (R.last) R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls]); R.last = n; } return out; }; });
+        if (R.last) R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls, ((window.__gaVR && window.__gaVR.warms) || []).length, (window.__gaStream && window.__gaStream.ups) || 0]); R.last = n;
+        const np = i.programs ? i.programs.length : 0; if (R.pn != null && np !== R.pn) { const ids = new Set(i.programs.map(q => q.id)), prev = R.pids || new Set(), add = i.programs.filter(q => !prev.has(q.id)), gone = [...prev].filter(id => !ids.has(id));
+          const names = {}; for (const q of add) { const k = q.name + (q.cacheKey && /,true,|clipping/i.test(q.cacheKey) ? '' : ''); names[k] = (names[k] || 0) + 1; }
+          (R.pl = R.pl || []).push({ t: Math.round(n - R.t0), add: add.length, gone: gone.length, names: Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 12), key0: add[0] && add[0].cacheKey && add[0].cacheKey.slice(0, 400) }); }
+        if (R.pn == null || np !== R.pn) R.pids = new Set((i.programs || []).map(q => q.id)); R.pn = np; } return out; }; });
   const place = (x, z, yaw) => E(([x, z, yaw]) => { const S = window.__gaVR; S.rig = { x, y: 0, z, yaw }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); }, [x, z, yaw]);
   await E(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await until(() => window.__tp.where === 2 && window.__tp.state === 'idle');
   await page.waitForTimeout(8000);   // the shop has streamed in and pre-warm is done; the walks start from a steady state
   const G = await E(() => { const gk = window.__shop.grok, T = window.__arcade.THREE, p = gk.getWorldPosition(new T.Vector3()), h = window.__gaVR.head, g = window.__minigolf;
     return { gx: p.x, gz: p.z, hx: h.x, hz: h.z, X0: g.X0, Z0: g.Z0, Z1: g.Z1 }; });
   console.log('  geo ' + JSON.stringify(G));
+  console.log('  prewarm ' + JSON.stringify(await E(() => { const P = window.__gaVR.prewarm; return P && { done: P.done, ms: P.ms, err: P.err, areas: P.areas }; })));
   const walk = async (name, pts, yaw) => {
     if (which.length && !which.includes(name)) return;
     await place(pts[0][0], pts[0][1], yaw); await page.waitForTimeout(1500);
@@ -35,8 +40,10 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
     for (let i = 1; i < pts.length; i++) { const [ax, az] = pts[i - 1], [bx, bz] = pts[i]; for (let k = 1; k <= 8; k++) { await place(ax + (bx - ax) * k / 8, az + (bz - az) * k / 8, yaw); await page.waitForTimeout(150); } }
     await page.waitForTimeout(2500);
     const f = await E(() => { window.__walk.on = false; return window.__walk.f; }); await profStop(pc, name);
+    if (process.env.DIAG) console.log('WARMS ' + name + ' ' + JSON.stringify(await E(() => (window.__gaVR.warms || []).slice(-6))));
+    if (process.env.DIAG) console.log('PROGS ' + name + ' ' + JSON.stringify(await E(() => { const R = window.__walk, pl = R.pl || []; R.pl = []; return pl; })));
     const iv = f.map(x => x[1]), med = iv.slice().sort((a, b) => a - b)[Math.floor(iv.length / 2)];
-    const lab = f.map((x, j) => { const p = f[j - 1] || x; return [x[0], x[1], (x[2] - p[2] ? '+' + (x[2] - p[2]) + 'prog ' : '') + (x[3] - p[3] ? (x[3] > p[3] ? '+' : '') + (x[3] - p[3]) + 'tex ' : '') + (x[4] - p[4] ? (x[4] > p[4] ? '+' : '') + (x[4] - p[4]) + 'geo ' : '') + 'c' + x[5]]; });
+    const lab = f.map((x, j) => { const p = f[j - 1] || x; return [x[0], x[1], (x[2] - p[2] ? '+' + (x[2] - p[2]) + 'prog ' : '') + (x[3] - p[3] ? (x[3] > p[3] ? '+' : '') + (x[3] - p[3]) + 'tex ' : '') + (x[4] - p[4] ? (x[4] > p[4] ? '+' : '') + (x[4] - p[4]) + 'geo ' : '') + (x[6] - p[6] ? 'WARM ' : '') + (x[7] - p[7] ? '+' + (x[7] - p[7]) + 'up ' : '') + 'c' + x[5]]; });
     const top = lab.slice().sort((a, b) => b[1] - a[1]).slice(0, 8), max = top[0] ? top[0][1] : 0;
     console.log('WALK ' + name + ' ' + JSON.stringify({ frames: f.length, median: med, max, over100: iv.filter(v => v > 100).length, over250: iv.filter(v => v > 250).length, progs: f.length ? f[f.length - 1][2] - f[0][2] : 0, top }));
     if (process.env.CHECK) { const c = max <= MAXMS; console.log((c ? 'PASS ' : 'FAIL ') + name + ' walk: longest frame ' + max + ' ms (limit ' + MAXMS + ')'); if (!c) ok = false; }

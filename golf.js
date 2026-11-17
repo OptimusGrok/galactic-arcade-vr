@@ -298,5 +298,12 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   function ballSnap() { if (!S.below) return undefined; const h = holes[S.cur]; if (!h || h.ball.sunk || (!S.aiming && !S.rolling)) return undefined; const b = ballW(h); return [Math.round(b.x * 100) / 100, Math.round(b.y * 100) / 100, Math.round(b.z * 100) / 100]; }
   Object.assign(S, { update, block, collideBelow, ground, camBlock, camClamp, cam, unlock, arm, refresh, pop, shield, group: grp, room, holes, payout: golfPayout, entry: { x: X0 - 1.0, z: ZM },
     startAim, stopAim, strike, sink, goTee, nearBall, ballSnap, enterVisit, AREAS, vrNear, vrAim, vrStrike, ballAt });
+  // vrtest-v5 (Dave t458u, shop freezes near Grok's counter / toward the golf): the basement (3 holes, 3 point lights each) shows from
+  // 8 m out and the 5 golf lamps switch on from 3 m out; each changes the shop's lit-light count, so three built a new program for EVERY lit
+  // material in view in one frame (~150 programs, 1.7-2.7 s at 4x CPU in the emulator). vr.js pre-warms these light sets in the background;
+  // warmStage(show, lit) stages one and returns the undo.
+  S.warmStage = (show, lit) => { const rv = room.visible, lv = lights.map(l => l.visible); room.visible = show; for (const l of lights) l.visible = lit;
+    return () => { room.visible = rv; lights.forEach((l, i) => { l.visible = lv[i]; }); }; };
+  S.warmSpot = () => ({ x: X0 - 1.2, z: ZM });
   cutFloor(); return S;
 }
