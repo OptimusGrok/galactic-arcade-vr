@@ -186,24 +186,34 @@ export function bindStreamGpu(root, opt = {}) {
       }
     }
   });
+  const restore = it => {
+    try {
+      it.mat[it.slot] = it.tex;
+      if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.orig || 0xffffff);
+      it.tex.needsUpdate = true;
+      const R = opt.renderer || (window.__arcade && window.__arcade.renderer); if (R && R.initTexture) R.initTexture(it.tex);
+    } catch (e) {}
+  };
   const api = {
     on: true,
     items,
+    queue: [],
+    // TEST v1 (VR): with opt.stagger, set(true) only queues the maps; pump(n) uploads n per frame (placeholder until then), so walking up
+    // to the pad never stalls one headset frame on ~10 uploads. A beam pumps everything at once at the start of the charge.
+    pump(n) { let k = 0; while (api.queue.length && k < n) { const it = api.queue.shift(); if (it.kind !== 'rt') restore(it); k++; } return api.queue.length; },
     set(on) {
       on = !!on;
       if (on === api.on) return api;
       api.on = on;
+      api.queue.length = 0;
       for (const it of items) {
         try {
+          if (on && opt.stagger && it.kind !== 'rt') { api.queue.push(it); continue; }
           if (it.kind === 'rt') { it.rt.setSize(on ? it.w : 1, on ? it.h : 1); continue; }
           // VR test build: swap in a 1x1 placeholder of the same kind instead of null, so the material keeps its shader program
           // (a null map changes USE_MAP -> a shader compile on every stream in/out, the v18 beam stall). On: re-upload right away.
-          if (on) {
-            it.mat[it.slot] = it.tex;
-            if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.orig || 0xffffff);
-            it.tex.needsUpdate = true;
-            try { const R = opt.renderer || (window.__arcade && window.__arcade.renderer); if (R && R.initTexture) R.initTexture(it.tex); } catch (e) {}
-          } else {
+          if (on) restore(it);
+          else {
             it.mat[it.slot] = placeholderFor(it.tex, THREE_REF || opt.THREE);
             if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.color);
             try { it.tex.dispose(); } catch (e) {}

@@ -63,6 +63,7 @@ const { open } = require('./lib');
 
   // approach the teleporter pad: shop murals / shelves / labels load early
   await put(-9, -9, 800);
+  await page.waitForFunction(() => window.__gaStream.shop === 'on' && !window.__gaStream.queued, null, { timeout: 8000 }).catch(() => {});   // test-v1: maps are uploaded 2 per frame
   r = await snap();
   console.log('near-pad', JSON.stringify(r));
   chk(r.stream.wantShop && r.shopGpu && r.mural.hasMap && r.mural.w >= 512 && r.shelf.hasMap && r.labels.hasMap, 'near the teleporter, shop murals and shelf/price canvases are on the GPU', { stream: r.stream, mural: r.mural, shelf: r.shelf, labels: r.labels, title: r.title });

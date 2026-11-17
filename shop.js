@@ -1201,7 +1201,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
   window.__shop = api;
-  api.gpu = bindStreamGpu(G, { minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
+  api.gpu = bindStreamGpu(G, { stagger: true, minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
   api.setGpu = on => api.gpu.set(!!on);
   return api;
 }

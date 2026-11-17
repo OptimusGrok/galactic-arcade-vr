@@ -1893,7 +1893,7 @@ function setShopGpu(on) {
 const _streamT = { shop: 0, room2: 0 };
 function tickRoomStream(now) {
   const w = streamWant(); STREAM.wantShop = w.wantShop; STREAM.wantRoom2 = w.wantRoom2;
-  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); }
+  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); try { if (shop && shop.gpu && shop.gpu.pump) STREAM.queued = shop.gpu.pump(tp && tp.locked ? 99 : 2); } catch (e) {} }
   else if (w.evictShop) { if (!_streamT.shop) _streamT.shop = now; else if (now - _streamT.shop >= streamHold()) setShopGpu(false); }
   else _streamT.shop = 0;
   if (w.wantRoom2) { _streamT.room2 = 0; setRoom2Gpu(true); }
