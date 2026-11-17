@@ -1,0 +1,75 @@
+// v16 (t399u, Dave): NEON KNOCKOUT in the arcade's own XR session (no page reload). BEAM TO NEON KNOCKOUT sign on the room-1 pad,
+// the studio's gloves ride the arcade controllers (their models + rays hidden), punching the START / difficulty orbs, calibration from the
+// headset height, punches hit orbs, ducking under a bar by lowering the headset dodges it, results pay tickets, BEAM TO ARCADE goes back.
+const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
+(async () => {
+  let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
+  const { page, errors, close } = await openVR({ init: { content: IWER_SRC + SETUP + HEADSET_FB } });
+  const E = (f, a) => page.evaluate(f, a), until = (f, ms = 30000, arg) => page.waitForFunction(f, arg, { timeout: ms });
+  const place = async (x, z, yaw = 0) => { await E(([x, z, yaw]) => { const S = window.__gaVR; S.rig = { x, y: 0, z, yaw }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); }, [x, z, yaw]); await H.frames(page, 6); };
+  const aimPress = async (target, hand = 'right') => { await H.aim(page, hand, [0.2, 1.3, -0.2], target); await H.frames(page, 3); await H.press(page, hand, 'trigger'); };
+  const sign = id => E(id => { const s = window.__gaVR.signs().find(q => q.id === id); return s ? s.at : null; }, id);
+  // put a controller at a WORLD position (rig-local for IWER)
+  const ctrlAt = (hand, w) => E(([hand, w]) => { const r = window.__gaVR.rig, c = Math.cos(r.yaw), s = Math.sin(r.yaw), dx = w[0] - r.x, dz = w[2] - r.z;
+    const C = window.__xrd.controllers[hand]; C.position.set(c * dx - s * dz, w[1] - r.y, s * dx + c * dz); C.quaternion.set(0, 0, 0, 1); }, [hand, w]);
+  const punchAt = async (hand, w) => { for (const k of [0.45, 0.3, 0.15, 0, -0.12]) { await ctrlAt(hand, [w[0], w[1], w[2] + k]); await H.frames(page, 1); } await ctrlAt(hand, [w[0] + (hand === 'left' ? -0.3 : 0.3), w[1] - 0.3, w[2] + 0.5]); await H.frames(page, 2); };
+  const vis = () => E(() => { const sc = window.__arcade.scene, g = [0, 1].map(i => sc.getObjectByName('vrGrip' + i)).filter(Boolean), rays = [0, 1].map(i => { const c = sc.getObjectByName('vrController' + i); return c && c.userData.ray ? c.userData.ray.visible : null; });
+    return { models: g.map(x => !!((x.userData.fallback && x.userData.fallback.visible) || (x.userData.model && x.userData.model.visible))), rays }; });
+  try {
+    await E(() => { localStorage.removeItem('gaNK.scores'); localStorage.removeItem('gaNK.dailyDone'); window.__arcade.play.tickets.total = 100; window.__tpTimeScale = 3; });
+    await until(() => document.getElementById('vrBtn').classList.contains('on'), 20000);
+    await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 30000);
+    const pad = await E(() => [window.__tp.PAD1.x, window.__tp.PAD1.z]);
+    await place(pad[0] + 2.2, pad[1] + 2.2, Math.PI / 4);
+    const sg = await sign('beamNK'), sShop = await sign('beamShop');
+    chk(!!sg && !!sShop && sg[1] > sShop[1], 'room-1 pad: BEAM TO NEON KNOCKOUT sign above BEAM TO SHOP ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
+    chk(!(await E(() => !!window.__nkGame)), 'lazy: the game is not loaded before the first beam');
+    await aimPress(sg);
+    await until(() => window.__tp.where === 3 && window.__tp.state === 'idle' && window.__nkGame && window.__nkGame.inStudio, 90000); await H.frames(page, 8);
+    let s = await E(() => { const S = window.__gaVR, P = window.__tp.PAD3; return { pres: S.presenting, head: S.head && [S.head.x, S.head.z], P: [P.x, P.z], reloads: performance.getEntriesByType('navigation').length }; });
+    chk(s.pres && Math.hypot(s.head[0] - s.P[0], s.head[1] - s.P[1]) < 0.6, 'beamed to the studio inside the same XR session (head on the studio pad) ' + JSON.stringify(s));
+    const hs = await E(() => window.__hsRead && window.__hsRead()); chk(hs && hs.left.lit > 2, 'the headset shows the neon studio (lit ' + (hs && hs.left.lit) + '%)');
+    // gloves on the controllers, controller models hidden; rays still there for the menu
+    await H.aim(page, 'left', [-0.2, 1.1, -0.35], [0, 1, -5]); await H.aim(page, 'right', [0.2, 1.1, -0.35], [0, 1, -5]); await H.frames(page, 4);
+    s = await E(() => { const N = window.__nkGame, sc = window.__arcade.scene, T = window.__arcade.THREE, out = {}; for (const [k, h] of [['L', 'left'], ['R', 'right']]) { const S = window.__gaVR, gp = S.nkGrip(h); const gw = gp.obj.getWorldPosition(new T.Vector3()); out[k] = { vis: N.gloves[k].visible, d: +N.gloves[k].getWorldPosition(new T.Vector3()).distanceTo(gw).toFixed(3) }; } return out; });
+    chk(s.L.vis && s.R.vis && s.L.d < 0.06 && s.R.d < 0.06, 'boxing gloves ride the controllers ' + JSON.stringify(s));
+    let v = await vis(); chk(v.models.every(m => !m), 'controller models hidden in the studio (the gloves replace them) ' + JSON.stringify(v));
+    // punch the BEAST orb, then START
+    await H.aim(page, 'right', [0.2, 1.1, 0.1], [0, 1, -5]); await H.frames(page, 3);
+    let w = await E(() => window.__nkGame.orbWorld('beast').toArray()); await punchAt('left', w);
+    chk((await E(() => window.__nkGame.state.diff)) === 'beast', 'punching the BEAST orb picks BEAST');
+    w = await E(() => window.__nkGame.orbWorld('normal').toArray()); await H.frames(page, 20); await punchAt('left', w);
+    chk((await E(() => window.__nkGame.state.diff)) === 'normal', 'punching NORMAL picks NORMAL');
+    await H.frames(page, 20); w = await E(() => window.__nkGame.orbWorld('start').toArray()); await punchAt('right', w);
+    s = await E(() => { const N = window.__nkGame; return { mode: N.state.mode, vr: N.state.vr, headH: N.state.headH, bpm: N.BPM }; });
+    chk(s.mode === 'play' && s.vr && Math.abs(s.headH - 1.6) < 0.08, 'punching START starts a VR round, calibrated to the headset height ' + JSON.stringify(s));
+    v = await vis(); chk(v.rays.every(r => !r) && v.models.every(m => !m), 'during the round: no pointer rays, no controller models ' + JSON.stringify(v));
+    // punch orbs as they arrive; duck under bars
+    const t0 = Date.now(); let dodged = 0;
+    while (Date.now() - t0 < 150000) {
+      const st = await E(() => { const N = window.__nkGame; return { t: N.state.t, hits: N.state.hits, dodges: N.state.dodges, tw: N.targetsW(), bars: N.bars() }; });
+      if (st.hits >= 4 && st.dodges >= 1) break;
+      const bar = st.bars.find(d => d > 0 && d < 0.6);
+      if (bar != null) { await E(() => { window.__xrd.position.y = 1.15; }); await H.frames(page, 2); while ((await E(() => window.__nkGame.bars().some(d => d > -0.05)))) await H.frames(page, 2); await E(() => { window.__xrd.position.y = 1.6; }); continue; }
+      const t = st.tw.find(t => t.dt < 0.25 && t.dt > -0.3 && t.type !== 'C') || st.tw.find(t => t.dt < 0.25 && t.dt > -0.3);
+      if (t) await punchAt(t.type === 'R' ? 'right' : 'left', t.p); else await H.frames(page, 1);
+    }
+    s = await E(() => { const st = window.__nkGame.state; return { t: +st.t.toFixed(1), hits: st.hits, misses: st.misses, dodges: st.dodges, bumps: st.bumps, score: st.score }; });
+    chk(s.hits >= 4, 'VR punches hit the orbs ' + JSON.stringify(s));
+    chk(s.dodges >= 1, 'lowering the headset under a red bar dodges it');
+    const t1 = await E(() => window.__arcade.play.tickets.total);
+    await E(() => { const N = window.__nkGame; N.skipTo(N.state.lastT - 0.5); }); await until(() => window.__nkGame.state.mode === 'results', 30000); await H.frames(page, 3);
+    s = await E(() => ({ r: window.__nkGame.state.result, t: window.__arcade.play.tickets.total, c: window.__nkGame.dbgPanel }));
+    chk(s.r && s.t === t1 + s.r.tix, 'round complete in VR: grade ' + s.r.grade + ', +' + s.r.tix + ' tickets');
+    v = await vis(); chk(v.rays.some(r => r), 'after the round the pointer rays are back (signs / menus)');
+    // back to the arcade with the studio pad's sign
+    const P3 = await E(() => [window.__tp.PAD3.x, window.__tp.PAD3.z]); await place(P3[0] - 1.6, P3[1] - 1.6, Math.PI * 1.25);
+    const sb = await sign('beamArcadeNK'); chk(!!sb, 'BEAM TO ARCADE sign over the studio pad');
+    if (sb) await aimPress(sb);
+    await until(() => window.__tp.where === 1 && window.__tp.state === 'idle', 90000); await H.frames(page, 8);
+    v = await vis(); s = await E(() => ({ g: window.__nkGame.gloves.L.visible || window.__nkGame.gloves.R.visible, pres: window.__gaVR.presenting }));
+    chk(s.pres && !s.g && v.models.every(m => m), 'back in the arcade (still in VR): gloves gone, controller models back ' + JSON.stringify(v));
+  } catch (e) { chk(false, 'exception ' + (e && e.stack || e).toString().slice(0, 600)); }
+  const errs = errors.filter(e => !/supabase|ERR_FAILED|net::/i.test(e)); chk(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
+  await close(); console.log(ok ? 'ALL PASS' : 'SOME FAILED'); process.exit(ok ? 0 : 1);
+})();

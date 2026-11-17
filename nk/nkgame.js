@@ -10,7 +10,7 @@ import { gloveSkin, gloveState, ownsGlove, wearGlove, gloveIds } from '../nkglov
 export const NK_DIFF = {
   easy: { label: 'EASY', bpm: 110, travel: 2.5, duck: 8, mix: 0.6, mult: 0.6 },
   normal: { label: 'NORMAL', bpm: 124, travel: 2.2, duck: 4, mix: 1, mult: 1 },
-  beast: { label: 'BEAST', bpm: 140, travel: 1.85, duck: 2, mix: 1.4, mult: 1.6 },
+  beast: { label: 'BEAST', bpm: 140, travel: 1.85, duck: 3, mix: 1.4, mult: 1.6 },
 };
 export const NK_ROUND = 150;
 export const dayKey = (d = new Date()) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -20,8 +20,8 @@ export const GRADE_TIX = { S: 12, A: 8, B: 5, C: 3, D: 1 };
 export function ticketsFor(score, grade, diff) { const d = NK_DIFF[diff] || NK_DIFF.normal; return Math.max(1, Math.round(((GRADE_TIX[grade] || 1) + Math.floor(score / 4000)) * d.mult)); }
 export const DAILY_BONUS = 15;
 
-export function createNK(env) {
-const { root, renderer } = env;
+export function createNK(ENV) {   // ENV: the arcade hooks (main.js loadNK); not `env`, the audio code has its own env() envelope helper
+const { root, renderer } = ENV;
 const scene = root;   // everything below adds to the studio root (root.position = the studio's place in the arcade world)
 let BPM = 124, BEAT = 60 / BPM, BAR = BEAT * 4, TRAVEL = 2.2;
 const ROUND_LEN = NK_ROUND;
@@ -33,7 +33,7 @@ const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v == n
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const STAND_Y = 1.5;
 const FOGC = new THREE.Color(0x070414);
-const camera = env.camera;
+const camera = ENV.camera;
 // glass floor (world coords made studio-local with uO)
 const floorMat = new THREE.ShaderMaterial({
   uniforms: { uT: { value: 0 }, uBeat: { value: 0 }, uFog: { value: FOGC }, uPow: { value: 0 }, uO: { value: root.position } },
@@ -567,14 +567,14 @@ function resetRun() {
   state.events = buildSchedule(ROUND_LEN, diff, state.daily ? daySeed(dayKey()) : (Date.now() % 100000) + 1); lastSched = -1;
   state.lastT = state.events.length ? state.events[state.events.length - 1].t : 0;
 }
-function calibrate() { env.headWorld(_v); _v.sub(root.position); if (_v.y > 0.6) { state.headH = clamp(_v.y, 1.0, 2.1); state.center.set(_v.x, 0, _v.z); } }
+function calibrate() { ENV.headWorld(_v); _v.sub(root.position); if (_v.y > 0.6) { state.headH = clamp(_v.y, 1.0, 2.1); state.center.set(_v.x, 0, _v.z); } }
 function startRound(opts = {}) {
   if (state.mode === 'play') return false;
   if (opts.daily != null) state.daily = !!opts.daily; if (opts.diff && NK_DIFF[opts.diff]) setDiff(opts.diff);
-  initAudio(); state.vr = env.isVR();
-  if (state.vr) calibrate(); else { const f = env.flatPlace(); state.center.copy(f.center); state.headH = f.headH; }
+  initAudio(); state.vr = ENV.isVR();
+  if (state.vr) calibrate(); else { const f = ENV.flatPlace(); state.center.copy(f.center); state.headH = f.headH; }
   resetRun(); state.mode = 'play'; state.paused = false; state.countBeat = -1; state.result = null; state.rounds++;
-  panelC.m.visible = false; hideMenu(); ui(); env.setHide({ models: true, rays: true });
+  panelC.m.visible = false; hideMenu(); ui(); ENV.setHide({ models: true, rays: true });
   for (const s of ['L', 'R']) { glove[s].punch = null; if (!state.vr) glove[s].obj.position.copy(restOf(s, _v)); }
   return true;
 }
@@ -586,12 +586,12 @@ function endRound() {
   let bonus = 0; if (state.daily && lsGet('gaNK.dailyDone', '') !== dayKey()) { bonus = DAILY_BONUS; lsSet('gaNK.dailyDone', dayKey()); }
   const best = bestScore(), isBest = state.score > best; addScore({ s: state.score, d: diff, g: grade, t: dayKey(), vr: state.vr ? 1 : 0 });
   state.result = { acc, grade, isBest, tix, bonus, diff, score: state.score };
-  state.payouts.push({ tix, bonus, grade, score: state.score, diff }); try { env.addTickets(tix + bonus); } catch (e) {}
+  state.payouts.push({ tix, bonus, grade, score: state.score, diff }); try { ENV.addTickets(tix + bonus); } catch (e) {}
   drawCenterPanel([['ROUND COMPLETE', 52, 40, '#7fe9ff'], [state.score.toLocaleString(), 130, 84, '#ffffff'], ['GRADE ' + grade + '   ACC ' + acc + '%', 205, 34, '#ff9cf0'],
     ['+' + tix + ' TICKETS' + (bonus ? '  +' + bonus + ' DAILY BONUS' : ''), 260, 34, '#ffe14a'], [isBest ? 'NEW BEST!' : 'BEST ' + Math.max(best, state.score).toLocaleString(), 312, 32, '#ffd56a'], ['PUNCH THE ORB TO PLAY AGAIN', 362, 26, '#ffffff']]);
-  panelC.m.visible = true; drawBoard(); showMenu(); ui(); env.setHide({ models: true, rays: false });
+  panelC.m.visible = true; drawBoard(); showMenu(); ui(); ENV.setHide({ models: true, rays: false });
 }
-function toTitle() { state.mode = 'title'; state.duckT = 0; targets.forEach(freeTarget); targets = []; state.result = null; showMenu(); drawMenu(); ui(); env.setHide({ models: true, rays: false }); }
+function toTitle() { state.mode = 'title'; state.duckT = 0; targets.forEach(freeTarget); targets = []; state.result = null; showMenu(); drawMenu(); ui(); ENV.setHide({ models: true, rays: false }); }
 function abort(why) { if (state.mode !== 'play') return; state.aborts = (state.aborts || 0) + 1; state.lastAbort = why; toTitle(); }
 function setDiff(d) { if (!NK_DIFF[d]) return; state.diff = d; state.daily = false; lsSet('gaNK.diff', d); drawMenu(); ui(); }
 
@@ -643,14 +643,14 @@ function placeMenu() { const c = state.menuC || state.center, h = state.menuH ||
   for (const o of menuOrbs) { const s = o.r * (1 + state.beatPulse * 0.08 + Math.sin(state.clock * 3 + o.dx * 5) * 0.03); o.pos.set(c.x + o.dx, h + o.dy, c.z - 0.5); o.g.position.copy(o.pos); o.g.scale.setScalar(s); } }
 
 // ---------- studio props: a floor marker where you stand, the high-score wall beside the teleporter pad ----------
-const PAD = env.padLocal || new THREE.Vector3(2.6, 0, 2.4);
+const PAD = ENV.padLocal || new THREE.Vector3(2.6, 0, 2.4);
 const mark = new THREE.Mesh(new THREE.RingGeometry(0.32, 0.38, 48), new THREE.MeshBasicMaterial({ color: 0x7fffd4, transparent: true, opacity: 0.8, fog: false, side: THREE.DoubleSide })); mark.rotation.x = -Math.PI / 2; mark.position.set(0, 0.01, 0); mark.name = 'nkStandHere'; scene.add(mark);
 board.m.position.set(PAD.x + 1.6, 1.7, PAD.z - 0.6); board.m.renderOrder = 5;
 function placeBoard() { board.m.updateMatrixWorld(); board.m.lookAt(toWorld(_w2.set(0, 1.6, 0), new THREE.Vector3())); }
 
 // ---------- VR: the arcade's controllers are the gloves ----------
 const _gq = new THREE.Quaternion(), _gp = new THREE.Vector3(), _go = new THREE.Vector3(0, -0.01, 0.03);
-function vrGloves() { for (const s of ['L', 'R']) { const G = glove[s], gp = env.grip(s === 'L' ? 'left' : 'right'); G.on = !!gp; G.obj.visible = !!gp; G.src = gp ? gp.src : null; if (!gp) continue;
+function vrGloves() { for (const s of ['L', 'R']) { const G = glove[s], gp = ENV.grip(s === 'L' ? 'left' : 'right'); G.on = !!gp; G.obj.visible = !!gp; G.src = gp ? gp.src : null; if (!gp) continue;
     gp.obj.updateMatrixWorld(true); gp.obj.matrixWorld.decompose(_gp, _gq, _w2); G.obj.quaternion.copy(_gq); G.obj.position.copy(_go).applyQuaternion(_gq).add(_gp).sub(root.position); } }
 function vrHits() {
   ['L', 'R'].forEach(side => {
@@ -670,13 +670,14 @@ function vrHits() {
 function haptic(side, v, ms) { const src = glove[side].src; try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h) h.pulse(v, ms); } catch (e) {} }
 
 // ---------- flat-screen overlay (only while you are in the studio and not in the headset) ----------
-const css = document.createElement('style'); css.textContent = '#nkUI{position:fixed;inset:0;z-index:25;pointer-events:none;display:none;font-family:"Courier New",monospace;color:#e6fdff}#nkUI.on{display:block}'
+const css = document.createElement('style'); css.textContent = '#nkUI{position:fixed;inset:0;z-index:23;pointer-events:none;display:none;font-family:"Courier New",monospace;color:#e6fdff}#nkUI.on{display:block}'
   + '#nkUI .nkM{position:absolute;left:50%;top:calc(max(10px,env(safe-area-inset-top)) + 54px);transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:auto;background:#07021acc;border:2px solid #7f9bff;border-radius:16px;padding:10px 14px;max-width:94vw}'
   + '#nkUI button{pointer-events:auto;min-width:76px;height:42px;padding:0 12px;border-radius:21px;border:2px solid #00e5ff;background:#03141ae8;color:#e6fdff;font:900 14px/1 "Courier New",monospace;letter-spacing:.08em;cursor:pointer;touch-action:manipulation}#nkUI button.sel{border-color:#ffe14a;background:#3a2a00e8;color:#fff3b0}'
   + '#nkUI .row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}#nkUI .t{font:900 18px/1.2 "Courier New",monospace;letter-spacing:.2em;color:#fff;text-shadow:0 0 8px #18d8ff}#nkUI .s{font:700 12px/1.3 "Courier New",monospace;color:#9ff8ff;text-align:center}'
   + '#nkUI .hud{position:absolute;left:50%;top:calc(max(8px,env(safe-area-inset-top)) + 8px);transform:translateX(-50%);display:none;gap:16px;font:900 16px/1 "Courier New",monospace;background:#07021aaa;border-radius:12px;padding:6px 14px}#nkUI.play .hud{display:flex}'
   + '#nkUI .pads{position:absolute;left:0;right:0;bottom:calc(max(10px,env(safe-area-inset-bottom)) + 10px);display:none;justify-content:space-between;padding:0 14px}#nkUI.play .pads{display:flex}#nkUI.play .nkM{display:none}'
-  + '#nkUI .pads button{width:28vw;max-width:170px;height:84px;font-size:20px}#nkUI .pads #nkL{border-color:#18d8ff}#nkUI .pads #nkR{border-color:#ff2bd6}#nkUI .pads #nkD{border-color:#ff3355;width:22vw}';
+  + '#nkUI .pads button{width:28vw;max-width:170px;height:84px;font-size:20px}#nkUI .pads #nkL{border-color:#18d8ff}#nkUI .pads #nkR{border-color:#ff2bd6}#nkUI .pads #nkD{border-color:#ff3355;width:22vw}'
+  + '@media (max-height:480px){#nkUI .nkM{top:calc(max(6px,env(safe-area-inset-top)) + 44px);gap:4px;padding:6px 10px}#nkUI button{height:32px;min-width:64px;font-size:12px}#nkUI .t{font-size:14px}#nkUI .s{font-size:10px}#nkUI .pads button{height:64px}}';
 document.head.appendChild(css);
 const UI = document.createElement('div'); UI.id = 'nkUI'; UI.innerHTML = '<div class="hud"><span id="nkSc">0</span><span id="nkTm">2:30</span><span id="nkSt">x1</span></div>'
   + '<div class="nkM"><div class="t">NEON KNOCKOUT</div><div class="s" id="nkInfo"></div><div class="row"><button data-nk="easy">EASY</button><button data-nk="normal">NORMAL</button><button data-nk="beast">BEAST</button><button data-nk="daily">DAILY</button></div>'
@@ -692,7 +693,7 @@ addEventListener('keydown', e => { if (!inStudioFlat()) return; const k = e.key.
     if (used) { e.preventDefault(); e.stopImmediatePropagation(); } }
   else if (k === 'enter') { e.preventDefault(); e.stopImmediatePropagation(); initAudio(); startRound(); } }, true);
 addEventListener('keyup', e => { if (inStudioFlat() && state.mode === 'play') { const k = e.key.toLowerCase(); if (['f', 'j', ' ', 'arrowleft', 'arrowright', 'arrowdown', 'z', 'x', 'c'].includes(k)) e.stopImmediatePropagation(); } }, true);
-let inStudio = false; const inStudioFlat = () => inStudio && !env.isVR();
+let inStudio = false; const inStudioFlat = () => inStudio && !ENV.isVR();
 function ui() { const on = inStudioFlat(); UI.classList.toggle('on', on); UI.classList.toggle('play', on && state.mode === 'play'); if (!on) return;
   for (const b of UI.querySelectorAll('[data-nk]')) { const k = b.dataset.nk; b.classList.toggle('sel', (NK_DIFF[k] && !state.daily && state.diff === k) || (k === 'daily' && state.daily)); }
   UI.querySelector('#nkGl').textContent = 'GLOVES: ' + gloveSkin(state.skin).name.toUpperCase(); UI.querySelector('#nkGo').textContent = state.mode === 'results' ? 'AGAIN' : 'START';
@@ -701,9 +702,9 @@ function ui() { const on = inStudioFlat(); UI.classList.toggle('on', on); UI.cla
 function updHud() { UI.querySelector('#nkSc').textContent = state.score.toLocaleString(); UI.querySelector('#nkTm').textContent = fmtTime(ROUND_LEN - state.t); UI.querySelector('#nkSt').textContent = 'x' + mult() + (state.streak ? ' · ' + state.streak : ''); }
 // ---------- per-frame (called from the arcade's frame loop) ----------
 const tmpPos = new THREE.Vector3(); let panelTick = 0, frames = 0, boardDrawn = false, wasVR = false;
-function headY() { env.headWorld(_v2); return _v2.y - root.position.y; }
+function headY() { ENV.headWorld(_v2); return _v2.y - root.position.y; }
 function update(dt) {
-  state.clock += dt; state.vr = env.isVR();
+  state.clock += dt; state.vr = ENV.isVR();
   if (state.vr !== wasVR) { wasVR = state.vr; if (state.mode === 'play') abort(state.vr ? 'entered VR' : 'left VR'); ui(); drawMenu(); }
   const playing = state.mode === 'play' && !state.paused;
   if (playing) state.t += dt;
@@ -720,7 +721,7 @@ function update(dt) {
   }
   const duckDepth = state.vr ? 0 : (state.duckT > 0 ? Math.sin(Math.min(1, (0.72 - state.duckT) / 0.72) * Math.PI) : 0);
   if (state.duckT > 0) state.duckT -= dt;
-  if (!state.vr) env.flatDuck(duckDepth);
+  if (!state.vr) ENV.flatDuck(duckDepth);
   let barSoon = false;
   for (let i = targets.length - 1; i >= 0; i--) {
     const t = targets[i];
@@ -753,8 +754,8 @@ function update(dt) {
     }
   }
   state.barSoon = barSoon;
-  if (state.mode !== 'play') { if (state.vr) { env.headWorld(_v2); _v2.sub(root.position); if (_v2.y > 0.6) { state.menuH = clamp(_v2.y, 1.0, 2.1); state.menuC = (state.menuC || new THREE.Vector3()).set(clamp(_v2.x, -1.6, 1.6), 0, clamp(_v2.z, -1.5, 1.4)); } } else { state.menuC = null; state.menuH = null; } placeMenu(); }
-  env.headWorld(camWorld);
+  if (state.mode !== 'play') { if (state.vr) { ENV.headWorld(_v2); _v2.sub(root.position); if (_v2.y > 0.6) { state.menuH = clamp(_v2.y, 1.0, 2.1); state.menuC = (state.menuC || new THREE.Vector3()).set(clamp(_v2.x, -1.6, 1.6), 0, clamp(_v2.z, -1.5, 1.4)); } } else { state.menuC = null; state.menuH = null; } placeMenu(); }
+  ENV.headWorld(camWorld);
   if (state.vr) vrGloves(); else { for (const s of ['L', 'R']) { glove[s].on = state.mode === 'play'; glove[s].obj.visible = glove[s].on; glove[s].src = null; if (glove[s].on) updPunchAnim(s, dt); } }
   ['L', 'R'].forEach(s => {
     const g = glove[s]; g.prev.copy(g.pos); g.obj.updateMatrixWorld(); g.obj.localToWorld(_v.set(0, 0, -0.07)); g.pos.copy(_v).sub(root.position);
@@ -779,8 +780,8 @@ function update(dt) {
   frames++;
 }
 function tick(dt) {
-  const was = inStudio; inStudio = env.inStudio();
-  if (!inStudio) { if (was) { abort('left the studio'); state.duckT = 0; try { env.flatDuck(0); } catch (e) {} root.visible = false; for (const s of ['L', 'R']) glove[s].obj.visible = false; env.setHide({ models: false, rays: false }); ui(); } return; }
+  const was = inStudio; inStudio = ENV.inStudio();
+  if (!inStudio) { if (was) { abort('left the studio'); state.duckT = 0; try { ENV.flatDuck(0); } catch (e) {} root.visible = false; for (const s of ['L', 'R']) glove[s].obj.visible = false; ENV.setHide({ models: false, rays: false }); ui(); } return; }
   if (!was) { root.visible = true; skin = gloveSkin(); applySkin(gloveState().on); drawBoard(); toTitle(); }
   update(Math.min(dt, 0.1) * (window.__nkSpeed ?? 1));
 }
@@ -792,6 +793,8 @@ const api = {
   orbWorld(id) { const o = menuOrbs.find(o => o.id === id); return o ? toWorld(o.pos, new THREE.Vector3()) : null; },
   targets: () => targets.filter(t => t.type !== 'BAR' && t.alive && !t.claimed).map(t => ({ type: t.type, dt: t.t - state.t, x: t.x })),
   bars: () => targets.filter(t => t.type === 'BAR' && t.alive).map(t => t.t - state.t),
+  targetsW: () => targets.filter(t => t.type !== 'BAR' && t.alive && !t.claimed).map(t => ({ type: t.type, dt: t.t - state.t, p: toWorld(t.pos, new THREE.Vector3()).toArray() })),
+  gloveWorld: s => glove[s].obj.getWorldPosition(new THREE.Vector3()).toArray(),
   skipTo(t) { state.t = t; state.evIdx = state.events.findIndex(e => e.t - t > -0.1); if (state.evIdx < 0) state.evIdx = state.events.length; targets.forEach(freeTarget); targets = []; lastSched = Math.floor(t / (BEAT / 4)); },
 };
 return api;

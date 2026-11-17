@@ -259,3 +259,25 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
 - **MUTE MUSIC / MUSIC ON (t398u):** a full-width button in the VR Y menu (under BACKPACK / FLOOR + WALLS). It switches only the background
   music (music.js `neonarcade.music`, saved in localStorage; cabinet music follows it too), not game sounds or voice chat. Same switch as
   the flat screen's Options → MUSIC button.
+
+## v16 (t399u): NEON KNOCKOUT in the arcade (cache v16)
+An arcade copy of Side Scroller Platform's VR fitness boxing game (original: OptimusGrok/neon-knockout 8c203ad, untouched) built into the
+same three.js scene and XR session (no page reload). Files: `nk/nkgame.js` (the game, lazy: imported only on the first beam there),
+`nkgloves.js` (glove skins), hooks in teleport.js / main.js / vr.js / shop.js / music.js / mp.js.
+- **Getting there**: the room-1 teleporter pad shows **NEON KNOCKOUT** beside SHOP (flat) / a **BEAM TO NEON KNOCKOUT** sign above BEAM TO
+  SHOP (VR). The studio is far west (x = -80, the shop's mirror image) with its own pad (tp.where = 3) and **ARCADE** / **BEAM TO ARCADE** back.
+- **Studio**: the original's neon tunnel, ring, floor, light cones, panels; START orb in the ring, EASY / NORMAL / BEAST orbs on the left,
+  DAILY + GLOVES on the right (punch them in VR, buttons on the flat overlay); a high-score wall beside the pad.
+- **VR**: the arcade controllers are the gloves (models hidden in the studio, rays hidden during a round, no floor teleports / Y menu
+  mid-round); START calibrates the centre + head height from the headset; ducking = headset 22 cm below that; haptics on hits.
+- **Flat**: F / J (or the LEFT / RIGHT buttons) punch, SPACE / DUCK ducks, ENTER starts, ESC quits; the monkey stands in the ring facing
+  the tunnel (walk input locked during a round) and squashes down when ducking.
+- **Difficulty**: EASY 110 BPM (bar every 8 bars), NORMAL 124 (every 4), BEAST 140 (every 3, some double bars), faster travel when harder.
+- **Daily**: one routine per day (NORMAL, seeded from the local date) - the first finished daily each day pays +15 bonus tickets.
+- **Tickets**: by grade (S 12, A 8, B 5, C 3, D 1) + 1 per 4000 points, x0.6 / x1 / x1.6 by difficulty. Only finished rounds pay.
+- **Gloves**: Gold 150, Fire 200, Ice 200 tickets in Grok's shop (hologram tiles after the prizes, and the VR shop panel); bought once,
+  then WEAR switches skins; GLOVES orb / button cycles the owned skins in the studio. localStorage `gaNK.gloves`.
+- **Scores**: local top 10 in `gaNK.scores`. No world board: the original has no Neon Knockout leaderboard and the arcade's boards are
+  per-game Supabase tables inside the cabinet iframes, so a world board would need a new table (not added).
+- The room music fades out in the studio (the game plays its own beat; muted with the arcade's mute).
+- Tests: `test/nk.js` (flat), `test/nk_vr.js` (IWER headset).

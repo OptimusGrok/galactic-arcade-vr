@@ -1983,7 +1983,9 @@ function loadNK() { return nkP || (nkP = import('./nk/nkgame.js').then(m => { NK
       if (!nkFlat.headH) { const b = new THREE.Box3().setFromObject(monkey); nkFlat.headH = Math.max(0.9, Math.min(1.9, (b.max.y - monkey.position.y) * 0.88)); }
       return { center: new THREE.Vector3(0, 0, 0.15), headH: nkFlat.headH }; },
     flatDuck: k => { if (nkFlat.base == null) nkFlat.base = monkey.scale.y; monkey.scale.y = nkFlat.base * (1 - 0.32 * k); if (k <= 0) nkFlat.base = null; } });
-  window.__nkGame = NK; return NK; }).catch(e => { nkP = null; console.warn('nk load', e); window.__nkLoadErr = String(e); throw e; })); }
+  window.__nkGame = NK; return NK; }).catch(e => { nkP = null; console.warn('nk load', e); window.__nkLoadErr = String(e && e.stack || e);
+    const back = () => { if (tp.where !== 3) return; if (tp.state !== 'idle') { setTimeout(back, 500); return; } tp.go(); }; setTimeout(back, 800);   // could not load (offline?): beam straight back
+    throw e; })); }
 window.__loadNK = loadNK;
 tp.onNK = () => { loadNK().catch(() => {}); };
 kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
