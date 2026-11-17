@@ -22,6 +22,10 @@ async function measure(page, scene) {
     return { jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(1) : null, uasmMB: uasm, textures: info.memory.textures, geometries: info.memory.geometries, programs: (info.programs || []).length,
       texMB: m.texMB, rtMB: m.rtMB, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8) };
   });
+  // whole-browser resident memory by Chromium process type (Whisper's worker, iframes and the GPU process are not in the page's JS heap)
+  try { const out = require('child_process').execSync('ps -eo rss=,args= | grep -E "[c]hrom(e|ium).*--type=(renderer|gpu-process)"', { encoding: 'utf8' }); const rss = { renderer: 0, gpu: 0 };
+    for (const l of out.trim().split('\n')) { const m = l.trim().match(/^(\d+)\s+(.*)$/); if (!m) continue; if (/--type=gpu-process/.test(m[2])) rss.gpu += +m[1]; else if (!/--extension-process/.test(m[2])) rss.renderer += +m[1]; }
+    r.rssRendererMB = Math.round(rss.renderer / 1024); r.rssGpuMB = Math.round(rss.gpu / 1024); } catch (e) { r.rssErr = String(e.message).slice(0, 80); }
   console.log('MEM ' + scene + ' ' + JSON.stringify(r));
 }
 (async () => {
@@ -41,8 +45,9 @@ async function measure(page, scene) {
         await E(() => { const S = window.__gaVR, C = window.__chessTable, x = C.CX - 2.4, z = C.CZ - 0.6; S.rig = { x, y: 0, z, yaw: 0.4 }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); if (window.__tp) window.__tp.where = 2; });
         await H.frames(page, 8); const tbl = await E(() => [window.__chessTable.CX - 0.3, 0.6, window.__chessTable.CZ]);
         await H.aim(page, 'right', [0.2, 1.3, -0.2], tbl); await H.frames(page, 3); await H.press(page, 'right', 'trigger');
-        await until(() => window.__chessTable.state === 'wait' || window.__chessTable.state === 'play', 10000); await H.press(page, 'right', 'a-button');
-        await until(() => { const C = window.__chessTable; try { return C.state === 'play' && C.frame.contentWindow.__chessVR && window.__gaVR.chess.draws > 2; } catch (e) { return false; } }, 60000); }
+        await until(() => window.__chessTable.state === 'wait' || window.__chessTable.state === 'play', 10000);
+        for (let i = 0; i < 40; i++) { if (await E(() => { const C = window.__chessTable; try { return C.state === 'play' && !!C.frame.contentWindow.__chessVR && window.__gaVR.chess.draws > 2; } catch (e) { return false; } })) break; await H.press(page, 'right', 'a-button'); await H.frames(page, 20); }
+        console.log('  chess: ' + JSON.stringify(await E(() => { const C = window.__chessTable; return { s: C.state, g: C.gstate, draws: window.__gaVR.chess.draws }; }))); }
       if (scene === 'play') {
         const sp = await E(() => { const A = window.__arcade, m = A.play.machines.strike, u = m.cab.userData, f = u.front, n = u.inward || { x: 0, z: 1 }, c = new A.THREE.Box3().setFromObject(m.cab).getCenter(new A.THREE.Vector3()); return { p: [f.x + n.x * 1.4, f.z + n.z * 1.4, Math.atan2(n.x, n.z)], c: [c.x, c.y, c.z] }; });
         await place(...sp.p); await H.aim(page, 'right', [0.2, 1.2, -0.2], sp.c); await H.frames(page, 4); await H.press(page, 'right', 'trigger');
