@@ -60,7 +60,7 @@ function speechStart() {
     if (er === 'no-speech' || er === 'aborted') return;
     if (er === 'not-allowed') { fail('MIC BLOCKED'); return; }
     // the browser has the API but can't use it (no Google/Apple service: Brave, Quest, offline...) or the mic is held: go on-device
-    if (canWhisper) { prefer = 'whisper'; try { localStorage.setItem('ga.stt', 'whisper'); } catch (x) {} rec = null; try { r.abort(); } catch (x) {} S.mode = 'whisper'; whisperStart(); return; }
+    if (canWhisper) { prefer = 'whisper'; rec = null; try { r.abort(); } catch (x) {} S.mode = 'whisper'; whisperStart(); return; }
     fail('SPEECH ERROR: ' + er); };
   r.onend = () => { if (rec !== r) return; if (active && S.continuous) { restartT = setTimeout(() => { if (active && rec === r) try { r.start(); } catch (e) {} }, 250); } else if (active) { active = false; rec = null; set('partial', ''); set('state', 'idle'); } };
   try { r.start(); set('state', 'listening'); } catch (e) { fail(String(e && e.message || e)); }
