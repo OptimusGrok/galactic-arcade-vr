@@ -256,3 +256,6 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   VR players' avatars (aligned with their grip). Bolts, the charge glow and the full-charge beam leave the muzzle along the aim.
 - **Flat screen:** unchanged (third-person monkey holds the gun as before); exiting VR restores the gun's flat pose exactly.
 - **Test:** `test/vr_fpgun.js`.
+- **MUTE MUSIC / MUSIC ON (t398u):** a full-width button in the VR Y menu (under BACKPACK / FLOOR + WALLS). It switches only the background
+  music (music.js `neonarcade.music`, saved in localStorage; cabinet music follows it too), not game sounds or voice chat. Same switch as
+  the flat screen's Options → MUSIC button.
