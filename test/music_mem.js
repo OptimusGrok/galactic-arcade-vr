@@ -17,7 +17,7 @@ const { open, play } = require('./lib');
     m = await M(); chk(!m.loaded && m.drops >= 1 && m.mb === 0, 'in the Neon Knockout studio the room loop is dropped after the hold', m);
     await page.waitForTimeout(2500); m = await M(); chk(!m.loaded && m.loads === 1, 'it is not re-decoded while still away', m);
     await at(0, 4); await page.waitForFunction(() => window.__music.loaded && window.__music.gain > 0.1, null, { timeout: 30000 }).catch(() => {});
-    m = await M(); chk(m.loaded && m.loads === 2 && m.target > 0.3, 'back in room 1 the loop is decoded again and plays', m);
+    m = await M(); chk(m.loaded && m.loads === 2 && m.target > 0.1, 'back in room 1 the loop is decoded again and plays (target may be ducked under the PA)', m);
     // cabinet loops: walk past two cabinets, then away; at most one stays decoded
     const fronts = await ev(() => { const P = window.__arcade.play.machines, out = []; for (const k of ['claw', 'bb', 'pip', 'orc']) { const c = P[k] && P[k].cab; if (c && c.userData.front) out.push([k, c.userData.front.x, c.userData.front.z]); } return out; });
     for (const [k, x, z] of fronts.slice(0, 3)) { await at(x, z); await page.waitForTimeout(2500); }
