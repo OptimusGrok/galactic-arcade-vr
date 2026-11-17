@@ -4,7 +4,7 @@
 const { open } = require('./lib');
 const path = require('path'), fs = require('fs');
 let ok = true; const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (x !== undefined ? ' ' + JSON.stringify(x).slice(0, 400) : '')); if (!c) ok = false; };
-const WAV = process.env.WAV || '/tmp/speech_q1.wav';
+const WAV = process.env.WAV || '/workspace/.stt-fixtures/speech_q1.wav';
 const MOCK = `(() => { class FakeSR { constructor() { this.continuous = false; this.interimResults = false; FakeSR.made = (FakeSR.made || 0) + 1; window.__fakeSR = this; }
   start() { this.started = (this.started || 0) + 1; setTimeout(() => { this.onstart && this.onstart(); this.onspeechstart && this.onspeechstart(); }, 30);
     const res = (t, fin) => { const r = [{ transcript: t, confidence: 0.9 }]; r.isFinal = fin; const all = [r]; return { resultIndex: 0, results: all }; };

@@ -85,6 +85,10 @@ function transcribe(pcm16k) { return new Promise(res => { const id = ++wid; pend
 S.preload = () => { if (canWhisper) getWorker(); };
 
 let mic = null;   // { stream, ctx, src, node, sink }
+let WORKLET_URL = null;
+const WORKLET = `class C extends AudioWorkletProcessor { constructor() { super(); this.b = new Float32Array(4096); this.n = 0; }
+  process(inp) { const x = inp[0] && inp[0][0]; if (x) { for (let i = 0; i < x.length; i++) { this.b[this.n++] = x[i]; if (this.n === 4096) { this.port.postMessage(this.b); this.b = new Float32Array(4096); this.n = 0; } } } return true; } }
+registerProcessor('ga-stt-cap', C);`;
 async function whisperStart() {
   getWorker(); set('state', S.ready ? 'listening' : 'loading');
   let stream;
@@ -93,16 +97,22 @@ async function whisperStart() {
   if (!active) { for (const t of stream.getTracks()) t.stop(); return; }
   const AC = window.AudioContext || window.webkitAudioContext, ctx = new AC();
   try { if (ctx.state === 'suspended') await ctx.resume(); } catch (e) {}
-  const src = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), sink = ctx.createGain(); sink.gain.value = 0;
+  const src = ctx.createMediaStreamSource(stream), sink = ctx.createGain(); sink.gain.value = 0;
+  // capture on the audio thread (AudioWorklet) so a busy VR main thread can't drop audio; ScriptProcessor only as a fallback
+  let node = null, onChunk = null;
+  if (ctx.audioWorklet && window.AudioWorkletNode) {
+    try { if (!WORKLET_URL) WORKLET_URL = URL.createObjectURL(new Blob([WORKLET], { type: 'text/javascript' }));
+      await ctx.audioWorklet.addModule(WORKLET_URL); node = new AudioWorkletNode(ctx, 'ga-stt-cap'); node.port.onmessage = e => onChunk && onChunk(e.data); lg('capture worklet'); }
+    catch (e) { node = null; lg('worklet failed ' + (e && e.message)); } }
+  if (!node) { node = ctx.createScriptProcessor(4096, 1, 1); node.onaudioprocess = e => onChunk && onChunk(new Float32Array(e.inputBuffer.getChannelData(0))); lg('capture scriptprocessor'); }
+  if (!active) { try { ctx.close(); } catch (e) {} for (const t of stream.getTracks()) t.stop(); return; }
   src.connect(node); node.connect(sink); sink.connect(ctx.destination);
   mic = { stream, ctx, src, node, sink };
   const sr = ctx.sampleRate, chunkS = 4096 / sr;
-  // voice activity detection on 4096-sample chunks: adaptive noise floor, speech starts above ~2.5x floor, ends after 0.8 s quiet
-  let floor = 0.004, speaking = false, quiet = 0, seg = [], pre = [], segLen = 0;
-  node.onaudioprocess = e => {
+  onChunk = x => {
     if (!active || !mic || mic.node !== node) return;
-    const x = e.inputBuffer.getChannelData(0); let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
-    const rms = Math.sqrt(s / x.length), copy = new Float32Array(x); S.level = rms;
+    let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
+    const rms = Math.sqrt(s / x.length), copy = x; S.level = rms;
     if (!speaking) {
       floor = Math.min(0.05, floor * 0.96 + rms * 0.04);
       pre.push(copy); if (pre.length > 4) pre.shift();
@@ -118,7 +128,7 @@ async function whisperStart() {
     }
   };
 }
-function micStop() { const m = mic; mic = null; if (!m) return; try { m.node.onaudioprocess = null; m.src.disconnect(); m.node.disconnect(); m.sink.disconnect(); } catch (e) {} for (const t of m.stream.getTracks()) t.stop(); try { m.ctx.close(); } catch (e) {} }
+function micStop() { const m = mic; mic = null; if (!m) return; try { m.node.onaudioprocess = null; if (m.node.port) m.node.port.onmessage = null; m.src.disconnect(); m.node.disconnect(); m.sink.disconnect(); } catch (e) {} for (const t of m.stream.getTracks()) t.stop(); try { m.ctx.close(); } catch (e) {} }
 // mono float chunks at the mic rate -> one Float32Array at 16 kHz (box-filter average, fine for speech)
 function to16k(parts, sr) {
   let n = 0; for (const p of parts) n += p.length; const all = new Float32Array(n); let o = 0; for (const p of parts) { all.set(p, o); o += p.length; }

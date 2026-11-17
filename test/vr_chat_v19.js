@@ -2,7 +2,7 @@
 // DEL, SEND, grip = back), TALK = speech to text. Quest Browser has no working Web Speech, so it's on-device Whisper; Chrome's fake mic
 // plays a speech wav ("How do I get tickets?") and the words show in the panel, then Grok answers.  WHISPER=0 skips the model part.
 const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
-const WAV = process.env.WAV || '/tmp/speech_q1.wav';
+const WAV = process.env.WAV || '/workspace/.stt-fixtures/speech_q1.wav';
 (async () => {
   let ok = true; const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (x !== undefined ? ' ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) ok = false; };
   const { page, errors, close } = await openVR({ init: { content: IWER_SRC + SETUP }, args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--use-file-for-fake-audio-capture=' + WAV] });
