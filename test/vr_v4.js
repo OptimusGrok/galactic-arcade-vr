@@ -22,7 +22,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await place(2, 4, 0);
     // ---- laser stops at a menu button (and highlights it) ----
     if (!process.env.MIRROR_ONLY) {
-    await H.press(page, 'right', 'b-button'); const bw = await btnAt('pack'); await aim(bw);
+    await H.press(page, 'left', 'y-button'); const bw = await btnAt('pack'); await aim(bw);
     let rc = await rayCut(bw); const hov = await page.evaluate(() => window.__gaVR.ui.kind === 'menu');
     chk(Math.abs(rc.len - rc.dist) < 0.06, 'ray stops at the menu button: ray ' + rc.len.toFixed(2) + ' m, button ' + rc.dist.toFixed(2) + ' m away');
     chk(hov, 'B opened the menu');

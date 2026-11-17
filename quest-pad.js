@@ -450,6 +450,9 @@
   function strikeWin() { try { var f = document.getElementById('game'); if (!f || !document.body.classList.contains('ingame') || !/strike-play\//.test(f.getAttribute('src') || f.src || '')) return null; return f.contentWindow; } catch (e) { return null; } }
   function strikeKey(w, code, on) { try { var ev = new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code: code, key: code === 'KeyX' ? 'x' : code, bubbles: true, cancelable: true }); try { Object.defineProperty(ev, 'keyCode', { get: function () { return code === 'KeyX' ? 88 : 0; } }); } catch (e) {} (w.document.body || w.document.documentElement).dispatchEvent(ev); } catch (e) {} }
   function bFire() { if (inXR()) return; var sw = strikeWin(); if (sw) { bBombN++; root.__gaQuestBomb = bBombN; strikeKey(sw, 'KeyX', true); setTimeout(function () { strikeKey(sw, 'KeyX', false); }, 120); return; }
+    // v25 (Dave t442u): walking in the arcade room, B fires the laser pistol only while it is equipped (its on-screen FIRE button); no gun = nothing (it used to jump)
+    var bd = document.body; if (bd && !bd.classList.contains('ingame') && !bd.classList.contains('nbPlay')) { var RF = root.__roomFire; if (!(RF && RF.shown)) { root.__gaQuestBNone = (root.__gaQuestBNone || 0) + 1; return; }
+      bFireN++; try { pressSel('#bFire', true); } catch (e) {} setTimeout(function () { try { pressSel('#bFire', false); } catch (e) {} }, 120); return; }
     bFireN++; try { setKey('Space', true); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', true); } catch (e) {}
     setTimeout(function () { try { if (!prevBtn.fire) setKey('Space', false); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', false); } catch (e) {} }, 120); }
   root.__gaQuestBFire = bFire;

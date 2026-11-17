@@ -12,7 +12,7 @@ const PADS = () => { localStorage.setItem('neonarcade.tickets', '40'); const mk 
   Object.defineProperty(navigator, 'getGamepads', { value: () => [mk()], configurable: true }); };
 // enemy clock + speed: own ticks (e.t) per game step and on-screen px per step, over the enemies alive the whole window
 const ENEMY = `(async () => { const S = window.STRIKE, G = S.G; const a = S.pools.enemies.items.filter(e => e.alive && !e.ground).map(e => [e, e.t, e.x, e.y]), g0 = G.t; await new Promise(r => setTimeout(r, 900));
-  let d = 0, m = 0, c = 0; for (const [e, t, x, y] of a) if (e.alive) { d += e.t - t; m += Math.hypot(e.x - x, e.y - y); c++; } const st = Math.max(1, G.t - g0);
+  let d = 0, m = 0, c = 0; for (const [e, t, x, y] of a) if (e.alive && e.t >= t) { /* pooled: a reused slot restarts e.t */ d += e.t - t; m += Math.hypot(e.x - x, e.y - y); c++; } const st = Math.max(1, G.t - g0);
   return { n: c, rate: c ? +(d / c / st).toFixed(3) : null, px: c ? +(m / c / st).toFixed(3) : null, slowT: G.slowT, slowCD: G.slowCD }; })()`;
 async function measure(fr) { for (let i = 0; i < 8; i++) { const r = await fr.evaluate(ENEMY); if (r.n) return r; } return { n: 0 }; }
 const slowed = (n, s) => s.slowT > 0 && n.rate > 0.9 && s.rate < 0.5 && s.px < n.px * 0.8;   // px are from whichever ships are on screen, so only a loose check; the enemy clock (rate) is the exact one
@@ -21,6 +21,8 @@ async function layout(fr, tag) {
   chk(Math.abs(L.s[1] - L.b[1]) < 1 && L.s[0] < L.b[0] && L.b[0] > L.W * 0.6 && L.b[1] < L.H * 0.3, tag + ': A HYPER SPEED + B BOMB side by side at the top right (A left of B)', L);
   chk(L.icons && L.icons.n > 0 && L.icons.x < 20 && L.icons.y > 33 && L.icons.y < 60, tag + ': bomb icons at the top left under the black bar', L.icons);
   chk(L.sb === 'slow' && L.bb === 'bomb', tag + ': the moved buttons are still tappable / pointable', { sb: L.sb, bb: L.bb });
+  const R = await fr.evaluate(() => ({ b: BOMB_BTN.r, s: SLOW_BTN.r, gap: BOMB_BTN.x - SLOW_BTN.x, right: 270 - BOMB_BTN.x }));
+  chk(R.b === 13 && R.s === 13 && R.gap <= 2 * R.b + 6 && R.right <= 18, tag + ': v25 smaller buttons (r 21 -> 13), side by side, close to the top-right corner', R);
 }
 async function flat() {
   const { page, errors, close } = await open({ w: 480, h: 360, ua: QUEST_UA, init: PADS });

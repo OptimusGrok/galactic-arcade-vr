@@ -1015,7 +1015,7 @@ export function setupVR(A) {
       if (nkRound()) {   // v23 (Dave t421u): Neon Knockout round: B or Y pauses / resumes (GRIP does nothing); the pause panel stays up until a choice
         if (anyP('bDown')) { if (nkPaused()) nkResume(); else nkPause(); pulse((L && L.bDown ? L : R).src, 0.6, 40); }
         else if (nkPaused() && UI.open !== 'nkPause') uiOpen('nkPause'); }
-      else if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
+      else if (L && L.bDown && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // v25 (Dave t442u): Y (left) = menu, always; B (right) = the laser pistol's FIRE (gear()), nothing without the gun
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
       const golfHand = !UI.open && !nkPlaying() ? golfVR(L, R) : null;   // v19: mini golf putting owns the pointing hand near a ball
