@@ -17,13 +17,13 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     return { models: g.map(x => !!((x.userData.fallback && x.userData.fallback.visible) || (x.userData.model && x.userData.model.visible))), rays }; });
   try {
     await E(() => { localStorage.removeItem('gaNK.scores'); localStorage.removeItem('gaNK.dailyDone'); window.__arcade.play.tickets.total = 100; window.__tpTimeScale = 3; });
-    await until(() => document.getElementById('vrBtn').classList.contains('on'), 20000);
+    await until(() => document.getElementById('vrBtn').classList.contains('on'), 20000); await until(() => window.__gaVR.prewarm.done, 180000);
     await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 30000);
     const pad = await E(() => [window.__tp.PAD1.x, window.__tp.PAD1.z]);
     await place(pad[0] + 2.2, pad[1] + 2.2, Math.PI / 4);
     const sg = await sign('beamNK'), sShop = await sign('beamShop');
     chk(!!sg && !!sShop && sg[1] > sShop[1], 'room-1 pad: BEAM TO NEON KNOCKOUT sign above BEAM TO SHOP ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
-    chk(!(await E(() => !!window.__nkGame)), 'lazy: the game is not loaded before the first beam');
+    chk(await E(() => !!window.__nkGame && window.__gaVR.prewarm.done), 'v18: on a headset the studio is loaded + pre-warmed in the background before the first beam');
     await aimPress(sg);
     await until(() => window.__tp.where === 3 && window.__tp.state === 'idle' && window.__nkGame && window.__nkGame.inStudio, 90000); await H.frames(page, 8);
     let s = await E(() => { const S = window.__gaVR, P = window.__tp.PAD3; return { pres: S.presenting, head: S.head && [S.head.x, S.head.z], P: [P.x, P.z], reloads: performance.getEntriesByType('navigation').length }; });

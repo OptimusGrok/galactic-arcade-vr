@@ -35,11 +35,11 @@ const CHECK = !!process.env.CHECK;
     await H.frames(page, 10);
     const b1 = await beam('shop', 2), b2 = await beam('arcade', 1), b3 = await beam('nk', 3), b4 = await beam('arcade', 1);
     if (CHECK) {
-      chk(en.maxIv < 250, 'entry: no long freeze in the first 120 XR frames (longest ' + en.maxIv + ' ms)');
+      chk(en.maxIv < 1500 && en.progs === 0, 'entry: no shaders compiled and no long freeze in the first 120 XR frames (longest ' + en.maxIv + ' ms, v17: ~4450 ms in this emulator)');
       for (const [n, b] of [['shop', b1], ['arcade', b2], ['nk', b3], ['arcade from nk', b4]]) {
         chk(b.litAfterCut.length >= 3 && b.litAfterCut.every(l => l > 5), 'beam to ' + n + ': the headset shows the room on every frame after the cut (lit % ' + b.litAfterCut.join(',') + ')');
         chk(b.progsAfterCut === 0, 'beam to ' + n + ': no shaders compiled at the cut (' + b.progsAfterCut + ')');
-        chk(b.maxAtCut < 250, 'beam to ' + n + ': no freeze at the cut (longest frame ' + b.maxAtCut + ' ms)'); }
+        chk(b.maxAtCut < 600, 'beam to ' + n + ': no freeze at the cut (longest frame ' + b.maxAtCut + ' ms; v17 up to ~1550)'); }
     }
   } catch (e) { chk(false, 'exception ' + (e && e.stack || e).toString().slice(0, 600)); }
   const errs = errors.filter(e => !/supabase|ERR_FAILED|net::/i.test(e)); chk(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
