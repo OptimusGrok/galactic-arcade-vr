@@ -465,7 +465,7 @@
   function readPads() {
     var pads = padList();
     var move = { x: 0, y: 0, mag: 0 }, look = { x: 0, y: 0, mag: 0 };
-    var fire = false, fly = false, zoom = false, unhanded = [], i, j, gp, axes, s01, s23, stick, alt, hand, mapping;
+    var fire = false, fly = false, zoom = false, slow = false, unhanded = [], i, j, gp, axes, s01, s23, stick, alt, hand, mapping;
     for (i = 0; i < pads.length; i++) {
       gp = pads[i];
       axes = gp.axes || [];
@@ -494,7 +494,8 @@
         unhanded.push(stick);
       }
       if (mapping === 'xr-standard') {
-        if (pressed(gp, 0) || pressed(gp, 4)) fire = true;
+        if (pressed(gp, 0)) fire = true;
+        if (pressed(gp, 4)) { if (strikeWin()) slow = true; else fire = true; }   // v23: in Strike, A / X = HYPER SPEED (it was FIRE, so the enemy slow-mo never started)
         if (pressed(gp, 5)) fly = true;
         var gk = String(gp.index != null ? gp.index : i) + (hand || ''), gn = pressed(gp, 1);   // v12: grip = BACK (edge)
         if (gn && !padGrip[gk]) backFire('gamepad grip ' + (hand || '?')); padGrip[gk] = gn;
@@ -509,7 +510,7 @@
       if (!move.mag) move = unhanded[j];
       else if (!look.mag) look = unhanded[j];
     }
-    return { move: move, look: look, fire: fire, fly: fly, zoom: zoom, n: pads.length };
+    return { move: move, look: look, fire: fire, fly: fly, zoom: zoom, slow: slow, n: pads.length };
   }
 
   function read() {
@@ -528,7 +529,7 @@
     var moveAge = lastIngestAt ? +(performance.now() - lastIngestAt).toFixed(0) : null;
     return {
       move: move, look: look,
-      fire: pads.fire, fly: pads.fly, zoom: pads.zoom,
+      fire: pads.fire, fly: pads.fly, zoom: pads.zoom, slow: pads.slow,
       n: pads.n, source: source, keys: keys, counts: counts, unlocked: unlocked,
       pads: padIds(),
       ua: (typeof navigator !== 'undefined' && navigator.userAgent) || '',
@@ -971,6 +972,11 @@
     }
   }
 
+  // v23 (Dave t421u): flat Quest browser, Strike open: A / X (xr-standard button 4) = HYPER SPEED (KeyC into the game), like A in the headset.
+  // The play iframe has no quest-pad of its own here, so the arcade page forwards it (B / Y = BOMB is the history-back trap above).
+  var slowOn = false;
+  function strikeSlow(s) { var on = !!s.slow; if (on === slowOn) return; slowOn = on; if (inXR()) return; var sw = strikeWin(); if (!sw) return;
+    strikeKey(sw, 'KeyC', on); if (on) root.__gaQuestSlow = (root.__gaQuestSlow || 0) + 1; }
   function tick() {
     loopOn = true;
     var s;
@@ -989,6 +995,7 @@
       if (turnDir) ingestLook('turn', turnDir * TURN_RATE, 0);
       s = read();
       if (isPlayFrame()) applyPlay(s);
+      else strikeSlow(s);
     } else {
       s = { move: { x: 0, y: 0, mag: 0 }, look: { x: 0, y: 0, mag: 0 }, fire: false, fly: false, zoom: false, n: 0, source: 'none', keys: [], wheel: {}, counts: counts };
       if (prevBtn.fire || prevBtn.fly || prevBtn.zoom || keysOn.KeyW || keysOn.KeyA || keysOn.KeyS || keysOn.KeyD || keysOn.Space) {
