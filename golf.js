@@ -78,7 +78,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const lamp = new THREE.PointLight(0xff4fd8, 3, 6, 1.6); lamp.position.set(BX1 - 1.2, FY + 1.6, (Z0 + WZ1) / 2); grp.add(lamp);
   // sign over the top of the stairs
   const signT = canvasTex(512, 160, (g, w, h) => { g.clearRect(0, 0, w, h); g.textAlign = 'center'; g.font = '900 58px Arial Black, Impact, sans-serif'; g.shadowColor = '#2de8ff'; g.shadowBlur = 22;
-    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 72); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 72); });   // vrtest-v5 (t458u): golf is free, the old '5 🎟 PER VISIT' line is gone
+    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 100); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 100); });   // vrtest-v5 (t458u): golf is free, the old '5 🎟 PER VISIT' line is gone
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.81), new THREE.MeshBasicMaterial({ map: signT, transparent: true, depthWrite: false, toneMapped: false })); sign.position.set(X0 + 1.6, 2.9, Z0 + 0.05); sign.name = 'golfSign'; grp.add(sign);
   // ---- the energy shield across the top step (hex field, like room 2's old shield, cyan) ----
   const U = { uT: { value: 0 }, uHit: { value: -9 }, uOff: { value: 0 } }, SH = 2.4;
