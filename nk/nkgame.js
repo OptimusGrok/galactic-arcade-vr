@@ -591,7 +591,7 @@ function endRound() {
     ['+' + tix + ' TICKETS' + (bonus ? '  +' + bonus + ' DAILY BONUS' : ''), 260, 34, '#ffe14a'], [isBest ? 'NEW BEST!' : 'BEST ' + Math.max(best, state.score).toLocaleString(), 312, 32, '#ffd56a'], ['PUNCH THE ORB TO PLAY AGAIN', 362, 26, '#ffffff']]);
   panelC.m.visible = true; drawBoard(); showMenu(); ui(); env.setHide({ models: true, rays: false });
 }
-function toTitle() { state.mode = 'title'; targets.forEach(freeTarget); targets = []; state.result = null; showMenu(); drawMenu(); ui(); env.setHide({ models: true, rays: false }); }
+function toTitle() { state.mode = 'title'; state.duckT = 0; targets.forEach(freeTarget); targets = []; state.result = null; showMenu(); drawMenu(); ui(); env.setHide({ models: true, rays: false }); }
 function abort(why) { if (state.mode !== 'play') return; state.aborts = (state.aborts || 0) + 1; state.lastAbort = why; toTitle(); }
 function setDiff(d) { if (!NK_DIFF[d]) return; state.diff = d; state.daily = false; lsSet('gaNK.diff', d); drawMenu(); ui(); }
 
@@ -780,7 +780,7 @@ function update(dt) {
 }
 function tick(dt) {
   const was = inStudio; inStudio = env.inStudio();
-  if (!inStudio) { if (was) { abort('left the studio'); root.visible = false; for (const s of ['L', 'R']) glove[s].obj.visible = false; env.setHide({ models: false, rays: false }); ui(); } return; }
+  if (!inStudio) { if (was) { abort('left the studio'); state.duckT = 0; try { env.flatDuck(0); } catch (e) {} root.visible = false; for (const s of ['L', 'R']) glove[s].obj.visible = false; env.setHide({ models: false, rays: false }); ui(); } return; }
   if (!was) { root.visible = true; skin = gloveSkin(); applySkin(gloveState().on); drawBoard(); toTitle(); }
   update(Math.min(dt, 0.1) * (window.__nkSpeed ?? 1));
 }

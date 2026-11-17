@@ -32,7 +32,7 @@ import { setupShield } from './shield.js';
 import { setupGolf } from './golf.js';
 import { setupKiosk } from './kiosk.js';
 import { setupOpts } from './opts.js';
-import { setupTeleport, WX } from './teleport.js';
+import { setupTeleport, WX, NKX, NK_PAD } from './teleport.js';
 import { lavaPaths, PATH_HW } from './lavapaths.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { setupVR } from './vr.js';   // Galactic Arcade VR: WebXR (Meta Quest Browser)
@@ -726,6 +726,7 @@ function cullRooms(fr) {
   }
   const inW = camera.position.x > WX / 2; if (tp) tp.whiteRoom.visible = inW;
   hall.visible = !inW;
+  if (camera.position.x < NKX / 2) { hall.visible = false; room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v16: Neon Knockout studio (far west)
   if (inW) { room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }
   const z = camera.position.z, in1 = z > -HALF, in2 = z < -HALF - HALL_L;
   room.visible = !in2 || fr.intersectsBox(doorBox2);
@@ -1402,14 +1403,14 @@ PS.set = setPowerSave;
 // ---------- simulation ----------
 const R = 0.3, LIM = HALF - 0.35;
 // walkable areas: union of axis boxes (room 1, hallway [, room 2]); clamp to the nearest one
-const AREAS = [{ x0: -LIM, x1: LIM, z0: -LIM, z1: LIM }, { x0: -DOOR_W / 2 + (HALF - LIM), x1: DOOR_W / 2 - (HALF - LIM), z0: Z2 + LIM - 0.01, z1: -LIM + 0.01 }, { x0: -LIM, x1: LIM, z0: Z2 - LIM, z1: Z2 + LIM }, { x0: WX - LIM, x1: WX + LIM, z0: -LIM, z1: LIM }];   // last: teleporter white room
+const AREAS = [{ x0: -LIM, x1: LIM, z0: -LIM, z1: LIM }, { x0: -DOOR_W / 2 + (HALF - LIM), x1: DOOR_W / 2 - (HALF - LIM), z0: Z2 + LIM - 0.01, z1: -LIM + 0.01 }, { x0: -LIM, x1: LIM, z0: Z2 - LIM, z1: Z2 + LIM }, { x0: WX - LIM, x1: WX + LIM, z0: -LIM, z1: LIM }, { x0: NKX - 4.2, x1: NKX + 4.2, z0: -3.4, z1: 3.6 }];   // [4] v16 Neon Knockout studio; [3]: teleporter white room
 function clampAreas(p, areas, pad = 0) {
   let best = null, bd = 1e9;
   for (const a of areas) { const x = THREE.MathUtils.clamp(p.x, a.x0 - pad, a.x1 + pad), z = THREE.MathUtils.clamp(p.z, a.z0 - pad, a.z1 + pad), d = (x - p.x) ** 2 + (z - p.z) ** 2; if (d < bd) { bd = d; best = [x, z]; } if (!d) break; }
   p.x = best[0]; p.z = best[1]; return p;
 }
 let shield = null, kiosk = null, tp = null, shop = null, golf = null;   // red energy shield in the doorway (shield.js)
-const CLIP_AREA = [{ x0: -LIM, x1: LIM, z0: Z2 - LIM, z1: LIM }, { x0: WX - LIM, x1: WX + LIM, z0: -LIM, z1: LIM }];   // noclip: outer building envelope only (both rooms + hallway span)
+const CLIP_AREA = [{ x0: -LIM, x1: LIM, z0: Z2 - LIM, z1: LIM }, { x0: WX - LIM, x1: WX + LIM, z0: -LIM, z1: LIM }, { x0: NKX - 4.2, x1: NKX + 4.2, z0: -3.4, z1: 3.6 }];   // noclip: outer building envelope only (both rooms + hallway span)
 function collide(p) {
   if (DEV.clip) { clampAreas(p, CLIP_AREA); collideCabs(p); return; }   // walls, doors, shield and plinths off; cabinets stay solid
   if (golf && golf.below) { golf.collideBelow(p, R); return; }   // t275u: down in the mini golf room, golf.js owns the walls
@@ -1448,7 +1449,7 @@ function collideCabs(p, onlyCabs = true) {
 }
 // furthest clear distance along dir from the target (walls with margin, and the STRIKE cabinet's box)
 const _cp = new THREE.Vector3();
-const CAM_AREAS = [{ x0: -(HALF - 0.3), x1: HALF - 0.3, z0: -(HALF - 0.3), z1: HALF - 0.3 }, { x0: -DOOR_W / 2 + 0.5, x1: DOOR_W / 2 - 0.5, z0: -HALF - HALL_L - 0.35, z1: -HALF + 0.35 }, { x0: -(HALF - 0.3), x1: HALF - 0.3, z0: Z2 - (HALF - 0.3), z1: Z2 + HALF - 0.3 }, { x0: WX - (HALF - 0.3), x1: WX + HALF - 0.3, z0: -(HALF - 0.3), z1: HALF - 0.3 }];
+const CAM_AREAS = [{ x0: -(HALF - 0.3), x1: HALF - 0.3, z0: -(HALF - 0.3), z1: HALF - 0.3 }, { x0: -DOOR_W / 2 + 0.5, x1: DOOR_W / 2 - 0.5, z0: -HALF - HALL_L - 0.35, z1: -HALF + 0.35 }, { x0: -(HALF - 0.3), x1: HALF - 0.3, z0: Z2 - (HALF - 0.3), z1: Z2 + HALF - 0.3 }, { x0: WX - (HALF - 0.3), x1: WX + HALF - 0.3, z0: -(HALF - 0.3), z1: HALF - 0.3 }, { x0: NKX - 4.4, x1: NKX + 4.4, z0: -6, z1: 7 }];
 const inHallZ = z => z < -HALF + 0.3 && z > -HALF - HALL_L - 0.3;
 function camClamp(q) { clampAreas(q, CAM_AREAS); if (inHallZ(q.z)) q.y = Math.min(q.y, DOOR_H - 0.25); return q; }
 function camPush(q) { if (DEV.clip) { clampAreas(q, [{ x0: -HALF + 0.3, x1: HALF - 0.3, z0: Z2 - HALF + 0.3, z1: HALF - 0.3 }, CAM_AREAS[3]]); return q; } // keep the camera inside the walls and outside the STRIKE cabinet (continuous push-out, no ray snapping)
@@ -1657,6 +1658,7 @@ function step(dt) {
   if (st.vr && st.vrMove) { const v = st.vrMove, h = Math.hypot(v.x, v.y);   // VR: left thumbstick, relative to where the head looks (st.yaw = head yaw)
     if (h > 0.15) { ix = v.x / h; iz = v.y / h; mag = Math.min(1, h); joyV = (v.speed || 2.2) * Math.min(1, (h - 0.15) / 0.75); run = false; } }
   if (tp && tp.locked) { ix = iz = mag = 0; run = false; if (!shop) loadShop(); }   // teleporting: input locked
+  if (NK && NK.state.mode === 'play' && NK.inStudio) { ix = iz = mag = 0; run = false; joyV = null; }   // v16: boxing round in progress: stand still (flat and VR)
   if (nb && nb.playing) { nb.joy(ix * (mag || 0), iz * (mag || 0), dt); ix = iz = mag = 0; run = false; joyV = null; }   // NEON BRICKS: the joystick / keys move the blocks, not the player
   { const CT = window.__chessTable; if (CT && CT.seated) { ix = iz = mag = 0; run = false; joyV = null; } }   // chess table: seated, no walking
   st.inMag = mag; st.lastStep = st.t;
@@ -1670,7 +1672,7 @@ function step(dt) {
   const tv = tmp.set(wx / n * vmax, 0, wz / n * vmax);
   if (st.jump && !st.fly.air) st.vel.set(st.jump.vx, 0, st.jump.vz).lerp(tmp.set(tv.x, 0, tv.z), 0.08);   // mid-air: carry the run-up, only a touch of steering
   else {   // ICE (t260): above ~62% of run speed you lose grip and slide/drift (low friction) until you slow under 1.2 m/s; slow walking stays grippy
-    const onIce = floorMode === 'ice' && !st.fly.air && !st.seated && play.mode === 'walk' && !(shop && shop.open) && !(tp && tp.locked);
+    const onIce = floorMode === 'ice' && monkey.position.x > NKX / 2 && !st.fly.air && !st.seated && play.mode === 'walk' && !(shop && shop.open) && !(tp && tp.locked);
     if (!onIce) st.iceSlide = false; else { const sp = Math.hypot(st.vel.x, st.vel.z); if (sp > ICE_SLIP) { if (!st.iceSlide) st.iceSlides = (st.iceSlides || 0) + 1; st.iceSlide = true; } else if (sp < 1.2) st.iceSlide = false; }
     st.iceCoast = !!st.iceSlide && mag < 0.01;   // let go at speed: glide ~1 m with legs still (t262)
     st.vel.lerp(tv, 1 - Math.exp(-dt * (st.iceCoast ? ICE_COAST : st.iceSlide ? 2.5 : 10)));
@@ -1683,7 +1685,7 @@ function step(dt) {
   if (!flyOwns && st.jump) { const J = st.jump; J.t += dt; J.vx = st.vel.x; J.vz = st.vel.z; const k = Math.min(1, J.t / JUMP_T); monkey.position.y = 4 * JUMP_H * k * (1 - k); st.airMax = Math.max(st.airMax || 0, monkey.position.y);
     if (k >= 1) { monkey.position.y = 0; st.jump = null; st.landT = st.t; st.lands = (st.lands || 0) + 1; thud(); } }
   if (!flyOwns && golf && !st.jump) { if (golf.below) golf.ground(monkey.position); else if (monkey.position.y < 0) monkey.position.y = 0; }   // down the mini golf stairs
-  if (!flyOwns && !st.jump && floorMode === 'lava' && !st.seated && !st.lavaFall && !(golf && golf.below) && play.mode === 'walk' && !(tp && tp.locked) && !(shop && shop.open) && !LAVA.onPath(monkey.position.x, monkey.position.z)) lavaFallStart();
+  if (!flyOwns && !st.jump && floorMode === 'lava' && monkey.position.x > NKX / 2 && !st.seated && !st.lavaFall && !(golf && golf.below) && play.mode === 'walk' && !(tp && tp.locked) && !(shop && shop.open) && !LAVA.onPath(monkey.position.x, monkey.position.z)) lavaFallStart();
   st.speed = Math.hypot(st.vel.x, st.vel.z);
   if (st.speed > 0.15) { const target = Math.atan2(st.vel.x, st.vel.z); let d = target - st.face; d = Math.atan2(Math.sin(d), Math.cos(d)); st.face += d * (1 - Math.exp(-dt * 12)); }
   monkey.rotation.y = st.face;
@@ -1894,6 +1896,7 @@ function frame(now, xrFrame) {
   if (window.__camOverride) { const o = window.__camOverride; camera.position.set(...o.pos); camera.lookAt(...o.at); if (!o.showMonkey) monkey.visible = false; } // screenshots / tests
   if (window.__roomFire) window.__roomFire.update(Math.min(gap / 1000, 0.05));   // t741u laser pistol: arm pose + lasers, after the walk animation
   if (XRP && VRH) VRH.post(Math.min(gap / 1000, 0.05), xrFrame);
+  if (NK) { try { NK.tick(Math.min(gap / 1000, 0.05)); } catch (e) { if (!NK.err) { NK.err = String(e && e.stack || e); console.warn('nk', e); } } }   // v16 Neon Knockout studio (no-op unless you are in it)
   const draw = XRP || !PS.on || (now - PS.lastDraw) >= (1000 / Math.max(1, PS.fps)) - 0.75;   // VR: every headset frame is drawn   // power-save: skip GPU frames; movement above already used real dt
   camera.updateMatrixWorld();
   { // run each cabinet screen only when that cabinet is near and in view
@@ -1966,6 +1969,23 @@ window.__grid = setupGrid({ THREE, scene, camera, cv, HALF, DOOR_W, HALL_L, Z2 }
 let shopP = null;
 function loadShop() { return shopP || (shopP = import('./shop.js').then(m => { shop = m.setupShop({ scene, tp, play, monkey, camera, st }); AREAS[3] = shop.extraBounds; CAM_AREAS[3] = shop.camBounds; CLIP_AREA[1] = shop.extraBounds; setFloor(floorMode);
   try { if (window.__shop && window.__shop.reloadPrizes) window.__shop.reloadPrizes(); } catch (e) {} return shop; })); }   // white-room carpet now that the shop has sized the floor
+// v16 (t399u) NEON KNOCKOUT: an arcade copy of Side Scroller Platform's VR boxing game in its own studio far west (x = NKX), reached by
+// the room-1 teleporter's NEON KNOCKOUT button / VR sign. nk/nkgame.js is only imported on the first beam there (lazy: startup unchanged).
+let NK = null, nkP = null; const nkRoot = new THREE.Group(); nkRoot.name = 'nkStudio'; nkRoot.position.set(NKX, 0, 0); nkRoot.visible = false; scene.add(nkRoot);
+const nkFlat = { base: null, headH: 0 };
+function loadNK() { return nkP || (nkP = import('./nk/nkgame.js').then(m => { NK = m.createNK({ root: nkRoot, renderer, camera, padLocal: NK_PAD,
+    isVR: () => !!(renderer.xr && renderer.xr.isPresenting), inStudio: () => monkey.position.x < NKX / 2,
+    headWorld: out => (renderer.xr && renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldPosition(out),
+    grip: hand => { const S = window.__gaVR; return S && S.nkGrip ? S.nkGrip(hand) : null; },
+    setHide: o => { const S = window.__gaVR; if (S) S.nkHide = o; },
+    addTickets: n => { if (n > 0) play.addTickets(n); },
+    flatPlace: () => { monkey.position.set(NKX, 0, 0.15); st.vel.set(0, 0, 0); st.speed = 0; st.face = Math.PI; monkey.rotation.y = Math.PI; st.yaw = 2 * Math.PI; st.pitch = 0.22; st.dist = 3.0; st.lookT = st.t;
+      if (!nkFlat.headH) { const b = new THREE.Box3().setFromObject(monkey); nkFlat.headH = Math.max(0.9, Math.min(1.9, (b.max.y - monkey.position.y) * 0.88)); }
+      return { center: new THREE.Vector3(0, 0, 0.15), headH: nkFlat.headH }; },
+    flatDuck: k => { if (nkFlat.base == null) nkFlat.base = monkey.scale.y; monkey.scale.y = nkFlat.base * (1 - 0.32 * k); if (k <= 0) nkFlat.base = null; } });
+  window.__nkGame = NK; return NK; }).catch(e => { nkP = null; console.warn('nk load', e); window.__nkLoadErr = String(e); throw e; })); }
+window.__loadNK = loadNK;
+tp.onNK = () => { loadNK().catch(() => {}); };
 kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
 // ---------- CLAW MACHINE (#12, t215/t216): free-standing in room 1 on the 2x2 grid block Dave highlighted: cells i -7..-6, j -1..0 of the
 // GRID (one cell = the ticket machine's base, measured from its plinth). Base 1.40 x 1.00 m, its edges on the grid lines; front faces +z.

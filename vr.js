@@ -236,7 +236,13 @@ export function setupVR(A) {
   function vcTap() { const vc = window.__voice; if (!vc) return; const r = vc.tap();
     const show = () => { const st = vc.state; say(st === 'on' ? (vc.muted ? 'MIC MUTED' : 'MIC ON · PLAYERS IN VOICE HEAR YOU') : st === 'listen' ? (vc.err === 'NotAllowedError' ? 'MIC BLOCKED · LISTENING ONLY' : 'NO MIC · LISTENING ONLY') : (vc.msg || '').toUpperCase().slice(0, 40)); UI.key = ''; };
     if (r && r.then) { say('ASKING FOR THE MIC…'); r.then(show, show); } else show(); }
-  function beam() { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(); S.beams++; return true; }
+  function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : undefined); S.beams++; return true; }
+  // v16 Neon Knockout studio (nk/nkgame.js, lazy): its gloves replace the controller models there; rays hide during a round
+  const nkIn = () => !!(A.tp && A.tp.NKX != null && monkey.position.x < A.tp.NKX / 2);
+  const nkPlaying = () => { const N = window.__nkGame; return !!(N && N.inStudio && N.state.mode === 'play'); };
+  S.nkGrip = hand => { const i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src); return i >= 0 ? { obj: grips[i], src: ctrls[i].userData.src } : null; };
+  S.nkHide = null; S.nkHid = false;
+  function nkCtrl() { const want = nkIn() && !!(S.nkHide && S.nkHide.models) && !!window.__nkGame; if (want) { ctrlModelsVis(false); S.nkHid = true; } else if (S.nkHid) { ctrlModelsVis(true); S.nkHid = false; } }
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
     K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
   function nbStart() { const n = nbApi(); if (!n || n.playing || play.mode !== 'walk' || (A.tp && A.tp.locked)) return false; uiClose(); n.start(); if (n.playing) { S.nbStarts++; try { n.setZoomAmt(0); } catch (e) {} } return n.playing; }
@@ -263,9 +269,10 @@ export function setupVR(A) {
         (K.offers || []).forEach(([d, t], i) => add('offer' + i, '$' + d + '  =  ' + t + ' TICKETS', 112, 190 + i * 118, 800, 100, bal >= d, () => { if (K.buy(i)) { S.ticketBuys++; say('+' + t + ' TICKETS · DISPENSING...'); } else say('NOT ENOUGH CASH'); }));
         if (K.pending) add('collect', K.dispK >= 1 ? 'COLLECT ' + K.pending + ' TICKETS' : 'DISPENSING ' + K.pending + ' TICKETS...', 112, 548, 800, 100, K.dispK >= 1, collect); } }
     else if (UI.open === 'shop') { const sh = A.shop; title = 'GROK PRIZE SHOP';
-      if (!sh) sub = 'THE SHOP IS LOADING'; else { const b = sh.balance(), per = 4, items = sh.ITEMS || [], pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
+      if (!sh) sub = 'THE SHOP IS LOADING'; else { const b = sh.balance(), per = 4, items = (sh.ITEMS || []).concat(sh.NK_SHOP ? sh.NK_SHOP() : []), pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
         sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
-        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
+        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => it.nk ? add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + (it.on ? 'WEARING' : it.owned ? 'OWNED · WEAR' : it.price), 40, 190 + i * 112, 944, 96, it.owned || b >= it.price, () => { if (sh.buyGlove(it.nk)) { S.shopBuys++; say((it.owned ? 'WEARING: ' : 'GOT IT: ') + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); })   // v16 Neon Knockout gloves
+          : add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
         add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'MONKEY BACKPACK';
       packTabs(add, 'ward');
@@ -414,10 +421,13 @@ export function setupVR(A) {
   function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
   const signs = [];
   function addSign(id, text, color, where, act, show) { const m = makeSign(text, color); m.name = 'vrSign_' + id; signs.push({ id, m, where, act, show }); return m; }
-  const padTop = w => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : tp.PAD2; return [P.x, 2.05, P.z]; };
+  const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
   addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
+  // v16 (t399u): the room-1 pad also beams to the NEON KNOCKOUT studio (sign stacked above BEAM TO SHOP); the studio pad beams back
+  addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(1, 2.36), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD3);
+  addSign('beamArcadeNK', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(3), beam, () => A.tp && A.tp.where === 3 && A.tp.state === 'idle' && !nkPlaying());
   addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway());
   // t356u/t358u: the shop mirror. shop.js's Reflector is 512x420 (blurred in a headset) and its own hook only draws within 12 m of the
   // camera, so in VR it stayed frozen after you beamed in until you walked halfway over. In VR a twin Reflector of vr.js's own takes
@@ -533,7 +543,7 @@ export function setupVR(A) {
       else if (g.fpHid) { parts.forEach((o, k) => { o.visible = g.fpHid[k]; }); g.fpHid = null; } } }
   function fpGun() { const u = monkey.userData || {}, pg = monkey.getObjectByName('gaPistol'), pz = pg && pg.getObjectByName('gaPistolMuzzle');
     const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src);
-    const on = !!(renderer.xr.isPresenting && pg && pg.visible && pz && u.char !== 'alien' && i >= 0 && pg.userData.vrFit);
+    const on = !!(renderer.xr.isPresenting && pg && pg.visible && pz && u.char !== 'alien' && i >= 0 && pg.userData.vrFit) && !nkIn();   // v16: no gun in the boxing studio
     if (!on) { fpGunOff(); return; }
     const hand = pg.parent;
     if (!GF.gun || GF.src !== pg) { if (GF.gun) scene.remove(GF.gun); GF.gun = pg.clone(true); GF.gun.name = 'vrFpGun'; GF.gun.matrixAutoUpdate = false; GF.gun.traverse(o => { o.frustumCulled = false; }); scene.add(GF.gun); GF.src = pg;
@@ -917,7 +927,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    avatarHands(); fpGun(); mpStep(); mirrorFrame();
+    avatarHands(); fpGun(); nkCtrl(); mpStep(); mirrorFrame();
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -938,10 +948,11 @@ export function setupVR(A) {
       if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; S.backs.nb++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
-      if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked)) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
+      if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
-      for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
+      if (nkPlaying()) { for (const c of ctrls) c.userData.ray.visible = false; }   // v16: boxing round: the controllers are gloves (no rays, no floor teleports)
+      else for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
         if (UI.open) { const u = uiHit(ray);
           if (u) { c.userData.ray.scale.z = u.t; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(u.p); dot.visible = true; if (u.btn && !UI.hover) UI.hover = u.btn.id;
             if (P.trigDown && u.btn && u.btn.on) { pulse(P.src, 0.5, 30); S.lastPress = u.btn.id; u.btn.act(); UI.key = ''; } continue; } }

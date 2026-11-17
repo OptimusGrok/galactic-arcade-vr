@@ -34,6 +34,7 @@ const byId = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 // Shared Grok robot builder (shopkeeper + arcade visitor). Same look Dave signed off on (t569).
 // Returns { root, arms, head, faceTex, drawFace }. Caller positions/scales the root.
 import chat from './grokchat.js';
+import { NK_GLOVES, ownsGlove, grantGlove, wearGlove, gloveIcon, gloveState } from './nkgloves.js';   // v16: Neon Knockout glove skins (worn in the studio)
 import { setupChessTable, CHESS } from './chesstable.js';   // VR edition: chess table between the wardrobe and the pool tables   // t810u: CHAT with Grok (shared panel + offline knowledge base)
 export function buildGrokClerk() {
   const canvasTex = (w, h, draw) => {
@@ -805,11 +806,19 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const holo = document.createElement('div'); holo.id = 'holo'; holo.innerHTML = '<div id="holoP"><div id="holoHd"><div><b>GROK PRIZE SHOP</b><div id="holoBal"></div></div><button id="holoX" aria-label="Close">✕</button></div><div id="holoL"></div></div>'; document.body.appendChild(holo);
   const list = holo.querySelector('#holoL'), bal = holo.querySelector('#holoBal');
   function fill() { const b = balance(), own = prizes(); bal.textContent = '🎟 ' + b + ' TICKETS'; const x = list.scrollLeft;   // t558: sideways hologram row of prize tiles
-    list.innerHTML = ITEMS.map(it => `<div class="hT${b < it.price ? ' no' : ''}"><span class="hN">${it.name}</span><img data-ic="${it.id}" alt="" src="${iconFor(it.id) || 'data:image/gif;base64,R0lGODlhAQABAAAAACw='}">${own[it.id] ? '<em>×' + own[it.id] + '</em>' : ''}<i>🎟 ${it.price}</i><button data-id="${it.id}" class="${b < it.price ? 'no' : ''}">BUY</button></div>`).join('');
+    list.innerHTML = ITEMS.map(it => `<div class="hT${b < it.price ? ' no' : ''}"><span class="hN">${it.name}</span><img data-ic="${it.id}" alt="" src="${iconFor(it.id) || 'data:image/gif;base64,R0lGODlhAQABAAAAACw='}">${own[it.id] ? '<em>×' + own[it.id] + '</em>' : ''}<i>🎟 ${it.price}</i><button data-id="${it.id}" class="${b < it.price ? 'no' : ''}">BUY</button></div>`).join('')
+      + NK_GLOVES.map(g => { const own = ownsGlove(g.id), on = gloveState().on === g.id, no = !own && b < g.price; return `<div class="hT${no ? ' no' : ''}" data-nkt="${g.id}"><span class="hN">${g.name}</span><img alt="" src="${nkIcon(g.id)}"><em>NEON KNOCKOUT</em><i>${own ? (on ? 'WEARING' : 'OWNED') : '🎟 ' + g.price}</i><button data-nk="${g.id}" class="${no ? 'no' : ''}">${on ? 'WEARING' : own ? 'WEAR' : 'BUY'}</button></div>`; }).join('');
     list.scrollLeft = x; }
   const stop = e => { e.stopPropagation(); };
   for (const el of [btn, holo]) { el.addEventListener('pointerdown', stop); el.addEventListener('touchstart', stop, { passive: true }); }
-  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy };
+  const nkIcons = {}; const nkIcon = id => nkIcons[id] || (nkIcons[id] = gloveIcon(id, 96));
+  // v16: Neon Knockout gloves (not prizes: no 3D model / backpack chip); bought once with tickets, then WEAR switches between owned skins
+  function buyGlove(id) { const g = NK_GLOVES.find(x => x.id === id); if (!g) return false;
+    if (ownsGlove(id)) { wearGlove(id); say(`${g.name} on! Go knock out some orbs.`); fill(); return true; }
+    const b = balance(); if (b < g.price) { say(`The ${g.name} are ${g.price} tickets and you've got ${b}. Win a few more games and come back!`); return false; }
+    spend(g.price); grantGlove(id); api.buys++; api.gloveBuys = (api.gloveBuys || 0) + 1; try { window.__announce && window.__announce('buy', { item: g.name, cost: g.price }); } catch (e) {} say(`Great choice! The ${g.name} are yours. Wear them in the Neon Knockout studio!`); fill(); return true; }
+  const NK_SHOP = () => { const on = gloveState().on; return NK_GLOVES.map(g => ({ id: 'nk_' + g.id, nk: g.id, name: g.name, price: g.price, owned: ownsGlove(g.id), on: on === g.id })); };
+  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP };
   chat.register('clerk', { open() { if (api.open) closeShop(); happyT = Math.max(happyT, 1.5); return { state: 'shop' }; }, close() {}, talk(text) { talkT = Math.max(talkT, Math.min(4, 0.6 + String(text || '').length * 0.03)); happyT = talkT + 0.6; } });   // t810u
   function openShop() { if (api.open) return; api.open = true; btn.classList.remove('on'); fill(); holo.classList.add('on'); say(GREET);
     const k = window.__arcade && window.__arcade.keys; if (k) for (const c in k) k[c] = false; }
@@ -823,8 +832,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // Taps act on pointerup of the element that got the pointerdown. On Android Chrome the synthesized 'click' can be touch-adjusted onto a
   // neighbouring BUY button (seen: tapping ✕ fired click on a BUY), so the menu never closed and its full-screen overlay ate every joystick
   // touch -> "player won't move after buying". The later click is ignored.
-  const holoAct = t => { if (!t || !t.closest) return null; return t.closest('#holoX') || t.closest('[data-id]') || (t === holo ? holo : null); };
-  const holoDo = a => { if (!a) return; if (a.id === 'holoX' || a === holo) closeShop(); else buy(a.dataset.id); };
+  const holoAct = t => { if (!t || !t.closest) return null; return t.closest('#holoX') || t.closest('[data-id]') || t.closest('button[data-nk]') || (t === holo ? holo : null); };
+  const holoDo = a => { if (!a) return; if (a.id === 'holoX' || a === holo) closeShop(); else if (a.dataset.nk) buyGlove(a.dataset.nk); else buy(a.dataset.id); };
   let holoDown = null, holoTapT = -1e9;
   let holoXY = [0, 0]; holo.addEventListener('pointerdown', e => { holoDown = holoAct(e.target); holoXY = [e.clientX, e.clientY]; });
   holo.addEventListener('pointerup', e => { const a = holoAct(e.target), d = holoDown; holoDown = null; if (!a || a !== d) return; if (Math.hypot(e.clientX - holoXY[0], e.clientY - holoXY[1]) > 12) { holoTapT = performance.now(); return; } holoTapT = performance.now(); holoDo(a); });

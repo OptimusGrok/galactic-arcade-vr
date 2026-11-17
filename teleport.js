@@ -4,6 +4,9 @@
 // the ceiling), he dematerialises into cyan/white pixels from the feet up, flash-cut, then reassembles on the other pad.
 import * as THREE from 'three';
 export const WX = 80;
+// v16 (t399u): NEON KNOCKOUT studio far west at x = -WX (the shop's mirror image); its pad (PAD3) sits beside the ring. Room-1 pad offers
+// SHOP and NEON KNOCKOUT; the studio pad only goes back to the ARCADE. where: 1 = arcade, 2 = shop, 3 = Neon Knockout studio.
+export const NKX = -WX, NK_PAD = new THREE.Vector3(2.6, 0, 2.4);
 // t233 (Dave): 1 s charge-up (the pad's groove rings light one by one), swirling light column + rising sparkles, white flash out /
 // materialise in, 'vwoom' charge + arrival zap, a WARP TO menu on the room-1 pad (SHOP / ROOM 2 / LAVA ISLAND), and other players
 // see you beam out / in (mp.js: a = 'tpo' | 'tp' | 'tpi'). The pad's resting look is unchanged (charge rings are invisible until used).
@@ -13,8 +16,8 @@ const DB = 0.5, DS = 0.55;
 export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   if (Z2 == null) Z2 = -(2 * HALF + 5);
   const ISLE = new THREE.Vector3(-3.25, 0, 4.5), ROOM2 = new THREE.Vector3(0, 0, Z2 + 5);   // lavapaths.js ISLANDS()[0] centre; room 2's doorway spoke
-  const DEST = { shop: { label: 'SHOP' }, room2: { label: 'ROOM 2', pos: ROOM2, face: Math.PI }, island: { label: 'LAVA ISLAND', pos: ISLE, face: Math.PI / 2 }, arcade: { label: 'ARCADE' } };
-  const PAD1 = new THREE.Vector3(-HALF + 1.25, 0, -HALF + 1.25), PAD2 = new THREE.Vector3(WX, 0, 0), R = 1.2, MH = 2.0;
+  const DEST = { shop: { label: 'SHOP' }, room2: { label: 'ROOM 2', pos: ROOM2, face: Math.PI }, island: { label: 'LAVA ISLAND', pos: ISLE, face: Math.PI / 2 }, arcade: { label: 'ARCADE' }, nk: { label: 'NEON KNOCKOUT' } };
+  const PAD1 = new THREE.Vector3(-HALF + 1.25, 0, -HALF + 1.25), PAD2 = new THREE.Vector3(WX, 0, 0), PAD3 = new THREE.Vector3(NKX + NK_PAD.x, 0, NK_PAD.z), R = 1.2, MH = 2.0;
   // ---- pad (brushed steel, concentric grooves, cyan neon rim) ----
   const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
   const gr = g.createRadialGradient(256, 256, 0, 256, 256, 256); gr.addColorStop(0, '#d4d8de'); gr.addColorStop(1, '#8e949c'); g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
@@ -38,7 +41,7 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
     const charge = [60, 120, 170, 215, 246].map(r => { const m = new THREE.Mesh(new THREE.TorusGeometry(r / 256 * R, 0.022, 6, 64), new THREE.MeshBasicMaterial({ color: 0x7ff6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); m.rotation.x = Math.PI / 2; m.position.y = 0.075; m.visible = false; G.add(m); return m; });
     scene.add(G); return { G, beam, rings, charge };
   }
-  const pads = [makePad(PAD1, 'teleportPad'), makePad(PAD2, 'teleportPadShop')];
+  const pads = [makePad(PAD1, 'teleportPad'), makePad(PAD2, 'teleportPadShop'), makePad(PAD3, 'teleportPadNK')];
   // ---- white room: same size as room 1, plain white, soft even light (baked corner shadows in the textures) ----
   const W = new THREE.Group(); W.name = 'whiteRoom'; W.position.set(WX, 0, 0); scene.add(W);
   const shade = (w, h, ys) => { const k = document.createElement('canvas'); k.width = k.height = 256; const q = k.getContext('2d'); q.fillStyle = '#ffffff'; q.fillRect(0, 0, 256, 256);
@@ -97,11 +100,13 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
     + '#tpMenu{position:fixed;left:50%;bottom:calc(max(22px,env(safe-area-inset-bottom)) + 74px);transform:translateX(-50%);z-index:24;display:none;flex-direction:column;align-items:center;gap:8px;touch-action:none}#tpMenu.on{display:flex}'
     + '#tpMenu b{font:900 13px/1 "Courier New",monospace;letter-spacing:.3em;color:#9ff8ff;text-shadow:0 0 8px #00e5ff}'
     + '#tpMenu button{min-width:190px;height:46px;padding:0 18px;border-radius:23px;border:3px solid #00e5ff;background:#03141ae8;color:#e6fdff;font:900 17px/1 "Courier New",monospace;letter-spacing:.12em;box-shadow:0 0 12px #00e5ff88;text-shadow:0 0 8px #00e5ff;cursor:pointer;touch-action:none}#tpMenu button:active{transform:scale(.95)}';
+  css.textContent += '#tpNK{position:fixed;left:50%;bottom:calc(max(22px,env(safe-area-inset-bottom)) + 6px);transform:translateX(4%);z-index:24;display:none;min-width:150px;height:58px;padding:0 18px;border-radius:29px;border:3px solid #18d8ff;background:#03141ae8;color:#e6fdff;font:900 18px/1 "Courier New",monospace;letter-spacing:.1em;box-shadow:0 0 16px #18d8ffaa;text-shadow:0 0 8px #18d8ff;cursor:pointer;touch-action:none}#tpNK.on{display:block}#tpBtn.pair{transform:translateX(-104%)}';
   document.head.appendChild(css);
   const btn = document.createElement('button'); btn.id = 'tpBtn'; document.body.appendChild(btn);
+  const nkBtn = document.createElement('button'); nkBtn.id = 'tpNK'; nkBtn.textContent = 'NEON KNOCKOUT'; document.body.appendChild(nkBtn);
   const menu = { classList: { toggle() {}, remove() {} } };   // t236: WARP TO menu removed (Dave: shop and back only)
   const fl = document.createElement('div'); fl.id = 'tpFl'; document.body.appendChild(fl);
-  const api = { where: 1, state: 'idle', t: 0, near: 0, pads, plane, whiteRoom: W, PAD1, PAD2, R, get locked() { return api.state !== 'idle'; }, go, dest: null, DEST, ISLE, ROOM2, fxAt };
+  const api = { where: 1, state: 'idle', t: 0, near: 0, pads, plane, whiteRoom: W, PAD1, PAD2, PAD3, NKX, R, get locked() { return api.state !== 'idle'; }, go, dest: null, DEST, ISLE, ROOM2, fxAt };
   // back from the shop (Dave t220u 'when the player returns from the shop to the arcade have this view'): on the pad, facing into room 1,
   // camera low + close straight behind him. Pure st values, so the follow camera keeps it until the player moves or drags.
   api.ARRIVE = { face: 0.70, pitch: 0.18, dist: 2.6 };   // tuned in Playwright (phone) against ref/shop_return_view_t220.jpg
@@ -110,9 +115,12 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   const stop = e => { e.stopPropagation(); e.preventDefault(); };
   btn.addEventListener('pointerdown', stop); btn.addEventListener('touchstart', stop, { passive: false });
   btn.addEventListener('pointerup', e => { stop(e); go(); }); btn.addEventListener('click', stop);
+  nkBtn.addEventListener('pointerdown', stop); nkBtn.addEventListener('touchstart', stop, { passive: false });
+  nkBtn.addEventListener('pointerup', e => { stop(e); go('nk'); }); nkBtn.addEventListener('click', stop);
   if (0) for (const b of []) { b.addEventListener('pointerdown', stop); b.addEventListener('touchstart', stop, { passive: false }); b.addEventListener('click', stop); b.addEventListener('pointerup', e => { stop(e); go(b.dataset.d); }); }
   // go(): from room 1 -> 'shop' (default) | 'room2' | 'island'; from the shop always back to the room-1 pad ('arcade')
-  function go(dest) { if (api.state !== 'idle') return; api.dest = api.where === 2 ? 'arcade' : 'shop'; api.state = 'walk'; api.t = 0; btn.classList.remove('on'); menu.classList.remove('on'); }
+  function go(dest) { if (api.state !== 'idle') return; api.dest = api.where !== 1 ? 'arcade' : dest === 'nk' ? 'nk' : 'shop'; api.state = 'walk'; api.t = 0; btn.classList.remove('on'); nkBtn.classList.remove('on'); btn.classList.remove('pair'); menu.classList.remove('on');
+    if (api.dest === 'nk' && api.onNK) try { api.onNK(); } catch (e) {} }   // v16: main.js lazy-loads the studio during the ~3 s beam
   // other players' beams (mp.js): swirl + sparkles where they stand; out = beaming away, else arriving
   function fxAt(x, z, out) { swirlAt(x, z, out ? 2.8 : 2.0); for (let i = 0; i < 3; i++) emit(10, 2, 0.05, x, z); }
   // t282u START BEAM-IN (Dave: 'teleport in at the start of the game but not on a pad'): a free-standing light column + the pad's
@@ -137,7 +145,7 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
       F.sw.scale.set(DS, 0.85, DS); F.sw.position.y = 0.98; F.rg.forEach(m => m.scale.setScalar(DS)); F.pts.scale.set(DS, 1, DS); api.previewDimmed = 1; }
     if (!F || !F.dim) requestAnimationFrame(dimPreview); })();
   let lsw = null;
-  const from = () => api.where === 1 ? PAD1 : PAD2, to = () => api.dest === 'shop' ? PAD2 : api.dest === 'arcade' ? PAD1 : DEST[api.dest].pos, padOf = w => pads[w - 1];
+  const from = () => api.where === 1 ? PAD1 : api.where === 3 ? PAD3 : PAD2, to = () => api.dest === 'shop' ? PAD2 : api.dest === 'nk' ? PAD3 : api.dest === 'arcade' ? PAD1 : DEST[api.dest].pos, padOf = w => pads[w - 1];
   let arrPad = null;
   function emit(n, mode, h, cx, cz) {
     for (let k = 0; k < n; k++) { const i = (api.pi = ((api.pi || 0) + 1) % N), o = P[i], a = Math.random() * 6.283, r = (0.08 + Math.random() * 0.3) * DS;
@@ -151,7 +159,7 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
     pd.rings.forEach((m, j) => { const f = (t * 0.7 + j / 3) % 1; m.visible = k > 0.01; m.position.y = 0.08 + f * 1.9; m.scale.setScalar(1 - f * 0.12); m.material.opacity = k * (1 - f) * 0.9 * DB; }); }
   api.update = (dt, canShow) => {
     const pd = from(), mp = monkey.position, d = Math.hypot(mp.x - pd.x, mp.z - pd.z); api.near = d;
-    if (api.state === 'idle') { const show = canShow && d < R + 0.35; btn.textContent = api.where === 1 ? 'SHOP' : 'ARCADE'; btn.classList.toggle('on', show); menu.classList.toggle('on', show && api.where === 1); power(padOf(api.where), 0, 0); }
+    if (api.state === 'idle') { const show = canShow && d < R + 0.35; btn.textContent = api.where === 1 ? 'SHOP' : 'ARCADE'; btn.classList.toggle('on', show); nkBtn.classList.toggle('on', show && api.where === 1); btn.classList.toggle('pair', show && api.where === 1); menu.classList.toggle('on', show && api.where === 1); power(padOf(api.where), 0, 0); }
     else {
       dt *= window.__tpTimeScale || 1; api.t += dt; const T = api.t;   // tests may speed the sequence up (slow software GL)
       if (api.state === 'walk') { const k = 1 - Math.exp(-dt * 6); mp.x += (pd.x - mp.x) * k; mp.z += (pd.z - mp.z) * k; st.vel.set(0, 0, 0);
@@ -163,8 +171,8 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
         if (f >= 1) { api.state = 'flash'; api.t = 0; } }
       else if (api.state === 'flash') { const D = 0.35; fl.style.opacity = String(Math.sin(Math.PI * Math.min(1, T / D)) * DB);
         if (!api.cut) { power(padOf(api.where), 1 - T / D, T); chargeRings(padOf(api.where), 9, 1 - T / D); }
-        if (T > D / 2 && !api.cut) { api.cut = 1; power(padOf(api.where), 0, 0); chargeRings(padOf(api.where), 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'arcade' ? pads[0] : null; st.camInit = false;
-          if (dd === 'arcade') arrive(); else if (DD.pos) { st.face = DD.face; monkey.rotation.y = DD.face; st.yaw = DD.face + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; }
+        if (T > D / 2 && !api.cut) { api.cut = 1; power(padOf(api.where), 0, 0); chargeRings(padOf(api.where), 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'nk' ? pads[2] : dd === 'arcade' ? pads[0] : null; st.camInit = false;
+          if (dd === 'arcade') arrive(); else if (dd === 'nk') { const f = Math.atan2(-NK_PAD.x, -NK_PAD.z); st.face = f; monkey.rotation.y = f; st.yaw = f + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; } else if (DD.pos) { st.face = DD.face; monkey.rotation.y = DD.face; st.yaw = DD.face + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; }
           swirlAt(tp.x, tp.z, 2.0); plane.normal.set(0, -1, 0); plane.constant = -0.05; }
         if (T >= D) { fl.style.opacity = '0'; api.cut = 0; api.state = 'remat'; api.t = 0; zapIn(); zap(false, 0.05); } }
       else if (api.state === 'remat') { const D = 1.5, f = Math.min(1, T / D), h = -0.05 + f * (MH + 0.1);
@@ -179,6 +187,6 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
       const s = o.s * (o.mode !== 1 ? 1 - u : 0.4 + u * 0.6) * (o.mode === 2 ? 0.8 + 0.4 * Math.sin(o.t * 40 + i) : 1); q.identity(); M4.compose(o.p, q, sc.set(s, s, s)); pm.setMatrixAt(n, M4); pm.setColorAt(n, col.set(i % 3 ? 0x33eaff : 0xe8ffff)); n++; }
     pm.count = n; pm.instanceMatrix.needsUpdate = true; if (pm.instanceColor) pm.instanceColor.needsUpdate = true;
   };
-  api.reset = () => { menu.classList.remove('on'); for (const p of pads) chargeRings(p, 0, 0); if (api.where !== 1) { monkey.position.set(PAD1.x + 1.6, 0, PAD1.z + 1.6); api.where = 1; } api.state = 'idle'; plane.constant = 100; plane.normal.set(0, 1, 0); fl.style.opacity = '0'; };
+  api.reset = () => { menu.classList.remove('on'); nkBtn.classList.remove('on'); btn.classList.remove('pair'); for (const p of pads) chargeRings(p, 0, 0); if (api.where !== 1) { monkey.position.set(PAD1.x + 1.6, 0, PAD1.z + 1.6); api.where = 1; } api.state = 'idle'; plane.constant = 100; plane.normal.set(0, 1, 0); fl.style.opacity = '0'; };
   return api;
 }

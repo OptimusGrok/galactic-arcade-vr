@@ -104,7 +104,7 @@ body.ingame #mpPill,body.ingame #mpBar,body.ingame #mpChat,body.ingame #mpTags,b
   function pillTxt() { if (M.state === 'on') M.count = liveCount(); pill.querySelector('#mpN').textContent = (M.state === 'on' ? M.count : 1) + '/' + CAP; pill.classList.toggle('off', M.state !== 'on'); }
   pillTxt();
   // ---------- local state -> wire ----------
-  function roomOf(p) { if (p.x > WX / 2) return 'white'; if (p.z > -HALF) return 'room1'; if (p.z < -(HALF + HALL_L)) return 'room2'; return 'hall'; }
+  function roomOf(p) { if (p.x > WX / 2) return 'white'; if (p.x < -WX / 2) return 'nk'; if (p.z > -HALF) return 'room1'; if (p.z < -(HALF + HALL_L)) return 'room2'; return 'hall'; }
   // t233: beaming out ('tpo': walk/charge/dissolve), gone ('tp': flash), beaming in ('tpi'). Older clients only hide on 'tp'.
   function animOf() { const tp = getTp && getTp(); const S = window.__start;
     if (tp && tp.beaming) return 'bin';   // t282u: start beam-in (older clients don't know 'bin' and just show the avatar)
