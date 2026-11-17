@@ -613,7 +613,7 @@ function carpetWhite() {   // white room floor plane lives in teleport.js (shop.
   const m = floorMats.carpet.clone(); m.map = m.emissiveMap = null;
   carpetW = new THREE.Mesh(fl.geometry, m); carpetW.position.z = 0.005; carpetW.name = 'carpetW'; carpetW.userData.carpetMat = m; carpetW.visible = false; fl.add(carpetW); syncCarpetW();
   const pw = fl.geometry.parameters, ht = hexTex.clone(); ht.needsUpdate = true; ht.userData.base = [pw.width, pw.height];
-  neonW = new THREE.Mesh(fl.geometry, new THREE.MeshStandardMaterial({ color: 0x0c0814, map: ht, emissive: 0x6a2cc0, emissiveMap: ht, emissiveIntensity: 0.35, roughness: 0.3, metalness: 0.6 }));
+  neonW = new THREE.Mesh(fl.geometry, new THREE.MeshStandardMaterial({ color: 0x2a1a48, map: ht, emissive: 0x8a3cff, emissiveMap: ht, emissiveIntensity: 1.0, roughness: 0.35, metalness: 0.3 }));
   neonW.position.z = 0.005; neonW.name = 'neonW'; neonW.visible = false; fl.add(neonW); syncNeonW();
   neonW.onBeforeRender = syncNeonW;
   return carpetW; }
