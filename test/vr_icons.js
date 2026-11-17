@@ -66,8 +66,8 @@ function inspect() {
   await vpage.waitForFunction(() => window.__gaVR.presenting && window.__gaVR.posed, null, { timeout: 30000 });
   await vpage.waitForFunction(() => window.__gaVR.icons && window.__gaVR.icons().done && window.__gaVR.icons().claw, null, { timeout: 20000 }).catch(() => {});
   const inXr = await vpage.evaluate(inspect);
-  chk(inXr.presenting && inXr.r.done && inXr.r.loaded.length === 13 && inXr.atlas === 2048 && inXr.k >= 0.8,
-    'in VR the wall pictures are the painted 2048 px atlas', { loaded: inXr.r.loaded && inXr.r.loaded.length, atlas: inXr.atlas, k: inXr.k });
+  chk(inXr.presenting && inXr.r.done && inXr.r.loaded.length === 13 && inXr.atlas === 1024 && inXr.k >= 0.8,
+    'in VR the wall pictures are the painted 1024 px atlas (test-v1)', { loaded: inXr.r.loaded && inXr.r.loaded.length, atlas: inXr.atlas, k: inXr.k });
   chk(inXr.r.claw && inXr.r.clawTex === 2048, 'in VR the claw upload-once fix is still in place', inXr.r);
   await H.frames(vpage, 4);
   await vpage.evaluate(async () => { try { const s = window.__arcade.renderer.xr.getSession(); if (s) await s.end(); } catch (e) {} });
