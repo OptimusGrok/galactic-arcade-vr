@@ -12,6 +12,7 @@
 // The player rig is an offset XR reference space (renderer.xr.setReferenceSpace), so camera.position and the controller
 // objects stay in world coordinates for the rest of the arcade code.
 import * as THREE from 'three';
+import { createVRChess } from './vrchess.js';   // v17 immersive VR chess
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
@@ -707,6 +708,13 @@ export function setupVR(A) {
   const chessM = panel(CPW, CPH, CHW, CHH); chessM.name = 'vrChess'; chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
   const CS = { was: 'idle', down: false, hand: null, u: 0, v: 0, drawT: -9, draws: 0, ptr: 0, placed: false, aligns: 0, downEl: null };
   S.chess = CS; S.chessM = chessM; S.backs = { menu: 0, chess: 0, game: 0, nb: 0 };
+  // v17 (t403u): IMMERSIVE chess (vrchess.js) replaces the painted-page panel once the game is up: own scene around you, own board
+  const VC = createVRChess({ scene }); S.vrChess = VC; const IM = { on: false, prefs: null, pumpN: 0 };
+  function immOn(w, A) { if (IM.on) return; IM.on = true; window.__chessImmersive = true; VC.V.sel = -1; VC.V.key = ''; VC.V.bkey = ''; VC.place(S.head || { x: monkey.position.x, y: 1.5, z: monkey.position.z, yaw: 0 }); VC.G.visible = true; chessM.visible = false;
+    try { const p = A.prefs; IM.prefs = { robot: p.robot, battle: p.battle }; p.robot = false; p.battle = false; } catch (e) {} S.chessImm = (S.chessImm || 0) + 1; }
+  function immOff() { if (!IM.on) return; IM.on = false; window.__chessImmersive = false; VC.G.visible = false; VC.V.sel = -1;
+    try { const w = chessWin() || (chessT() && chessT().frame && chessT().frame.contentWindow), A = w && w.chessApp; if (A && IM.prefs) { A.prefs.robot = IM.prefs.robot; A.prefs.battle = IM.prefs.battle; } } catch (e) {} IM.prefs = null; }
+  S.chessImmOn = () => IM.on;
   const chessIn = () => { const C = chessT(); return !!C && monkey.position.x > C.WXp / 2 && (!A.tp || A.tp.where !== 1 || monkey.position.x > C.WXp / 2); };
   const chessFree = () => { const C = chessT(); return !!C && C.state === 'idle' && C.gstate === 'home' && chessIn(); };
   function chessGo() { const C = chessT(); if (!C || play.mode !== 'walk') return false; uiClose(); const ok = C.start(); if (ok !== false) S.chessStarts = (S.chessStarts || 0) + 1; return ok; }
@@ -727,15 +735,16 @@ export function setupVR(A) {
   // before the step: seat the headset. Returns true while the chess table has you (sitting, playing, standing up).
   function chessPre() { const C = chessT(), now = C ? C.state : 'idle', ch = now !== CS.was;
     if (ch) { if (CS.was === 'idle' && S.head) { turnRig(-Math.PI / 2 - S.head.yaw); CS.aligns++; }   // face the board (+x) once
-      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; }
+      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; immOff(); }
       CS.was = now; }
     if (now !== 'idle' && S.head && (ch || now === 'sit' || now === 'stand')) moveRig(monkey.position.x - S.head.x, monkey.position.z - S.head.z);   // the headset rides the sit / stand tween
     return now !== 'idle'; }
   // after the step: the board panel, its ray + trigger, skip, grip = stand up
   function chessPost(dt, L, R, order) { const C = chessT(), anyP = k => !!((L && L[k]) || (R && R[k])); if (UI.open) uiClose();
-    if (anyP('gripDown')) { chessUp(); chessM.visible = false; C.exit('grip'); S.backs.chess++; pulse((L && L.gripDown ? L : R).src, 0.7, 50); return; }
+    if (anyP('gripDown') || (L && L.aDown)) { chessUp(); chessM.visible = false; immOff(); C.exit('grip'); S.backs.chess++; pulse((L && L.gripDown ? L : L && L.aDown ? L : R).src, 0.7, 50); return; }   // v17: GRIP or X = back to the shop
     if (C.grokBusy && C.gstate !== 'seated' && C.gstate !== 'sitdown' && (anyP('aDown') || anyP('trigDown'))) C.skip();
-    const w = chessWin(), P = w && w.__chessVR; if (!P) { chessM.visible = false; return; }
+    const w = chessWin(), P = w && w.__chessVR; if (!P) { chessM.visible = false; immOff(); return; }
+    const CA = w.chessApp; if (CA && CA.pos && CA.pos.legalMoves) { immOn(w, CA); chessImm(dt, w, CA, L, R, order); return; }
     try { if (w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {}   // the chess page's frames (robot arm, battles, piece slides) run from the XR loop
     if (!CS.placed) placeChess(); chessM.visible = true;
     if (S.frames - CS.drawT >= 2 || CS.down) { CS.drawT = S.frames; try { const cv = P.draw(), u = chessM.userData; u.g.clearRect(0, 0, CHW, CHH); u.g.drawImage(cv, 0, 0, CHW, CHH); u.tex.needsUpdate = true; CS.draws++; S.texUploads++; } catch (e) { S.lastError = 'chess ' + e; } }
@@ -748,6 +757,20 @@ export function setupVR(A) {
     else { const Ph = CS.hand === 'right' ? R : L, a = aim && aim.hand === CS.hand ? aim : null;
       if (Ph && Ph.trig) { if (a) chessPtr(w, 'pointermove', a.u, a.v); }
       else { chessPtr(w, 'pointerup', a ? a.u : CS.u, a ? a.v : CS.v); CS.down = false; CS.hand = null; } } }
+  // v17: the immersive board: rays pick squares / bar buttons; the page's own frames only every 4th XR frame (no robot / battles now)
+  function chessImm(dt, w, A, L, R, order) {
+    if ((++IM.pumpN & 3) === 0) { try { if (w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} }
+    let aim = null;
+    for (const [hand, Pd] of order) { const c = ctrlFor(hand); if (!c || !Pd) continue; const ray = rayOf(c), h = VC.hit(ray); if (!h) continue;
+      c.userData.ray.scale.z = h.t; c.userData.ray.material.color.setHex(h.kind === 'sq' ? 0x7dff9a : 0xffe14a);
+      if (!aim || Pd.trigDown) { aim = { hand, h, P: Pd }; dot.position.copy(h.p); dot.visible = true; } }
+    VC.V.hover = aim && aim.h.kind === 'sq' ? aim.h.sq : -1; VC.V.hbtn = aim && aim.h.kind === 'btn' ? aim.h.id : null;
+    if (aim && aim.P.trigDown) { const h = aim.h; pulse(aim.P.src, 0.45, 30);
+      if (h.kind === 'sq') { S.chessLast = VC.pick(A, h.sq); }
+      else if (h.id === 'new') { try { A.newGame(); VC.V.sel = -1; VC.say('NEW GAME'); } catch (e) {} S.chessLast = 'new'; }
+      else if (h.id === 'undo') { try { A.undo(); VC.V.sel = -1; } catch (e) {} S.chessLast = 'undo'; }
+      else if (h.id === 'exit') { const C = chessT(); chessUp(); immOff(); C.exit('button'); S.backs.chess++; S.chessLast = 'exit'; return; } }
+    VC.frameUpdate(w, A, dt); }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
   function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
     for (const g of signs) { if (!g.m.visible) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
@@ -793,7 +816,7 @@ export function setupVR(A) {
     A.resumeFlat();
   });
 
-  function pump() { const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue;
+  function pump() { const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
     try { const w = f.contentWindow; if (w && w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} } }
 
   // ---------- t355u: equipped gear in the arcade world (not in a cabinet): JETPACK -> hold A to fly, LASER PISTOL -> B shoots ----------

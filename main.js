@@ -724,6 +724,7 @@ function cullRooms(fr) {
     for (const [c, v] of nbHold) c.visible = v;
     nbHold = null;
   }
+  if (window.__chessImmersive) { if (tp) tp.whiteRoom.visible = false; hall.visible = room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v17 immersive VR chess: the shop is not drawn
   const inW = camera.position.x > WX / 2; if (tp) tp.whiteRoom.visible = inW;
   hall.visible = !inW;
   if (camera.position.x < NKX / 2) { hall.visible = false; room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v16: Neon Knockout studio (far west)
@@ -1897,7 +1898,8 @@ function frame(now, xrFrame) {
   if (window.__roomFire) window.__roomFire.update(Math.min(gap / 1000, 0.05));   // t741u laser pistol: arm pose + lasers, after the walk animation
   if (XRP && VRH) VRH.post(Math.min(gap / 1000, 0.05), xrFrame);
   if (NK) { try { NK.tick(Math.min(gap / 1000, 0.05)); } catch (e) { if (!NK.err) { NK.err = String(e && e.stack || e); console.warn('nk', e); } } }   // v16 Neon Knockout studio (no-op unless you are in it)
-  const draw = XRP || !PS.on || (now - PS.lastDraw) >= (1000 / Math.max(1, PS.fps)) - 0.75;   // VR: every headset frame is drawn   // power-save: skip GPU frames; movement above already used real dt
+  const chessFlat = !XRP && window.__chessTable && window.__chessTable.state === 'play' && renderer.domElement.style.visibility === 'hidden';   // v17: flat chess covers the screen
+  const draw = chessFlat ? (now - (PS.lastDraw || 0)) >= 500 : XRP || !PS.on || (now - PS.lastDraw) >= (1000 / Math.max(1, PS.fps)) - 0.75;   // VR: every headset frame is drawn   // power-save: skip GPU frames; movement above already used real dt
   camera.updateMatrixWorld();
   { // run each cabinet screen only when that cabinet is near and in view
     _frus.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
