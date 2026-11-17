@@ -20,7 +20,7 @@ export function createVRChess({ scene }) {
   const floor = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), new THREE.MeshBasicMaterial({ color: 0x120c22, fog: false, toneMapped: false })); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.005; floor.renderOrder = -9; G.add(floor);
   const ring = new THREE.Mesh(new THREE.RingGeometry(3.1, 3.2, 64), new THREE.MeshBasicMaterial({ color: 0x7f5cff, fog: false, toneMapped: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.006; G.add(ring);
   // board (canvas texture, square) on a tilted "table" in front of you
-  const BS = 0.84, BC = 1024, bc = document.createElement('canvas'); bc.width = bc.height = 1;   // TEST v1: full size only while you play (mem()) const bg = bc.getContext('2d'), bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; bt.anisotropy = 4;
+  const BS = 0.84, BC = 1024, bc = document.createElement('canvas'); bc.width = bc.height = 1; /* TEST v1: full size only while you play (mem()) */ const bg = bc.getContext('2d'), bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; bt.anisotropy = 4;
   const board = new THREE.Mesh(new THREE.PlaneGeometry(BS, BS), new THREE.MeshBasicMaterial({ map: bt, fog: false, toneMapped: false })); board.name = 'vrChessBoard';
   const frame = new THREE.Mesh(new THREE.BoxGeometry(BS + 0.08, BS + 0.08, 0.03), new THREE.MeshBasicMaterial({ color: 0x4a3220, fog: false, toneMapped: false })); frame.position.z = -0.017;
   const tbl = new THREE.Group(); tbl.add(frame, board); G.add(tbl);

@@ -1865,7 +1865,7 @@ window.__stillScreens = !LIVE_SCREENS;
 const STREAM = window.__gaStream = { shop: 'off', room2: 'off', wantShop: false, wantRoom2: false, ups: 0, evicts: 0 };
 function streamHold() { const ms = window.__gaStreamHold; return ms != null ? Math.max(200, +ms) : 8000; }
 function streamWant() {
-  const m = viewPos(), pad = tp && tp.PAD1;
+  const m = renderer.xr.isPresenting ? viewPos() : monkey.position, pad = tp && tp.PAD1;   // VR: the head; flat: the player (not the chase camera)
   const inShop = (tp && tp.where === 2) || m.x > WX - 14;
   const padD = pad ? Math.hypot(m.x - pad.x, m.z - pad.z) : 99;
   const locking = !!(tp && tp.locked);

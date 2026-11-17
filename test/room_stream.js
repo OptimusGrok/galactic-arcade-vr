@@ -41,7 +41,7 @@ const { open } = require('./lib');
   }, [x, z]).then(() => page.waitForTimeout(wait));
 
   // shop idle-loads after the first frames, then should evict at spawn (0, 5)
-  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.__arcade.loadShop()); await page.waitForTimeout(1500);
   let r = await snap();
   console.log('spawn', JSON.stringify(r));
   chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap && !r.title.hasMap, 'at spawn, shop heavy textures are evicted (placeholder colours)', { shop: r.stream.shop, mural: r.mural, shelf: r.shelf, title: r.title });
@@ -68,7 +68,8 @@ const { open } = require('./lib');
   chk(r.stream.wantShop && r.shopGpu && r.mural.hasMap && r.mural.w >= 512 && r.shelf.hasMap && r.labels.hasMap, 'near the teleporter, shop murals and shelf/price canvases are on the GPU', { stream: r.stream, mural: r.mural, shelf: r.shelf, labels: r.labels, title: r.title });
 
   // walk back to spawn (clear of the pad and the room-2 doorway) and evict
-  await put(0, 5, 2000);
+  await put(0, 5, 800);
+  await page.waitForFunction(() => window.__gaStream.shop === 'off', null, { timeout: 8000 }).catch(() => {});   // SwiftShader frames are slow right after the shop's uploads
   r = await snap();
   console.log('far-se', JSON.stringify(r));
   chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap, 'after leaving the shop pad and waiting, shop textures evict to placeholders', { stream: r.stream, mural: r.mural, shelf: r.shelf });
@@ -79,12 +80,13 @@ const { open } = require('./lib');
   r = await snap();
   console.log('room2', JSON.stringify(r));
   chk(r.r2Gpu && r.ds.hasMap, 'in room 2, Dead Signal art is on the GPU', r.ds);
+  await put(0, 8, 1400); await put(-9, -9, 800); await put(0, 5, 2000); await put(0, -10, 800); await put(0, 8, 1400);   // first full cycle (first-time draws may compile)
   const pr = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
   await put(0, 8, 1400); await put(-9, -9, 800); await put(0, 5, 2000); await put(0, -10, 800); await put(0, 8, 1400);
   const pr2 = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
   const st = await page.evaluate(() => window.__gaStream);
   chk(pr2 <= pr, 'a full evict / reload cycle of shop + room 2 compiled no new shader programs (' + pr + ' -> ' + pr2 + ')', st);
-  chk(st.ups >= 3 && st.evicts >= 3, 'streaming actually cycled (ups ' + st.ups + ', evicts ' + st.evicts + ')');
+  chk(st.ups >= 6 && st.evicts >= 6, 'streaming actually cycled (ups ' + st.ups + ', evicts ' + st.evicts + ')');
 
   chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors', errors);
   await close();
