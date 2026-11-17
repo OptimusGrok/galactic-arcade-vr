@@ -18,11 +18,13 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
 const SIGN_MAX = 30, TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
-const KEYNAME = { KeyL: 'l', KeyB: 'b', KeyO: 'o', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift' };
-const KEYCODE = { KeyL: 76, KeyB: 66, KeyO: 79, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16 };
+const KEYNAME = { KeyL: 'l', KeyB: 'b', KeyO: 'o', ArrowLeft: 'ArrowLeft', ArrowRight: 'ArrowRight', ArrowUp: 'ArrowUp', ArrowDown: 'ArrowDown', Space: ' ', Enter: 'Enter', KeyZ: 'z', KeyX: 'x', KeyP: 'p', KeyJ: 'j', KeyF: 'f', KeyE: 'e', ShiftLeft: 'Shift', KeyC: 'c' };
+const KEYCODE = { KeyL: 76, KeyB: 66, KeyO: 79, ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Space: 32, Enter: 13, KeyZ: 90, KeyX: 88, KeyP: 80, KeyJ: 74, KeyF: 70, KeyE: 69, ShiftLeft: 16, KeyC: 67 };
 // what each cabinet's buttons send into its game iframe (a = A/X, b = B/Y; trig: 'a' = same as A, 'ptr' = tap the screen where the ray points)
 const MAPS = {
-  strike: { a: ['KeyZ'], b: ['KeyX'], trig: 'a', help: 'STICK FLY · A/X/TRIGGER FIRE · B/Y BOMB' },
+  // v21 (Dave): A = HYPER SPEED (the game's C key), B = BOMB (X key), trigger = FIRE; pointing at the game's bottom-right HYPER SPEED / BOMB
+  // buttons and pulling the trigger taps them instead of firing (btnAt asks the game which button is under the ray)
+  strike: { a: ['KeyC'], b: ['KeyX'], trig: 'keys', trigKeys: ['KeyZ'], btnAt: '__strikeBtnAt', help: 'STICK FLY · TRIGGER FIRE · A HYPER SPEED · B BOMB' },
   // t353u: Berserker's power-ups are HTML buttons on the right that appear when ready (THOR at 100 energy, BERSERK and ODIN after their timers).
   // VR: A/B/trigger only on the RIGHT controller (attack / dash); each power-up gets its own free button, shown on a button beside the screen on the right.
   // t358u (Dave): A = DASH (always shown on the right), B = THOR, X = BERSERK, Y = ODIN; trigger = attack; hold grip = leave
@@ -1201,7 +1203,11 @@ export function setupVR(A) {
       if (!aim) trigAsA = true; }
     const prim = anyAB('a') || (trigAsA && !S.trigOnPw && any('trig'));
     for (const k of map.a) hold(k, prim, w);
-    if (map.trig === 'keys') for (const k of map.trigKeys) hold(k, !S.trigOnPw && any('trig'), w);   // t358u: the trigger has its own key (Berserker attack)
+    if (map.btnAt) { const tD = (R && R.trigDown) || (L && L.trigDown), tr = (R && R.trig) || (L && L.trig);
+      if (tD && aim && G.rect && typeof w[map.btnAt] === 'function') { const x = G.rect.left + aim.u * G.rect.width, y = G.rect.top + (1 - aim.v) * G.rect.height; let id = null; try { id = w[map.btnAt](x, y); } catch (e) {}
+        if (id) { sendPtr(w, 'pointerdown', aim.u, aim.v); sendPtr(w, 'pointerup', aim.u, aim.v); S.trigOnBtn = true; S.btnTaps = S.btnTaps || {}; S.btnTaps[id] = (S.btnTaps[id] || 0) + 1; pulse(((R && R.trigDown) ? R : L).src, 0.6, 40); } }
+      if (!tr) S.trigOnBtn = false; }
+    if (map.trig === 'keys') for (const k of map.trigKeys) hold(k, !S.trigOnPw && !S.trigOnBtn && any('trig'), w);   // t358u: the trigger has its own key (Berserker attack)
   }
   // ---- right stick = camera pan through the game's own drag-look (Sky Tower: lookDrag(dx, dy) in drag pixels, 0.0055 rad per px) ----
   function camPan(w, map, R, dt) { const api = w && w[map.pan]; if (!api || typeof api.lookDrag !== 'function' || !R) return;

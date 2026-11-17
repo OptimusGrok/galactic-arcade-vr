@@ -445,8 +445,14 @@
   // v12: B/Y in the Quest 2D browser = history back -> the trap turns it into FIRE (a Space tap + the on-screen FIRE button), not back;
   // GRIP is the back button now.
   var bFireN = 0;
-  function bFire() { if (inXR()) return; bFireN++; try { setKey('Space', true); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', true); } catch (e) {}
+  // v21 (Dave): in arcade STRIKE, B = BOMB on the flat Quest screen too (the game's own X key, sent into its iframe)
+  var bBombN = 0;
+  function strikeWin() { try { var f = document.getElementById('game'); if (!f || !document.body.classList.contains('ingame') || !/strike-play\//.test(f.getAttribute('src') || f.src || '')) return null; return f.contentWindow; } catch (e) { return null; } }
+  function strikeKey(w, code, on) { try { var ev = new w.KeyboardEvent(on ? 'keydown' : 'keyup', { code: code, key: code === 'KeyX' ? 'x' : code, bubbles: true, cancelable: true }); try { Object.defineProperty(ev, 'keyCode', { get: function () { return code === 'KeyX' ? 88 : 0; } }); } catch (e) {} (w.document.body || w.document.documentElement).dispatchEvent(ev); } catch (e) {} }
+  function bFire() { if (inXR()) return; var sw = strikeWin(); if (sw) { bBombN++; root.__gaQuestBomb = bBombN; strikeKey(sw, 'KeyX', true); setTimeout(function () { strikeKey(sw, 'KeyX', false); }, 120); return; }
+    bFireN++; try { setKey('Space', true); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', true); } catch (e) {}
     setTimeout(function () { try { if (!prevBtn.fire) setKey('Space', false); pressSel('#bFire, #fire, button[aria-label*="Fire" i], button[aria-label*="FIRE" i]', false); } catch (e) {} }, 120); }
+  root.__gaQuestBFire = bFire;
   function backTrap() {
     if (trapOn || !isQuest()) return; trapOn = true;
     try { history.pushState({ gaBackTrap: 1 }, ''); addEventListener('popstate', function () { bFire(); try { history.pushState({ gaBackTrap: 1 }, ''); } catch (e) {} }); } catch (e) {}
