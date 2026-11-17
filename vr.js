@@ -228,8 +228,9 @@ export function setupVR(A) {
   const uiM = panel(1.0, 0.75, 1024, 768); uiM.name = 'vrMenu'; uiM.renderOrder = 1003; uiM.visible = false; scene.add(uiM);
   const kiosk = () => window.__kiosk || null, nbApi = () => A.nb || null;
   const grokAway = () => { const C = window.__chessTable; return !!(C && C.grokBusy); };   // v12: the clerk is walking to / sitting at the chess table
+  const inChat = () => UI.open === 'chat' || UI.open === 'chatType';
   function uiOpen(kind) { const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 0.9;
-    if (UI.open === 'chat' && kind !== 'chat') chatEnd();
+    if (inChat() && kind !== 'chat' && kind !== 'chatType') chatEnd();
     UI.open = kind; UI.page = 0; UI.msg = ''; UI.msgT = 0; UI.key = '';
     uiM.position.set(h.x - Math.sin(h.yaw) * d, Math.max(0.9, h.y - 0.12), h.z - Math.cos(h.yaw) * d); uiM.rotation.set(0, h.yaw, 0); uiM.visible = true; uiM.updateMatrixWorld(true);
     S.panels[kind] = (S.panels[kind] || 0) + 1; }
@@ -302,13 +303,25 @@ export function setupVR(A) {
           B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); B[B.length - 1].sel = on; });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 610, 564, 80, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 610, 170, 80, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 610, 170, 80, UI.page < pages - 1, () => { UI.page++; }); } }
-    else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();
+    else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi(), T = sttNow();
       if (!C || !C.open) { sub = 'GROK HAS GONE'; } else {
-        sub = UI.chatQ ? 'YOU: ' + UI.chatQ : 'PICK A QUESTION'; body = 'GROK: ' + (UI.chatA || '...');
-        const per = 8, pages = Math.ceil(CHAT_QS.length / per); UI.page = Math.min(UI.page, pages - 1);
-        CHAT_QS.slice(UI.page * per, UI.page * per + per).forEach((q, i) => add('q_' + (UI.page * per + i), q, 30 + (i % 2) * 488, 382 + Math.floor(i / 2) * 68, 476, 60, true, () => chatAsk(q))); 
-        add('prev', '<', 30, 660, 170, 90, UI.page > 0, () => { UI.page--; }); add('next', '>', 824, 660, 170, 90, UI.page < pages - 1, () => { UI.page++; }); }
-      add('close', 'CLOSE', 220, 660, 584, 90, true, uiClose); }
+        if ((C.seq || 0) !== (UI.chatSeq || 0)) { UI.chatSeq = C.seq; UI.chatQ = C.lastQ || ''; UI.chatA = C.lastA || ''; }   // spoken (or flat-typed) questions land here too
+        const ts = T && T.active ? T.state : '';
+        sub = ts === 'loading' ? 'LOADING SPEECH ' + (T.progress | 0) + '% (FIRST TIME ONLY)' : ts === 'hearing' ? (T.partial ? 'YOU: ' + T.partial.toUpperCase() + '…' : 'HEARING YOU…') : ts === 'thinking' ? 'WRITING WHAT YOU SAID…'
+          : ts === 'listening' ? 'LISTENING… SPEAK NOW' : T && T.state === 'error' && T.err ? T.err.toUpperCase() : UI.chatQ ? 'YOU: ' + UI.chatQ.toUpperCase() : 'PICK, TYPE OR TALK';
+        body = 'GROK: ' + (UI.chatA || '...');
+        const per = 6, pages = Math.ceil(CHAT_QS.length / per); UI.page = Math.min(UI.page, pages - 1);
+        CHAT_QS.slice(UI.page * per, UI.page * per + per).forEach((q, i) => add('q_' + (UI.page * per + i), q, 30 + (i % 2) * 488, 382 + Math.floor(i / 2) * 66, 476, 58, true, () => chatAsk(q)));
+        add('type', 'TYPE A MESSAGE', 30, 584, 476, 64, true, chatType);
+        add('talk', T && T.active ? 'STOP LISTENING' : 'TALK TO GROK', 518, 584, 476, 64, !!(T && T.supported), chatTalk); B[B.length - 1].sel = !!(T && T.active);
+        add('prev', '<', 30, 666, 170, 84, UI.page > 0, () => { UI.page--; }); add('next', '>', 824, 666, 170, 84, UI.page < pages - 1, () => { UI.page++; }); }
+      add('close', 'CLOSE', 220, 666, 584, 84, true, uiClose); }
+    else if (UI.open === 'chatType') { title = 'TYPE TO GROK'; const t = UI.typed || ''; sub = (t.length > 44 ? '…' + t.slice(-43) : t) + '_';
+      const row = (keys, y, x0) => [...keys].forEach((k, i) => add('k_' + k, k, x0 + i * 96, y, 88, 74, true, () => chatKey(k)));
+      row('1234567890', 184, 36); row('QWERTYUIOP', 266, 36); row('ASDFGHJKL', 348, 84); row('ZXCVBNM,.?', 430, 36);
+      add("k_'", "'", 36, 512, 88, 74, true, () => chatKey("'")); add('k_!', '!', 132, 512, 88, 74, true, () => chatKey('!'));
+      add('k_SPACE', 'SPACE', 228, 512, 472, 74, true, () => chatKey('SPACE')); add('k_DEL', 'DEL', 708, 512, 136, 74, !!t, () => chatKey('DEL')); add('k_CLEAR', 'CLEAR', 852, 512, 136, 74, !!t, () => chatKey('CLEAR'));
+      add('back', '< BACK', 30, 610, 300, 90, true, chatTypeBack); add('k_SEND', 'SEND', 344, 610, 650, 90, !!t.trim(), () => chatKey('SEND')); B[B.length - 1].sel = true; }
     else if (UI.open === 'pack') { title = 'MONKEY BACKPACK'; const sh = A.shop || window.__shop;
       packTabs(add, 'prizes');
       if (!sh || !sh.hold) { sub = 'OPENING THE BACKPACK...'; try { window.__arcade && window.__arcade.loadShop && window.__arcade.loadShop(); } catch (e) {} } else {
@@ -381,14 +394,23 @@ export function setupVR(A) {
   // its offline knowledge base and makes him talk). There is no keyboard in the headset, so the typed box becomes ray-clickable questions. ----------
   const CHAT_QS = ['WHAT GAMES ARE THERE?', 'HOW DO I GET TICKETS?', 'WHAT CAN I WIN IN THE SHOP?', 'WHAT ARE YOU DOING?', 'TELL ME A JOKE', 'WHO ARE YOU?', 'HOW DO I OPEN LEVEL 2?', 'HOW DOES THE WARDROBE WORK?',
     'HOW DOES THE BACKPACK WORK?', 'HOW DO I CHANGE CHARACTER?', 'HOW DO I PLAY BERSERKER?', 'HOW DO I PLAY SKY TOWER?', 'HOW DO I PLAY NEON BRICKS?', 'HOW DO I PLAY GOLF?', 'HOW DOES THE CLAW MACHINE WORK?', 'WHAT ARE VIKING TICKETS?',
-    'HOW DO I GET CASH?', 'CAN I PLAY WITH FRIENDS?', 'WHAT TIME IS IT?', 'WHAT DO YOU LIKE TO EAT?', 'WHO IS DAVE?', 'THANKS GROK!', 'BYE GROK!'];
+    'HOW DO I GET CASH?', 'CAN I PLAY WITH FRIENDS?', 'WHAT TIME IS IT?', 'WHAT DO YOU LIKE TO EAT?', 'THANKS GROK!', 'BYE GROK!'];
   const chatApi = () => window.__grokChat || null;
   function chatStart(src) { const C = chatApi(); if (!C || !C.hooks || !C.hooks[src]) return false; if (C.open && C.ctx && C.ctx.source !== src) C.close('vr');
     if (!C.open) C.openChat(src); if (!C.open) return false; try { C.input && C.input.blur(); } catch (e) {}
-    UI.chatSrc = src; uiOpen('chat'); UI.chatQ = ''; const lg = C.log.filter(e => e.who === 'g'); UI.chatA = lg.length ? lg[lg.length - 1].text : ''; S.chatOpens = (S.chatOpens || 0) + 1; return true; }
-  function chatEnd() { if (UI.open !== 'chat') return; const C = chatApi(); try { if (C && C.open) C.close('vr'); } catch (e) {} UI.chatSrc = null; }
-  function chatAsk(q) { const C = chatApi(); if (!C || !C.open) return; UI.chatQ = q; UI.chatA = C.ask(q) || ''; S.chatAsks = (S.chatAsks || 0) + 1; UI.key = ''; }
-  S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
+    UI.chatSrc = src; uiOpen('chat'); UI.chatSeq = C.seq || 0; UI.typed = ''; UI.chatQ = ''; const lg = C.log.filter(e => e.who === 'g'); UI.chatA = lg.length ? lg[lg.length - 1].text : ''; S.chatOpens = (S.chatOpens || 0) + 1; return true; }
+  function chatEnd() { if (!inChat()) return; const C = chatApi(); try { if (C && C.open) C.close('vr'); } catch (e) {} UI.chatSrc = null; }
+  function chatAsk(q, via) { const C = chatApi(); if (!C || !C.open) return; UI.chatQ = q; UI.chatA = C.ask(q, via || 'pick') || ''; UI.chatSeq = C.seq || 0; S.chatAsks = (S.chatAsks || 0) + 1; UI.key = ''; }
+  // v19 (Dave): TYPE = a floating keyboard (same panel); SEND asks Grok your own words. TALK = speech to text (grokchat.js / stt.js)
+  function chatType() { if (UI.open !== 'chat') return; UI.open = 'chatType'; UI.key = ''; UI.typed = UI.typed || ''; S.panels.chatType = (S.panels.chatType || 0) + 1; }
+  function chatTypeBack() { if (UI.open === 'chatType') { UI.open = 'chat'; UI.key = ''; } }
+  function chatKey(k) { const t = UI.typed || ''; S.chatKeys = (S.chatKeys || 0) + 1;
+    if (k === 'DEL') UI.typed = t.slice(0, -1); else if (k === 'CLEAR') UI.typed = ''; else if (k === 'SPACE') { if (t && !t.endsWith(' ')) UI.typed = t + ' '; }
+    else if (k === 'SEND') { const q = t.trim(); if (!q) { say('TYPE SOMETHING FIRST'); return; } UI.typed = ''; chatTypeBack(); chatAsk(q, 'type'); S.chatTyped = (S.chatTyped || 0) + 1; }
+    else if (t.length < 120) UI.typed = t + k; }
+  function chatTalk() { const C = chatApi(); if (!C || !C.open || !C.talk) return false; const r = C.talk(); UI.key = ''; S.chatTalks = (S.chatTalks || 0) + 1; return r; }
+  const sttNow = () => { const C = chatApi(); return C && C.stt ? C.stt : null; };
+  S.chat = { start: chatStart, ask: chatAsk, type: chatType, key: chatKey, talk: chatTalk, get typed() { return UI.typed || ''; }, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
   function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
     const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(','); if (key === UI.key) return; UI.key = key;
@@ -726,9 +748,9 @@ export function setupVR(A) {
   S.mirrorRT = () => { const m = MV.twin && MV.twin.visible ? MV.twin : mirrorMesh(); if (!m || !m.getRenderTarget) return null; const rt = m.getRenderTarget(); return { w: rt.width, h: rt.height, vr: m === MV.twin, filter: rt.texture.minFilter === THREE.LinearFilter ? 'linear' : rt.texture.minFilter, mips: rt.texture.generateMipmaps }; };
   const mirrorMesh = () => { const w = A.shop && A.shop.wardrobe; return (w && w.mirror && w.mirror.mesh) || null; };
   // t360u: CHAT WITH GROK over the shop clerk (above PRIZE SHOP) and over the visiting Grok in the arcade
-  addSign('chatClerk', 'CHAT WITH GROK', '#7dfcff', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()), h = S.head, k = h ? Math.min(3, Math.max(1, Math.hypot(h.x - p.x, h.z - p.z) / 6)) : 1; return [p.x, p.y + 2.3 + 0.33 * k, p.z]; }, () => chatStart('clerk'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway() && !!(chatApi() && chatApi().hooks.clerk) && UI.open !== 'chat');
+  addSign('chatClerk', 'CHAT WITH GROK', '#7dfcff', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()), h = S.head, k = h ? Math.min(3, Math.max(1, Math.hypot(h.x - p.x, h.z - p.z) / 6)) : 1; return [p.x, p.y + 2.3 + 0.33 * k, p.z]; }, () => chatStart('clerk'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway() && !!(chatApi() && chatApi().hooks.clerk) && !inChat());
   addSign('chatVisitor', 'CHAT WITH GROK', '#7dfcff', () => { const v = window.__grokVisit, g = v && v.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => chatStart('visitor'),
-    () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || UI.open === 'chat' || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
+    () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || inChat() || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
   S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
@@ -1011,6 +1033,7 @@ export function setupVR(A) {
         if (anyP('gripDown')) { if (nkPaused()) nkResume(); else nkPause(); pulse((L && L.gripDown ? L : R).src, 0.6, 40); }
         else if (nkPaused() && UI.open !== 'nkPause') uiOpen('nkPause'); }
       else if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
+      else if (anyP('gripDown') && UI.open === 'chatType') { chatTypeBack(); pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v19: GRIP on the keyboard = back to the chat
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
       const golfHand = !UI.open && !nkPlaying() ? golfVR(L, R) : null;   // v19: mini golf putting owns the pointing hand near a ball
