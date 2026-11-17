@@ -89,9 +89,9 @@ const { openVR, H } = require('./vrlib');
     await H.axes(page, 'left', 0, 0); await H.frames(page, 3);
     chk(kL && x1 < x0 - 5, 'left stick -> ArrowLeft: ship moves left (x ' + x0.toFixed(1) + ' -> ' + x1.toFixed(1) + ')');
     chk(!(await fr.evaluate(() => window.STRIKE.Input.keys.left)), 'stick release -> keyup');
-    await H.btn(page, 'right', 'a-button', 1); await H.frames(page, 5);
-    const fire = await fr.evaluate(() => !!window.STRIKE.Input.keys.fire); await H.btn(page, 'right', 'a-button', 0); await H.frames(page, 3);
-    chk(fire, 'A -> fire (KeyZ)');
+    await H.btn(page, 'right', 'trigger', 1); await H.frames(page, 5);
+    const fire = await fr.evaluate(() => !!window.STRIKE.Input.keys.fire); await H.btn(page, 'right', 'trigger', 0); await H.frames(page, 3);
+    chk(fire, 'trigger -> fire (KeyZ)');   // v21: A is HYPER SPEED now (test/vr_strike_v21.js)
     await H.btn(page, 'left', 'y-button', 1); await H.frames(page, 4); const bomb = await fr.evaluate(() => !!window.STRIKE.Input.keys.bomb); await H.btn(page, 'left', 'y-button', 0); await H.frames(page, 3);
     chk(bomb, 'Y -> bomb (KeyX)');
     const h3 = await page.evaluate(() => window.__gaVR.compHash()); await H.frames(page, 10); chk(h3 !== await page.evaluate(() => window.__gaVR.compHash()), 'screen keeps updating during play');
