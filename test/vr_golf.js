@@ -12,7 +12,7 @@ const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
   try {
     await until(() => document.getElementById('vrBtn').classList.contains('on'), 30000);
     await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 30000);
-    await until(() => window.__minigolf && window.__arcade.shop, 90000);
+    await until(() => window.__minigolf && window.__shop, 90000);
     await E(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await until(() => window.__tp.where === 2 && window.__tp.state === 'idle', 90000);
     const g0 = await E(() => { const g = window.__minigolf; return { X0: g.X0, Z: (g.Z0 + g.Z1) / 2 }; });
     await place(g0.X0 - 2.2, 0, g0.Z, -Math.PI / 2); await H.frames(page, 6);
