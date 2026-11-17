@@ -167,9 +167,9 @@ export function setupChessTable({ G, WXp, grok, legs, arms, head, home, play, st
   // ---- the chess game (flat overlay iframe; in VR the same iframe is painted onto the headset panel by vr.js) ----
   function openFrame() { if (api.frame) return; const f = api.frame = document.createElement('iframe'); f.src = SRC; f.title = 'Chess'; f.allow = 'autoplay'; ov.appendChild(f); ov.classList.toggle('vr', isVR()); ov.classList.add('on');
     requestAnimationFrame(() => ov.classList.add('show')); api.opens = (api.opens || 0) + 1;
-    f.addEventListener('load', () => { try { f.contentWindow.addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); api.exit('esc'); } }, true); if (!isVR()) f.contentWindow.focus(); } catch (e) {} });
+    f.addEventListener('load', () => { if (api.frame !== f) return; try { f.contentWindow.addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); api.exit('esc'); } }, true); if (!isVR()) f.contentWindow.focus(); } catch (e) {} }, { once: true });
     if (!isVR()) setTimeout(() => { if (api.frame === f && api.state === 'play') { const cv = window.__arcade && window.__arcade.renderer && window.__arcade.renderer.domElement; if (cv) cv.style.visibility = 'hidden'; } }, 500); }
-  function closeFrame() { const f = api.frame; api.frame = null; ov.classList.remove('show', 'on', 'vr'); if (f) { try { f.src = 'about:blank'; } catch (e) {} f.remove(); }
+  function closeFrame() { const f = api.frame; api.frame = null; ov.classList.remove('show', 'on', 'vr'); if (f) { try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {} try { f.src = 'about:blank'; } catch (e) {} f.remove(); }
     const cv = window.__arcade && window.__arcade.renderer && window.__arcade.renderer.domElement; if (cv) cv.style.visibility = ''; try { window.focus(); } catch (e) {} }
   window.__chessWin = (w, n, lvl) => { const f = api.frame; if (!f || w !== f.contentWindow || api.state !== 'play') return false; n = Math.max(1, Math.min(20, n | 0));
     const P = play || (window.__arcade && window.__arcade.play); if (P && P.addTickets) P.addTickets(n); else return false; api.wins++; api.paid += n; api.lastWin = { n, lvl }; return true; };

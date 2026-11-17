@@ -264,8 +264,9 @@ export function setupPlay(A) {
     P.zooms++;
     if (m.prep) { P.mode = 'prep'; P.t = 0; P.pcam = null; P.cam0 = camera.position.clone(); P.look0 = monkey.position.clone().setY(1.25); m.anim('on', 0); }   // walk-up + headset on first, then zoomIn()
     else zoomIn(m);
+    if (P.frame) killFrame(P.frame); P.frame = null;
     const f = P.frame = document.createElement('iframe'); f.id = 'game'; const ver = window.__GA_VER || 'v235'; const tier = (window.__arcade && window.__arcade.tier && window.__arcade.tier.name) || ''; f.src = m.src + (m.src.indexOf('?') >= 0 ? '&' : '?') + 'ga=' + ver + (tier ? '&tier=' + encodeURIComponent(tier) : ''); f.allow = 'autoplay; fullscreen'; f.title = m.cab.name;
-    f.addEventListener('load', () => { P.loaded = true; try { f.contentWindow.addEventListener('keydown', ev => { if (TV.open) { ev.stopImmediatePropagation(); ev.preventDefault(); if (ev.code === 'Escape') closeView(); return; } if (ev.code === 'Escape') { ev.stopImmediatePropagation(); ev.preventDefault(); exit('esc'); return; } if (P.sub === 'demo') { ev.stopImmediatePropagation(); ev.preventDefault(); if (/^(Enter|Space|KeyE)$/.test(ev.code) && !ev.repeat) tryPlay(); } }, true); } catch (e) {} });
+    f.addEventListener('load', () => { if (P.frame !== f) return; P.loaded = true; try { f.contentWindow.addEventListener('keydown', ev => { if (TV.open) { ev.stopImmediatePropagation(); ev.preventDefault(); if (ev.code === 'Escape') closeView(); return; } if (ev.code === 'Escape') { ev.stopImmediatePropagation(); ev.preventDefault(); exit('esc'); return; } if (P.sub === 'demo') { ev.stopImmediatePropagation(); ev.preventDefault(); if (/^(Enter|Space|KeyE)$/.test(ev.code) && !ev.repeat) tryPlay(); } }, true); } catch (e) {} });
     P.loaded = false; document.body.appendChild(f);
   }
   function zoomIn(m) { P.mode = 'zoomIn'; P.t = 0;
@@ -287,15 +288,20 @@ export function setupPlay(A) {
     if (sc === 'scores' && !P.holdT) P.holdT = setTimeout(() => toDemo('scores'), m.scoresHold);
     if (sc === 'title') toDemo('title');
   }
+  function killFrame(f) {
+    if (!f) return;
+    try { if (f.contentWindow && f.contentWindow.__skySnd) f.contentWindow.__skySnd.stop(); } catch (e) {}
+    try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {}
+    try { f.removeAttribute('id'); } catch (e) {}
+    try { f.src = 'about:blank'; } catch (e) {}
+    try { f.remove(); } catch (e) {}
+  }
   function exit(why) {
     if (P.mode !== 'game') return; clearInterval(P.poll); clearTimeout(P.holdT); P.holdT = 0; over.style.display = 'none'; hideContinue();
     P.lastExit = why; P.sub = null; demoUI.classList.remove('on'); P.mode = 'zoomOut'; P.t = 0; bExit.style.display = 'none'; document.body.dataset.cab = '';
-    const f = P.frame; f.classList.remove('on');
-    try { if (f.contentWindow && f.contentWindow.__skySnd) f.contentWindow.__skySnd.stop(); } catch (e) {}
-    try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {}   // t762u: free its GPU / canvas / audio now, not at some later GC (phones)
-    try { f.src = 'about:blank'; } catch (e) {}
     try { if (TV.open) closeView(); } catch (e) {}
-    try { f.contentWindow.document.body.style.display = 'none'; } catch (e) {} setTimeout(() => f.remove(), 500); P.frame = null;
+    const f = P.frame; P.frame = null; if (f) f.classList.remove('on');
+    killFrame(f);   // TEST v1 (v249 t882u port): release WebGL/audio and remove now (no 500 ms window with two #game frames)
     if (P.cur.onExit) P.cur.onExit();
     if (P.cur.upright || document.body.classList.contains('upright')) try { window.__orient && window.__orient(false); } catch (e) {}
     const m = P.cur, back = monkey.position.clone().setY(monkey.position.y + 1.25), out = back.clone().addScaledVector(m.cab.userData.inward, 2.6).setY(2.1);
