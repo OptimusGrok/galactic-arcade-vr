@@ -109,6 +109,8 @@ async function whisperStart() {
   src.connect(node); node.connect(sink); sink.connect(ctx.destination);
   mic = { stream, ctx, src, node, sink };
   const sr = ctx.sampleRate, chunkS = 4096 / sr;
+  // voice activity detection on 4096-sample chunks: adaptive noise floor, speech starts above ~2.5x floor, ends after 0.8 s quiet
+  let floor = 0.004, speaking = false, quiet = 0, seg = [], pre = [], segLen = 0;
   onChunk = x => {
     if (!active || !mic || mic.node !== node) return;
     let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
