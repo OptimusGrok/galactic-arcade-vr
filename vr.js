@@ -1046,9 +1046,11 @@ export function setupVR(A) {
       if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; PIN.lights.delete(l); }
     if (on) for (const l of ls) if (!PIN.lights.has(l)) { adopt(l); l.userData.vrGolf = true; }
     PIN.golf = on; }
+  // pinned whenever the shop's white room is drawn this frame (main.js culls it at the beam cut), so the cut never sees the shop with 10 lights
+  function golfWant() { const wr = A.tp && A.tp.whiteRoom; return wr ? effVis(wr) : !!(A.tp && A.tp.where === 2); }
   S.golfPin = golfPin;
   function pinScan() { if (!PIN.seeded) { PIN.seeded = true; const ds = []; scene.traverse(o => { if (o.isLight && o.name === 'dsSpot') ds.push(o); }); ds.forEach(adopt); }   // known blinker: Dead Signal station spot (its group is culled by distance)
-    const area = A.tp ? A.tp.where : 0; if (!PIN.staging && (area === 2) !== !!PIN.golf) golfPin(area === 2);
+    const area = A.tp ? A.tp.where : 0; if (!PIN.staging) { const gw = golfWant(); if (gw !== !!PIN.golf) golfPin(gw); }
     if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
     if (S.frames % 15 !== 0 && PIN.seen.size) return; const flips = [];
     scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight || PIN.lights.has(o)) return; const v = effVis(o), was = PIN.seen.get(o); if (was !== undefined && was !== v) flips.push(o); PIN.seen.set(o, v); });
@@ -1213,7 +1215,7 @@ export function setupVR(A) {
     fr.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const wasAdopted = PIN.lights.size;
     try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); PIN.staging = true; golfPin(area === 2); pinLights(); return fn(); }
-    finally { unpinLights(); PIN.staging = false; golfPin(!!(S.presenting && A.tp && A.tp.where === 2)); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
+    finally { unpinLights(); PIN.staging = false; golfPin(!!S.presenting && golfWant()); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
       fill.visible = fv; if (nkRoot) nkRoot.visible = nkv; monkey.visible = mv; camera.position.copy(cp); camera.quaternion.copy(cq); camera.updateMatrixWorld(true);
       const f2 = new THREE.Frustum(); f2.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); window.__cullFor(S.presenting && S.head ? new THREE.Vector3(S.head.x, S.head.y, S.head.z) : camera.position.clone(), f2); } }
   // after the compile: draw the staged area once into a 2x2 corner of the default framebuffer (the headset's program variants), looking
@@ -1246,7 +1248,8 @@ export function setupVR(A) {
         PW.areas.push({ area, sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
       // vrtest-v5 (t458u): the shop's other light sets: the golf basement in view (from ~8 m before the stairs) and the golf lamps on (from 3 m)
       const G = window.__minigolf;
-      if (G && G.warmStage && scene.getObjectByName('golfRoom')) for (const [show, lit] of [[true, false], [true, true]]) {
+      if (G && G.warmStage && scene.getObjectByName('golfRoom')) for (const [show, lit] of (dbg().golfold ? [[true, false], [true, true]] : [[true, true]])) {   // v7: golf lights pinned = one set (24p), only the basement's first draw is left to warm
+
         const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '', undo = G.warmStage(show, lit);
         try { stageArea(2, () => { undo(); undo = G.warmStage(show, lit); LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
             try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
