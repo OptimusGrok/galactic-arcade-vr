@@ -230,9 +230,9 @@ export function setupVR(A) {
   const uiM = panel(1.0, 0.75, 1024, 768); uiM.name = 'vrMenu'; uiM.renderOrder = 1003; uiM.visible = false; scene.add(uiM);
   const kiosk = () => window.__kiosk || null, nbApi = () => A.nb || null;
   const grokAway = () => { const C = window.__chessTable; return !!(C && C.grokBusy); };   // v12: the clerk is walking to / sitting at the chess table
-  const inChat = () => UI.open === 'chat' || UI.open === 'chatType';
+  const inChat = () => UI.open === 'chat';
   function uiOpen(kind) { const h = S.head || { x: monkey.position.x, y: 1.6, z: monkey.position.z, yaw: st.yaw }, d = 0.9;
-    if (inChat() && kind !== 'chat' && kind !== 'chatType') chatEnd();
+    if (inChat() && kind !== 'chat') chatEnd();
     UI.open = kind; UI.page = 0; UI.msg = ''; UI.msgT = 0; UI.key = '';
     uiM.position.set(h.x - Math.sin(h.yaw) * d, Math.max(0.9, h.y - 0.12), h.z - Math.cos(h.yaw) * d); uiM.rotation.set(0, h.yaw, 0); uiM.visible = true; uiM.updateMatrixWorld(true);
     S.panels[kind] = (S.panels[kind] || 0) + 1; }
@@ -248,7 +248,7 @@ export function setupVR(A) {
   const nkPlaying = () => nkRound() && !window.__nkGame.state.paused;   // v17: a paused round shows the rays again (for the pause panel)
   const nkPaused = () => nkRound() && !!window.__nkGame.state.paused;
   S.nkPauses = 0; S.nkResets = 0; S.nkExits = 0;
-  // v17 (t404u): GRIP during a Neon Knockout round = pause: RESUME / RESET GAME / EXIT GAME (exit beams back to the arcade, no tickets)
+  // v17 (t404u) / v23: B or Y during a Neon Knockout round = pause: RESUME / RESET GAME / EXIT GAME (exit beams back to the arcade, no tickets)
   function nkPause() { const N = window.__nkGame; if (!N || !N.pause()) return false; S.nkPauses++; uiOpen('nkPause'); return true; }
   function nkResume() { const N = window.__nkGame; if (UI.open === 'nkPause') uiClose(); if (N) N.resume(); }
   function nkReset() { const N = window.__nkGame; if (UI.open === 'nkPause') uiClose(); if (N && N.resetRound()) S.nkResets++; }
@@ -276,7 +276,7 @@ export function setupVR(A) {
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
     let title = '', sub = '', body = '';
     add('close', 'X', 900, 22, 100, 90, true, uiClose);
-    if (UI.open === 'nkPause') { B[0].act = nkResume; title = 'PAUSED'; sub = 'EXIT = BACK TO THE ARCADE · NO TICKETS FOR AN UNFINISHED ROUND';
+    if (UI.open === 'nkPause') { B[0].act = nkResume; title = 'PAUSED'; sub = 'B / Y = RESUME · EXIT = BACK TO THE ARCADE · NO TICKETS FOR AN UNFINISHED ROUND';
       add('nkResume', 'RESUME', 162, 210, 700, 140, true, nkResume); add('nkReset', 'RESET GAME', 162, 390, 700, 140, true, nkReset); add('nkExit', 'EXIT GAME', 162, 570, 700, 140, true, nkExit); }
     if (UI.open === 'tickets') { const K = kiosk(); title = 'TICKET EXCHANGE';
       if (!K) sub = 'NOT READY'; else { const bal = K.C.bal, left = Math.max(0, Math.ceil((K.C.at + 36e5 - Date.now()) / 6e4));
@@ -305,25 +305,15 @@ export function setupVR(A) {
           B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); B[B.length - 1].sel = on; });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 610, 564, 80, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 610, 170, 80, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 610, 170, 80, UI.page < pages - 1, () => { UI.page++; }); } }
-    else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi(), T = sttNow();
+    else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();   // v23 (Dave t432u): preset questions only (no TYPE keyboard, no TALK)
       if (!C || !C.open) { sub = 'GROK HAS GONE'; } else {
-        if ((C.seq || 0) !== (UI.chatSeq || 0)) { UI.chatSeq = C.seq; UI.chatQ = C.lastQ || ''; UI.chatA = C.lastA || ''; }   // spoken (or flat-typed) questions land here too
-        const ts = T && T.active ? T.state : '';
-        sub = ts === 'loading' ? 'LOADING SPEECH ' + (T.progress | 0) + '% (FIRST TIME ONLY)' : ts === 'hearing' ? (T.partial ? 'YOU: ' + T.partial.toUpperCase() + '…' : 'HEARING YOU…') : ts === 'thinking' ? 'WRITING WHAT YOU SAID…'
-          : ts === 'listening' ? 'LISTENING… SPEAK NOW' : T && T.state === 'error' && T.err ? T.err.toUpperCase() : UI.chatQ ? 'YOU: ' + UI.chatQ.toUpperCase() : 'PICK, TYPE OR TALK';
+        if ((C.seq || 0) !== (UI.chatSeq || 0)) { UI.chatSeq = C.seq; UI.chatQ = C.lastQ || ''; UI.chatA = C.lastA || ''; }   // flat-picked questions land here too
+        sub = UI.chatQ ? 'YOU: ' + UI.chatQ.toUpperCase() : 'PICK A QUESTION';
         body = 'GROK: ' + (UI.chatA || '...');
-        const per = 6, pages = Math.ceil(CHAT_QS.length / per); UI.page = Math.min(UI.page, pages - 1);
-        CHAT_QS.slice(UI.page * per, UI.page * per + per).forEach((q, i) => add('q_' + (UI.page * per + i), q, 30 + (i % 2) * 488, 382 + Math.floor(i / 2) * 66, 476, 58, true, () => chatAsk(q)));
-        add('type', 'TYPE A MESSAGE', 30, 584, 476, 64, true, chatType);
-        add('talk', T && T.active ? 'STOP LISTENING' : 'TALK TO GROK', 518, 584, 476, 64, !!(T && T.supported), chatTalk); B[B.length - 1].sel = !!(T && T.active);
+        const per = 8, pages = Math.ceil(CHAT_QS.length / per); UI.page = Math.min(UI.page, pages - 1);
+        CHAT_QS.slice(UI.page * per, UI.page * per + per).forEach((q, i) => add('q_' + (UI.page * per + i), q, 30 + (i % 2) * 488, 382 + Math.floor(i / 2) * 68, 476, 60, true, () => chatAsk(q)));
         add('prev', '<', 30, 666, 170, 84, UI.page > 0, () => { UI.page--; }); add('next', '>', 824, 666, 170, 84, UI.page < pages - 1, () => { UI.page++; }); }
       add('close', 'CLOSE', 220, 666, 584, 84, true, uiClose); }
-    else if (UI.open === 'chatType') { title = 'TYPE TO GROK'; const t = UI.typed || ''; sub = (t.length > 44 ? '…' + t.slice(-43) : t) + '_';
-      const row = (keys, y, x0) => [...keys].forEach((k, i) => add('k_' + k, k, x0 + i * 96, y, 88, 74, true, () => chatKey(k)));
-      row('1234567890', 184, 36); row('QWERTYUIOP', 266, 36); row('ASDFGHJKL', 348, 84); row('ZXCVBNM,.?', 430, 36);
-      add("k_'", "'", 36, 512, 88, 74, true, () => chatKey("'")); add('k_!', '!', 132, 512, 88, 74, true, () => chatKey('!'));
-      add('k_SPACE', 'SPACE', 228, 512, 472, 74, true, () => chatKey('SPACE')); add('k_DEL', 'DEL', 708, 512, 136, 74, !!t, () => chatKey('DEL')); add('k_CLEAR', 'CLEAR', 852, 512, 136, 74, !!t, () => chatKey('CLEAR'));
-      add('back', '< BACK', 30, 610, 300, 90, true, chatTypeBack); add('k_SEND', 'SEND', 344, 610, 650, 90, !!t.trim(), () => chatKey('SEND')); B[B.length - 1].sel = true; }
     else if (UI.open === 'pack') { title = 'MONKEY BACKPACK'; const sh = A.shop || window.__shop;
       packTabs(add, 'prizes');
       if (!sh || !sh.hold) { sub = 'OPENING THE BACKPACK...'; try { window.__arcade && window.__arcade.loadShop && window.__arcade.loadShop(); } catch (e) {} } else {
@@ -403,16 +393,7 @@ export function setupVR(A) {
     UI.chatSrc = src; uiOpen('chat'); UI.chatSeq = C.seq || 0; UI.typed = ''; UI.chatQ = ''; const lg = C.log.filter(e => e.who === 'g'); UI.chatA = lg.length ? lg[lg.length - 1].text : ''; S.chatOpens = (S.chatOpens || 0) + 1; return true; }
   function chatEnd() { if (!inChat()) return; const C = chatApi(); try { if (C && C.open) C.close('vr'); } catch (e) {} UI.chatSrc = null; }
   function chatAsk(q, via) { const C = chatApi(); if (!C || !C.open) return; UI.chatQ = q; UI.chatA = C.ask(q, via || 'pick') || ''; UI.chatSeq = C.seq || 0; S.chatAsks = (S.chatAsks || 0) + 1; UI.key = ''; }
-  // v19 (Dave): TYPE = a floating keyboard (same panel); SEND asks Grok your own words. TALK = speech to text (grokchat.js / stt.js)
-  function chatType() { if (UI.open !== 'chat') return; UI.open = 'chatType'; UI.key = ''; UI.typed = UI.typed || ''; S.panels.chatType = (S.panels.chatType || 0) + 1; }
-  function chatTypeBack() { if (UI.open === 'chatType') { UI.open = 'chat'; UI.key = ''; } }
-  function chatKey(k) { const t = UI.typed || ''; S.chatKeys = (S.chatKeys || 0) + 1;
-    if (k === 'DEL') UI.typed = t.slice(0, -1); else if (k === 'CLEAR') UI.typed = ''; else if (k === 'SPACE') { if (t && !t.endsWith(' ')) UI.typed = t + ' '; }
-    else if (k === 'SEND') { const q = t.trim(); if (!q) { say('TYPE SOMETHING FIRST'); return; } UI.typed = ''; chatTypeBack(); chatAsk(q, 'type'); S.chatTyped = (S.chatTyped || 0) + 1; }
-    else if (t.length < 120) UI.typed = t + k; }
-  function chatTalk() { const C = chatApi(); if (!C || !C.open || !C.talk) return false; const r = C.talk(); UI.key = ''; S.chatTalks = (S.chatTalks || 0) + 1; return r; }
-  const sttNow = () => { const C = chatApi(); return C && C.stt ? C.stt : null; };
-  S.chat = { start: chatStart, ask: chatAsk, type: chatType, key: chatKey, talk: chatTalk, get typed() { return UI.typed || ''; }, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
+  S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
   function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
     const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(','); if (key === UI.key) return; UI.key = key;
@@ -466,11 +447,10 @@ export function setupVR(A) {
   // v19 (t411u, Dave: "can't play mini golf in VR"): the stairwell's energy shield only had a flat-screen PAY button. In the headset a sign
   // over the shield: trigger = pay 5 tickets (only if you have them) and the shield drops; then walk down the stairs with the stick.
   const golfA = () => A.golf || null;
-  addSign('golfPay', 'MINI GOLF · PAY 5 TICKETS', '#ffb000', () => { const G = golfA(); return G ? [G.X0 - 0.15, 2.05, (G.Z0 + G.Z1) / 2] : null; }, () => golfPay(),
-    () => { const G = golfA(); if (!G || G.open || G.below || !A.tp || A.tp.where !== 2 || !S.head) return false; return Math.hypot(S.head.x - G.X0, S.head.z - (G.Z0 + G.Z1) / 2) < 9; });
+  // v23 (Dave t432u): mini golf is free and open: no PAY sign; just walk down the stairs.
   function golfPay() { const G = golfA(); if (!G) return false; const t = play.tickets.total;
     if (G.unlock()) { S.golfPays = (S.golfPays || 0) + 1; S.msg = 'SHIELD DOWN · WALK DOWN THE STAIRS TO PLAY'; S.msgT = 3.5; return true; }
-    S.msg = 'NEED 5 TICKETS · YOU HAVE ' + t; S.msgT = 3; return false; }
+    return false; }
   S.golfPay = golfPay;
   // putting: near a ball (3 m) your pointing hand aims instead of teleporting. Point at the green where the ball should go (further = harder),
   // HOLD the trigger to aim (line + putter), LET GO to putt; grip while aiming cancels. The other hand still teleports.
@@ -1031,11 +1011,10 @@ export function setupVR(A) {
       if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; S.backs.nb++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
-      if (nkRound()) {   // v17: Neon Knockout round: GRIP pauses / resumes; the pause panel stays up until a choice
-        if (anyP('gripDown')) { if (nkPaused()) nkResume(); else nkPause(); pulse((L && L.gripDown ? L : R).src, 0.6, 40); }
+      if (nkRound()) {   // v23 (Dave t421u): Neon Knockout round: B or Y pauses / resumes (GRIP does nothing); the pause panel stays up until a choice
+        if (anyP('bDown')) { if (nkPaused()) nkResume(); else nkPause(); pulse((L && L.bDown ? L : R).src, 0.6, 40); }
         else if (nkPaused() && UI.open !== 'nkPause') uiOpen('nkPause'); }
       else if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
-      else if (anyP('gripDown') && UI.open === 'chatType') { chatTypeBack(); pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v19: GRIP on the keyboard = back to the chat
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
       const golfHand = !UI.open && !nkPlaying() ? golfVR(L, R) : null;   // v19: mini golf putting owns the pointing hand near a ball

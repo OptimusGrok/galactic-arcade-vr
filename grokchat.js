@@ -4,10 +4,8 @@
 // built-in knowledge base below (fully offline, no API, no keys): fuzzy keyword / synonym matching, plus small skills (time, date,
 // maths, your tickets, what Grok is doing right now) and friendly fallbacks. Nothing typed here is sent anywhere.
 
-// v19 (Dave): TALK. The 🎤 button (and, automatically, whenever your voice-chat mic is on) listens and turns what you say into text
-// (stt.js: the browser's Web Speech API, or on-device Whisper where that isn't available, e.g. Quest Browser); the words show as your
-// chat line and Grok answers exactly as if you'd typed them.
-import STT from './stt.js';
+// v19 (Dave) TALK / TYPE removed in v23 (Dave t432u): the chat is preset questions only (tap / click one; Grok answers). No speech to
+// text, no Whisper download, no text box.
 
 // ---------------- knowledge ----------------
 const T = (n) => { try { return Math.max(0, parseInt(localStorage.getItem(n), 10) || 0); } catch (e) { return 0; } };
@@ -53,7 +51,7 @@ const KB = [
   { id: 'pool', k: ['pool', '8 ball', '8-ball', 'eight ball', 'billiards', 'snooker', 'cue'],
     a: '8-BALL POOL is in my shop! Walk up to one of the two pool tables and press PLAY POOL. It\'s free for now.' },
   { id: 'golf', k: ['golf', 'mini golf', 'minigolf', 'galactic golf', 'basement', 'stairs'],
-    a: 'GALACTIC GOLF is down the stairs beside my shop counter: a neon basement with holes themed on Strike, Ghost 256 and Monkey Crossing. The energy shield on the top step costs 5 tickets each visit. Each hole pays once per visit: hole in one +5, two strokes +4, three +3.' },
+    a: 'GALACTIC GOLF is down the stairs beside my shop counter: a neon basement with holes themed on Strike, Ghost 256 and Monkey Crossing. It is free: just walk down the stairs and play. Each hole pays once per visit: hole in one +5, two strokes +4, three +3.' },
   { id: 'games', k: ['games', 'machines', 'cabinets', 'what can i play', 'what to play', 'list', 'arcade games', 'which game', 'best game', 'favourite game', 'favorite game', 'recommend'],
     a: () => 'Here\'s what you can play: STRIKE (2-player co-op!), GHOST 256, MONKEY CROSSING, BERSERKER, ORC ATTACK, CYBERCITY, BLASTER, SUPER PIP QUEST, BURROW BUSTER, ROCKFALL RUSH, SKY TOWER, NOVA TETHER, the CLAW MACHINE, MARS ROADSTER, DEAD SIGNAL VR, NEON BRICKS in the big window, plus 8-BALL POOL and GALACTIC GOLF at my shop. ' + pick(['My favourite is STRIKE. Ask me about any of them!', 'I love GHOST 256. Ask me how to play any game!', 'Try SKY TOWER, it\'s a blast! Ask me about any game.']) },
   { id: 'howplay', k: ['how do i play', 'how to play', 'start a game', 'play a game', 'insert coin', 'credit', 'credits', 'controls', 'play button'],
@@ -233,7 +231,7 @@ function reply(raw) {
 }
 
 // ---------------- UI ----------------
-const G = { open: false, near: {}, hooks: {}, ctx: null, opens: 0, closes: 0, log: [], last: null, reply, seq: 0, lastQ: '', lastA: '', lastVia: '', voiceAsks: 0, stt: STT };
+const G = { open: false, near: {}, hooks: {}, ctx: null, opens: 0, closes: 0, log: [], last: null, reply, seq: 0, lastQ: '', lastA: '', lastVia: '', voiceAsks: 0 };
 window.__grokChat = G;
 const css = document.createElement('style');
 css.textContent =
@@ -246,24 +244,24 @@ css.textContent =
   '#gcLog{flex:1 1 auto;min-height:60px;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}' +
   '.gcM{max-width:86%;padding:8px 11px;border-radius:12px;font:600 15px/1.35 system-ui,sans-serif;white-space:pre-wrap;word-wrap:break-word}.gcM.g{align-self:flex-start;background:#0d2a40;border:1px solid #00e5ff66}.gcM.u{align-self:flex-end;background:#3a0f44;border:1px solid #ff3cf066}' +
   '.gcM.g:before{content:"GROK  ";font:900 11px "Courier New",monospace;color:#7fe8ff;letter-spacing:.1em}' +
-  '#gcF{display:flex;gap:8px;padding:8px;border-top:1px solid #00e5ff55;flex:none}#gcIn{flex:1;min-width:0;font:600 16px system-ui,sans-serif;color:#fff;background:#020812;border:2px solid #00e5ff88;border-radius:10px;padding:10px 12px;outline:none;-webkit-user-select:text;user-select:text}#gcIn:focus{border-color:#ff3cf0}' +
-  '#gcMic{flex:none;width:48px;border-radius:10px;border:2px solid #ff3cf0aa;background:#22062a;color:#fff;font:20px/1 sans-serif;cursor:pointer;padding:0}#gcMic.on{background:#ff3cf0;border-color:#fff;box-shadow:0 0 12px #ff3cf0}#gcMic.busy{background:#5a2a70}#gcMic[hidden]{display:none}' +
-  '#gcSt{flex:none;padding:4px 12px;font:700 13px/1.3 system-ui,sans-serif;color:#ffb8f6;min-height:0}#gcSt:empty{display:none}' +
-  '#gcSend{flex:none;padding:0 16px;border-radius:10px;border:2px solid #00e5ff;background:#06283a;color:#dffbff;font:900 15px "Courier New",monospace;letter-spacing:.1em;cursor:pointer}';
+  '#gcQ{display:flex;flex-wrap:wrap;gap:6px;padding:8px;border-top:1px solid #00e5ff55;flex:none;max-height:42%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}' +
+  '.gcQb{flex:1 1 46%;min-height:40px;padding:6px 8px;border-radius:10px;border:2px solid #00e5ff88;background:#06283a;color:#dffbff;font:800 13px/1.15 system-ui,sans-serif;cursor:pointer;text-align:center}.gcQb:hover,.gcQb:focus{border-color:#ff3cf0;outline:none}';
 document.head.appendChild(css);
 const btn = document.createElement('button'); btn.id = 'gcBtn'; btn.type = 'button'; btn.textContent = '💬 CHAT'; document.body.appendChild(btn);
 const ov = document.createElement('div'); ov.id = 'gcOv';
 ov.innerHTML = '<div id="gcP" role="dialog" aria-label="Chat with Grok"><div id="gcHd"><b>CHAT WITH GROK</b><button id="gcX" type="button" aria-label="Close chat">✕</button></div><div id="gcLog" aria-live="polite"></div>'
-  + '<div id="gcSt" aria-live="polite"></div><form id="gcF" autocomplete="off"><input id="gcIn" maxlength="200" placeholder="Ask Grok anything..." enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true"><button id="gcMic" type="button" aria-label="Talk to Grok" title="Talk to Grok">🎤</button><button id="gcSend" type="submit">SEND</button></form></div>';
+  + '<div id="gcQ" role="group" aria-label="Questions"></div></div>';
 document.body.appendChild(ov);
-const logEl = ov.querySelector('#gcLog'), inEl = ov.querySelector('#gcIn'), panel = ov.querySelector('#gcP'), micEl = ov.querySelector('#gcMic'), stEl = ov.querySelector('#gcSt');
-if (!STT.supported) micEl.hidden = true;
+const logEl = ov.querySelector('#gcLog'), panel = ov.querySelector('#gcP'), qEl = ov.querySelector('#gcQ');
+// v23: the same preset questions as the headset panel (vr.js CHAT_QS)
+const QS = ['WHAT GAMES ARE THERE?', 'HOW DO I GET TICKETS?', 'WHAT CAN I WIN IN THE SHOP?', 'WHAT ARE YOU DOING?', 'TELL ME A JOKE', 'WHO ARE YOU?', 'HOW DO I OPEN LEVEL 2?', 'HOW DOES THE WARDROBE WORK?',
+  'HOW DOES THE BACKPACK WORK?', 'HOW DO I CHANGE CHARACTER?', 'HOW DO I PLAY BERSERKER?', 'HOW DO I PLAY SKY TOWER?', 'HOW DO I PLAY NEON BRICKS?', 'HOW DO I PLAY GOLF?', 'HOW DOES THE CLAW MACHINE WORK?', 'WHAT ARE VIKING TICKETS?',
+  'HOW DO I GET CASH?', 'CAN I PLAY WITH FRIENDS?', 'WHAT TIME IS IT?', 'WHAT DO YOU LIKE TO EAT?', 'THANKS GROK!', 'BYE GROK!'];
+for (const q of QS) { const b = document.createElement('button'); b.type = 'button'; b.className = 'gcQb'; b.textContent = q; b.addEventListener('click', e => { e.stopPropagation(); ask(q, 'pick'); }); qEl.appendChild(b); }
 // keep touches / keys out of the walk controls and the game while chatting
 for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'touchstart', 'touchmove', 'touchend', 'mousedown', 'wheel']) panel.addEventListener(ev, e => e.stopPropagation(), { passive: true });
 for (const ev of ['pointerdown', 'pointerup', 'touchstart', 'touchend']) btn.addEventListener(ev, e => e.stopPropagation(), { passive: true });
-inEl.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); close('esc'); } });
-inEl.addEventListener('keyup', e => e.stopPropagation()); inEl.addEventListener('keypress', e => e.stopPropagation());
-addEventListener('keydown', e => { if (G.open && e.target !== inEl) { if (e.key === 'Escape') { close('esc'); e.stopImmediatePropagation(); e.preventDefault(); } } }, true);
+addEventListener('keydown', e => { if (G.open) { if (e.key === 'Escape') { close('esc'); e.stopImmediatePropagation(); e.preventDefault(); } } }, true);
 
 function add(who, text) {
   const d = document.createElement('div'); d.className = 'gcM ' + who; d.textContent = text; logEl.appendChild(d);
@@ -279,23 +277,6 @@ function ask(text, via) {
   try { const h = G.ctx && G.hooks[G.ctx.source]; if (h && h.talk) h.talk(a); } catch (e) {}
   return a;
 }
-ov.querySelector('#gcF').addEventListener('submit', e => { e.preventDefault(); const v = inEl.value; inEl.value = ''; ask(v); try { inEl.focus({ preventScroll: true }); } catch (e2) {} });
-// ---- TALK (speech to text) ----
-const micOn = () => { const v = window.__voice; return !!(v && v.state === 'on' && !v.muted); };
-function sttText() { const st = STT.state;
-  return st === 'loading' ? 'Loading speech (first time only, ~40 MB)… ' + (STT.progress | 0) + '%' : st === 'listening' ? 'Listening… speak now' + (STT.continuous ? ' (your mic is on)' : '')
-    : st === 'hearing' ? (STT.partial ? '“' + STT.partial + '…”' : 'Hearing you…') : st === 'thinking' ? 'Writing what you said…' : st === 'error' ? (STT.err || 'Speech error') : ''; }
-function sttUI() { const st = STT.state, on = STT.active; micEl.classList.toggle('on', on && (st === 'listening' || st === 'hearing')); micEl.classList.toggle('busy', on && (st === 'loading' || st === 'thinking'));
-  micEl.textContent = on ? '⏹' : '🎤'; micEl.setAttribute('aria-label', on ? 'Stop listening' : 'Talk to Grok'); stEl.textContent = G.open ? sttText() : ''; G.sttLine = sttText(); }
-function listen(continuous) { if (!G.open || !STT.supported) return false;
-  return STT.start({ continuous: !!continuous, onChange: sttUI, onText: t => { if (!G.open) return; ask(t, 'voice'); sttUI(); } }) && (sttUI(), true); }
-function stopListen() { STT.stop(); sttUI(); }
-// 🎤 / TALK: tap to talk once (or stop); while the voice-chat mic is on it listens the whole time the chat is open
-function talk() { if (STT.active) { stopListen(); G.talkOff = true; return false; } G.talkOff = false; return listen(micOn()); }
-micEl.addEventListener('click', e => { e.stopPropagation(); talk(); });
-setInterval(() => { if (!G.open) return; const m = micOn();
-  if (m && !STT.active && !G.talkOff && STT.state !== 'error' && STT.supported) listen(true);
-  else if (!m && STT.active && STT.continuous) stopListen(); }, 700);
 ov.querySelector('#gcX').addEventListener('click', e => { e.stopPropagation(); close('x'); });
 
 // keyboard-safe on phones: fit the overlay to the visual viewport (the part above the on-screen keyboard)
@@ -318,14 +299,11 @@ function open(source) {
   ov.classList.add('on'); fitVV();
   if (!logEl.children.length) add('g', (myName() ? 'Hi ' + myName() + '! ' : 'Hi! ') + 'I\'m Grok. Ask me anything: how to play a game, tickets, prizes, the wardrobe... or ask for a joke!');
   else add('g', pick(['Welcome back! What else can I help with?', 'Hi again! Ask away.']));
-  G.talkOff = false; if (STT.state === 'error') STT.state = 'idle'; if (micOn() && STT.supported) listen(true); else sttUI();
-  if (!matchMedia('(pointer:coarse)').matches) setTimeout(() => { try { inEl.focus({ preventScroll: true }); } catch (e) {} }, 30);
   return true;
 }
 function close(why) {
   if (!G.open) return false;
-  G.open = false; G.closes++; G.closeWhy = why || ''; stopListen();
-  try { inEl.blur(); } catch (e) {}
+  G.open = false; G.closes++; G.closeWhy = why || '';
   ov.classList.remove('on');
   const c = G.ctx; G.ctx = null;
   try { const h = c && G.hooks[c.source]; if (h && h.close) h.close(c); } catch (e) { console.warn('grokchat close', e); }
@@ -341,6 +319,6 @@ function setNear(source, on) {
 btn.addEventListener('click', e => { e.stopPropagation(); const s = btn.dataset.src; if (s) open(s); });
 addEventListener('keydown', e => { if (!G.open && btn.classList.contains('on') && e.code === 'KeyC' && !(e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) { open(btn.dataset.src); e.preventDefault(); } });
 
-Object.assign(G, { talk, listen, stopListen, micEl, open_: open, openChat: open, close, ask, setNear, register(source, hooks) { G.hooks[source] = hooks; }, btn, ov, input: inEl, logEl, KB });
+Object.assign(G, { QS, qEl, open_: open, openChat: open, close, ask, setNear, register(source, hooks) { G.hooks[source] = hooks; }, btn, ov, logEl, KB });
 Object.defineProperty(G, 'isOpen', { get: () => G.open });
 export default G;

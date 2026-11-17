@@ -617,6 +617,7 @@ function drawBoard() { const g = board.g; holoFrame(g, 600, 480, '#ffd56a');
 // ---------- studio menu: punch the orbs (VR) / tap the buttons (flat) ----------
 // START orb in the ring; left column EASY / NORMAL / BEAST; right column DAILY + GLOVES (cycles the skins you own)
 const menuOrbs = [];
+const MENU_Z = -1.25, MENU_H = 1.4;   // v23: VR menu orbs' plane = the far edge of the 1.25 m ground circle (studio -Z), fixed height
 function menuOrb(id, label, color, dx, dy, r = 0.085) {
   const g = new THREE.Group(); g.name = 'nkOrb_' + id;
   const shell = new THREE.Mesh(orbGeo, fresnelMat(color, 1.2)); g.add(shell);
@@ -759,7 +760,7 @@ function update(dt) {
     }
   }
   state.barSoon = barSoon;
-  if (state.mode !== 'play') { if (state.vr) { ENV.headWorld(_v2); _v2.sub(root.position); if (_v2.y > 0.6) { state.menuH = clamp(_v2.y, 1.0, 2.1); state.menuC = (state.menuC || new THREE.Vector3()).set(clamp(_v2.x, -1.6, 1.6), 0, clamp(_v2.z, -1.5, 1.4)); } } else { state.menuC = null; state.menuH = null; } placeMenu(); }
+  if (state.mode !== 'play') { if (state.vr) { state.menuH = MENU_H; state.menuC = (state.menuC || new THREE.Vector3()).set(0, 0, MENU_Z + 0.5); } else { state.menuC = null; state.menuH = null; } placeMenu(); }   // v23 (Dave t421u): VR menu orbs locked to the far end of the ground circle (not following the head)
   ENV.headWorld(camWorld);
   if (state.vr) vrGloves(); else { for (const s of ['L', 'R']) { glove[s].on = state.mode === 'play'; glove[s].obj.visible = glove[s].on; glove[s].src = null; if (glove[s].on) updPunchAnim(s, dt); } }
   ['L', 'R'].forEach(s => {

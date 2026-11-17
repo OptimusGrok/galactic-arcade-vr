@@ -3101,7 +3101,7 @@ function plzPickTargets(nb) {
 
 // ===== STRIKE v3.5: SLOW — 8 s enemy time-dilation (37.5%), 60 s cooldown from activation, speed streaks =====
 const SLOW = { F: 0.375, DUR: 480, CD: 3600, acc: 0, tick: true, trail: [] };
-const SLOW_BTN = { x: BOMB_BTN.x, y: BOMB_BTN.y - 50, r: BOMB_BTN.r };
+const SLOW_BTN = { x: BOMB_BTN.x - 50, y: BOMB_BTN.y, r: BOMB_BTN.r };   // v23 (Dave t421u): A HYPER SPEED and B BOMB side by side at the bottom right
 KEYMAP.KeyC = 'slow'; KEYMAP.KeyL = 'slow';
 G.slowT = 0; G.slowCD = 0;
 function slowOn() { return G.slowT > 0; }
