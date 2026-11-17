@@ -1,9 +1,9 @@
-// v22: ported from the normal repo's v250 (PR #104) test, unchanged apart from this line.
+// v22: ported from the normal repo's v250 (PR #104) test; run with ?liveScreens=1 (the VR arcade's idle screens are stills by default, see cab_still_screens.js).
 // t883u: Ghost 256 and Strike cabinet screens show a live/attract demo when the player walks up,
 // and those screens are as wide as the neighbouring 4:3 / 16:9 cabinets.
 const { open } = require('./lib');
 (async () => {
-  const o = await open({ w: 844, h: 390 });
+  const o = await open({ w: 844, h: 390, qs: '?liveScreens=1' });
   const { page, errors, close } = o;
   let ok = true;
   const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m, x != null ? JSON.stringify(x) : ''); if (!c) ok = false; };
