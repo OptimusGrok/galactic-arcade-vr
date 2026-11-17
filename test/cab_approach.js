@@ -26,9 +26,13 @@ const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
     let cur = null; const t0 = Date.now();
     while (Date.now() - t0 < 10000) { cur = await E(() => window.__cabMusic.cur); if (cur === k) break; await page.waitForTimeout(250); }
     const st = await E(() => { const C = window.__cabMusic; return { want: C.want, cur: C.cur, err: C.err, dist: (() => { const m = window.__arcade.monkey.position; return +Math.hypot(m.x, m.z).toFixed(1); })() }; });
-    rows.push({ k, cur: st.cur, want: st.want, err: st.err, firstOwn: (seen.find(s => s[1] === k) || [null])[0] });
+    let ownFrom = 0; for (let j = seen.length - 1; j >= 0 && seen[j][1] === k; j--) ownFrom = seen[j][0];
+    rows.push({ k, cur: st.cur, want: st.want, err: st.err, ownFrom });
     chk(cur === k, k + ': its own loop plays at the cabinet (cur ' + st.cur + ', want ' + st.want + ', err ' + st.err + ') approach ' + JSON.stringify(seen.map(s => s[0] + ':' + (s[1] || '-')).join(' ')));
   }
+  // walking straight up, the cabinet's own loop must be the wanted one from 2.5 m on (no neighbour's loop in the last 2.5 m)
+  const late = rows.filter(r => !(r.ownFrom >= 2.5));
+  chk(!late.length, 'every cabinet owns the music from 2.5 m out on a straight approach ' + JSON.stringify(rows.map(r => r.k + ':' + r.ownFrom)));
   console.log('ROWS ' + JSON.stringify(rows));
   chk(errors.length === 0, 'no page errors ' + errors.slice(0, 3).join('|'));
   await close(); console.log(ok ? 'ALL PASS' : 'SOME FAILED'); process.exit(ok ? 0 : 1);

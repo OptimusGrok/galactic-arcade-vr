@@ -55,11 +55,16 @@
   function positions(A) {
     if (pos) return pos; var P = A.play, M = P && P.machines; if (!M) return null; pos = [];
     for (var k in M) { var c = M[k].cab; if (!c || !TRACKS[k]) continue; var u = c.userData || {}, p = u.front ? { x: u.front.x, z: u.front.z } : (function () { var v = new A.THREE.Vector3(); c.getWorldPosition(v); return { x: v.x, z: v.z }; })();
-      pos.push({ k: k, x: p.x, z: p.z }); if (k === 'roadster' && u.frontR) pos.push({ k: k, x: u.frontR.x, z: u.frontR.z }); }
+      var n = u.inward && (u.inward.x || u.inward.z) ? { x: u.inward.x, z: u.inward.z } : null;
+      pos.push({ k: k, x: p.x, z: p.z, nx: n ? n.x : 0, nz: n ? n.z : 0 }); if (k === 'roadster' && u.frontR) pos.push({ k: k, x: u.frontR.x, z: u.frontR.z }); }
     return pos;
   }
   C.setPositions = function (list) { pos = list; };   // [{k,x,z}] override (tests / other rooms)
-  C.nearest = function (x, z) { var best = null, bd = Infinity; (pos || []).forEach(function (p) { var d = Math.hypot(p.x - x, p.z - z); if (d < bd) { bd = d; best = p.k; } });
+  // vrtest-v5 (t458u): "some don't play their own music when approaching": side-by-side cabinets (strike/ghost, pip/bb, cyber/claw) have front
+  // points ~1.5 m apart, so walking straight up to one you heard its NEIGHBOUR until 2 m out. Distance is now facing-aware: sideways offset
+  // (across the cabinet's facing) counts 1.8x, so the cabinet you are walking up to wins. Cabinets without a facing use plain distance.
+  function dist(p, x, z) { var dx = x - p.x, dz = z - p.z; if (!p.nx && !p.nz) return Math.hypot(dx, dz); var along = dx * p.nx + dz * p.nz, side = dx * p.nz - dz * p.nx; return Math.hypot(side * 1.8, along); }
+  C.nearest = function (x, z) { var best = null, bd = Infinity; (pos || []).forEach(function (p) { var d = dist(p, x, z); if (d < bd) { bd = d; best = p.k; } });
     var r = RADIUS + (best && best === lastNear ? HYST : 0); return bd <= r ? best : null; };
   function wanted() {
     var A = window.__arcade, S = window.__start, M = window.__music;
