@@ -56,7 +56,8 @@ const { open } = require('./lib');
   chk(r.stream.wantRoom2 && r.r2Gpu && r.ds.hasMap && r.ds.w >= 256 && r.mirror2 && r.mirror2.w > 1, 'near the doorway, room 2 / Dead Signal textures are on the GPU', { stream: r.stream, ds: r.ds, mirror2: r.mirror2 });
 
   // back to the south of room 1, wait the hold, evict room 2
-  await put(0, 8, 1400);
+  await put(0, 8, 800);
+  await page.waitForFunction(() => window.__gaStream.room2 === 'off', null, { timeout: 8000 }).catch(() => {});
   r = await snap();
   console.log('back-south', JSON.stringify(r));
   chk(!r.r2Gpu && r.stream.room2 === 'off' && !r.ds.hasMap && r.mirror2 && r.mirror2.w <= 1, 'after leaving room 2 and waiting, those textures evict again', { stream: r.stream, ds: r.ds, mirror2: r.mirror2 });
@@ -81,12 +82,13 @@ const { open } = require('./lib');
   r = await snap();
   console.log('room2', JSON.stringify(r));
   chk(r.r2Gpu && r.ds.hasMap, 'in room 2, Dead Signal art is on the GPU', r.ds);
-  await put(0, 8, 1400); await put(-9, -9, 800); await put(0, 5, 2000); await put(0, -10, 800); await put(0, 8, 1400);   // first full cycle (first-time draws may compile)
-  const pr = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
-  await put(0, 8, 1400); await put(-9, -9, 800); await put(0, 5, 2000); await put(0, -10, 800); await put(0, 8, 1400);
-  const pr2 = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
+  // two identical full cycles (SwiftShader is slow, so generous waits); the second must compile nothing new
+  const cyc = async () => { await put(0, 8, 2500); await put(-9, -9, 2500); await put(0, 5, 3000); await put(0, -10, 2500); await put(0, 8, 3000); };
+  const keys = () => page.evaluate(() => window.__arcade.renderer.info.programs.map(p => p.cacheKey));
+  await cyc(); const k1 = await keys(); await cyc(); const k2 = await keys();
+  const pr = k1.length, pr2 = k2.length, fresh = k2.filter(k => !k1.includes(k)).length;
   const st = await page.evaluate(() => window.__gaStream);
-  chk(pr2 <= pr, 'a full evict / reload cycle of shop + room 2 compiled no new shader programs (' + pr + ' -> ' + pr2 + ')', st);
+  chk(fresh === 0, 'a full evict / reload cycle of shop + room 2 compiled no new shader programs (' + pr + ' -> ' + pr2 + ', new ' + fresh + ')', st);
   chk(st.ups >= 6 && st.evicts >= 6, 'streaming actually cycled (ups ' + st.ups + ', evicts ' + st.evicts + ')');
 
   chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors', errors);
