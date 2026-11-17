@@ -1,19 +1,19 @@
 // GALACTIC GOLF stairs + IN-WORLD mini golf room (t273u, t275u): a stairwell in the prize shop floor, right of the GROK SHOP counter along
 // the back wall (Dave's scribble), going down into a neon basement with holes 1-3 of Arcade Helper's Galactic Golf (Strike, Ghost 256,
 // Monkey Crossing), built by the original hole builders (golf-world/, made by tools_build_golf_play.py) and played with its ball physics
-// by the player's own monkey. A cyan energy shield across the top step costs 5 tickets on every visit (re-armed as you pass it).
+// by the player's own monkey. v23 (Dave t432u): free and open: no energy shield, no PAY 5 TICKETS; walk down the stairs and play.
 // Each hole pays once per visit: 1 stroke +5, 2 +4, 3 +3, 4+ 0. Own file: shop.js is not touched (the floor hole is cut at runtime with
 // clipping planes on the shop's floor meshes). golf-play/ (the old full-screen copy) stays in the repo but is no longer opened.
 import * as THREE from 'three';
 import { buildHole } from './golf-world/holes.js';
 import { makeBall, putt as puttBall, stepBall, inBounds, BALL_R, STOP_SPEED, STROKE_CAP } from './golf-world/physics.js';
 const buyNote = (item, cost) => { try { window.__announce && window.__announce('buy', { item, cost }); } catch (e) {} };   // purchase broadcast (mp.js)
-export const GOLF_COST = 5, GOLF_HOLES = 3;
+export const GOLF_COST = 0, GOLF_HOLES = 3;   // v23: free
 export const golfPayout = s => (s === 1 ? 5 : s === 2 ? 4 : s === 3 ? 3 : 0);
 export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const X0 = WX + 7.0, X1 = WX + 13.4, Z0 = -3.2, Z1 = -0.45, D = 4.6, FY = -D, CEIL = -0.12, XS = WX + 16.2, NS = 20, ZM = (Z0 + Z1) / 2, RUN = XS - X0;
   const WZ1 = 0.4, BX1 = WX + 36;                       // walkway north edge, basement east wall
-  const S = { open: false, below: false, near: false, popShown: false, entries: 0, pays: 0, fails: 0, touches: 0, paid: {}, earned: 0, payouts: [], X0, X1, XS, Z0, Z1, D, FY, CEIL,
+  const S = { open: true, below: false, near: false, popShown: false, entries: 0, pays: 0, fails: 0, touches: 0, paid: {}, earned: 0, payouts: [], X0, X1, XS, Z0, Z1, D, FY, CEIL,
     aiming: false, rolling: false, cur: -1, putts: 0 };
   Object.defineProperty(S, 'inWell', { get: () => S.below });
   const grp = new THREE.Group(); grp.name = 'golfStairs'; scene.add(grp);
@@ -94,7 +94,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
         float k = (edgeHex * (0.55 + 0.45 * pulse) * 0.55 + 0.08 + rim + ripple) * (0.85 + 0.15 * sin(vUv.y * sz.y * 70.0 - uT * 6.0));
         k *= 1.0 - smoothstep(1.0 - uOff * 1.05, 1.02 - uOff * 1.05, vUv.y) * step(0.001, uOff); k *= 1.0 - step(0.999, uOff);
         gl_FragColor = vec4(vec3(0.15, 0.85, 1.0) * k, 1.0); }` });
-  const shield = new THREE.Mesh(new THREE.PlaneGeometry(ZW, SH), smat); shield.rotation.y = Math.PI / 2; shield.position.set(X0, SH / 2, ZM); shield.name = 'golfShield'; shield.renderOrder = 5; grp.add(shield);
+  const shield = new THREE.Mesh(new THREE.PlaneGeometry(ZW, SH), smat); shield.rotation.y = Math.PI / 2; shield.position.set(X0, SH / 2, ZM); shield.name = 'golfShield'; shield.renderOrder = 5; shield.visible = false;   // v23: no shield (kept off the scene: no draw, no shader compile)
   // ---- pop-up ----
   const css = document.createElement('style');
   css.textContent = `#gfPop{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);z-index:7;display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 26px 14px;border-radius:16px;border:3px solid #2de8ff;background:linear-gradient(#061a2aee,#020812ee);box-shadow:0 0 24px #2de8ff99;opacity:0;pointer-events:none;transition:opacity .3s,transform .3s;user-select:none;-webkit-user-select:none;touch-action:none;max-width:90vw;text-align:center}
@@ -128,12 +128,13 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g).connect(c.destination); o.start(t); o.stop(t + dur + 0.05); } catch (e) {} };
   let offT = -1;
   function unlock() {
+    return true;   // v23 (Dave t432u): mini golf is free, nothing to unlock
     if (S.open) return true;
     if (tickets() < GOLF_COST) { S.fails++; refresh(); btn.animate([{ marginLeft: '0' }, { marginLeft: '-12px' }, { marginLeft: '10px' }, { marginLeft: '0' }], { duration: 300 }); tone(70, 60, 0.4, 'sawtooth', 0.07); return false; }
     if (!play.spend(GOLF_COST)) return false;
     S.open = true; S.pays++; buyNote('Mini Golf', GOLF_COST); offT = performance.now(); tone(440, 38, 1.1, 'sawtooth', 0.09); pop.classList.remove('on'); S.popShown = false; return true;
   }
-  function arm() { S.open = false; offT = -1; U.uOff.value = 0; shield.visible = true; }
+  function arm() { S.open = true; offT = -1; }   // v23: free: the stairs stay open
   
   // ---- walking: called from main.js collide() (top: shield/railing; below: our own walk areas instead of the shop clamp) ----
   const prev = new THREE.Vector3(); let lastTouch = -9;
@@ -142,7 +143,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
       if (p.x > X0 - R && p.x < X1 + 1 && p.z < Z1 + R && p.z > Z0 - 1) {
         const fromNorth = prev.z >= Z1 + R - 0.03 && prev.x > X0 - R + 0.03;
         if (fromNorth) p.z = Z1 + R;                                         // railing along the open side
-        else if (!S.open) { p.x = X0 - R - 0.02; if (U.uT.value - lastTouch > 0.7) { lastTouch = U.uT.value; S.touches++; U.uHit.value = U.uT.value; tone(62, 55, 0.45, 'sawtooth', 0.06); } }
+        else if (!S.open) { p.x = X0 - R - 0.02;   /* never (v23: always open) */ if (U.uT.value - lastTouch > 0.7) { lastTouch = U.uT.value; S.touches++; U.uHit.value = U.uT.value; tone(62, 55, 0.45, 'sawtooth', 0.06); } }
         else if (p.x > X0 + 0.02) enterVisit();                              // through the shield: it closes behind you (next visit pays again)
       }
     }
@@ -233,7 +234,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   function update(dt) {
     U.uT.value += dt; if (performance.now() - lastCut > 1000) { lastCut = performance.now(); cutFloor(); }
     if (offT >= 0) { const k = (performance.now() - offT) / 900; U.uOff.value = Math.min(1, k); if (k >= 1) { shield.visible = false; offT = -1; } }
-    const p = monkey.position, near = !S.open && !S.below && play.mode === 'walk' && p.x > X0 - 1.7 && p.x < X0 + 0.1 && p.z > Z0 && p.z < Z1 + 0.6;
+    const p = monkey.position, near = false && !S.below && play.mode === 'walk' && p.x > X0 - 1.7 && p.x < X0 + 0.1 && p.z > Z0 && p.z < Z1 + 0.6;
     if (near !== S.popShown) { S.popShown = near; pop.classList.toggle('on', near); }
     if (near) refresh(); S.near = near;
     const cam = camera ? camera.position : p, show = S.below || (cam.x > X0 - 8 && cam.x < BX1 + 2 && cam.z < 6 && cam.z > -6);
