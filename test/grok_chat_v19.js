@@ -13,7 +13,8 @@ const MOCK = `(() => { class FakeSR { constructor() { this.continuous = false; t
     setTimeout(() => { if (!this.continuous) this.onend && this.onend(); }, 1000); }
   stop() { this.onend && this.onend(); } abort() { this.aborted = (this.aborted || 0) + 1; } }
   window.SpeechRecognition = FakeSR; window.webkitSpeechRecognition = FakeSR; })();`;
-async function phase(name, opts, fn) { const o = await open(Object.assign({ w: 900, h: 560 }, opts)); try { await o.page.waitForFunction(() => window.__grokChat && window.__shop && window.__grokChat.hooks.clerk, null, { timeout: 90000 }); await fn(o.page, o); } catch (e) { chk(false, name + ' threw: ' + e.message); } finally { const errs = o.errors.filter(e => !/supabase|Failed to load resource|net::ERR/i.test(e)); chk(!errs.length, name + ': no page errors', errs); await o.close(); } }
+async function phase(name, opts, fn) { const o = await open(Object.assign({ w: 900, h: 560 }, opts)); try { await o.page.waitForFunction(() => window.__grokChat && window.__shop && window.__grokChat.hooks.clerk && window.__tp, null, { timeout: 90000 });
+    await o.page.evaluate(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await o.page.waitForFunction(() => window.__tp.where === 2 && window.__tp.state === 'idle', null, { timeout: 90000 }); await fn(o.page, o); } catch (e) { chk(false, name + ' threw: ' + e.message); } finally { const errs = o.errors.filter(e => !/supabase|Failed to load resource|net::ERR/i.test(e)); chk(!errs.length, name + ': no page errors', errs); await o.close(); } }
 (async () => {
   // ---- A: typing + Web Speech (mock) ----
   await phase('webspeech', { init: MOCK }, async page => {
