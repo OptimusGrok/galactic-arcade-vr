@@ -4,12 +4,11 @@
 const { open } = require('./lib');
 const { openVR, H } = require('./vrlib');
 let ok = true; const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (x !== undefined ? ' ' + JSON.stringify(x).slice(0, 300) : '')); if (!c) ok = false; };
-const fresh = `(() => { const G = window.STRIKE.G; G.slowT = 0; G.slowCD = 0; G.bombs = 3; G.god = true; })()`;
+const fresh = `(() => { const G = window.STRIKE.G; G.slowT = 0; G.slowCD = 0; G.bombs = 3; G.bombT = 0; G.god = true; })()`;   // bombT = the game's own bomb cooldown
 async function flat() {
-  const { page, errors, close } = await open({ w: 640, h: 400, init: () => { window.__gaForceQuest = 1; localStorage.setItem('neonarcade.tickets', '40'); } });
+  const { page, errors, close } = await open({ w: 640, h: 400, init: () => { localStorage.setItem('neonarcade.tickets', '40'); } });
   try {
-    await page.evaluate(() => { const A = window.__arcade, c = A.playables.find(k => /strike/i.test(k.name)), u = c.userData; window.__noAdapt = 1; A.st.fp = false; A.st.vel.set(0, 0, 0); A.monkey.position.set(u.front.x, 0, u.front.z); A.st.face = Math.atan2(u.facing.x, u.facing.z); });
-    await page.waitForTimeout(500); await page.evaluate(() => { document.body.classList.add('upright'); const t = document.getElementById('turnHint'); if (t) t.classList.remove('on'); window.__arcade.play.press(); });
+    await page.evaluate(() => { document.body.classList.add('upright'); const t = document.getElementById('turnHint'); if (t) t.classList.remove('on'); const p = window.__arcade.play; p.start(p.machines.strike); });
     await page.waitForFunction(() => window.__arcade.play.mode === 'game' && window.__arcade.play.sub === 'demo', null, { timeout: 40000 });
     await page.waitForTimeout(1500); await page.evaluate(() => { const p = window.__arcade.play; p.insertTicket(); p.tryPlay(); });
     await page.waitForFunction(() => window.__arcade.play.sub === 'play', null, { timeout: 15000 });
@@ -22,14 +21,14 @@ async function flat() {
     await click('slow'); let g = await fr.evaluate(() => ({ slowT: window.STRIKE.G.slowT, bombs: window.STRIKE.G.bombs }));
     chk(g.slowT > 0, 'flat: clicking HYPER SPEED (mouse / Quest laser) starts hyper speed', g);
     await click('bomb'); g = await fr.evaluate(() => ({ bombs: window.STRIKE.G.bombs })); chk(g.bombs === 2, 'flat: clicking BOMB drops a bomb (3 -> ' + g.bombs + ')');
-    await page.evaluate(() => window.__gaQuestBFire()); await page.waitForTimeout(400); g = await fr.evaluate(() => ({ bombs: window.STRIKE.G.bombs }));
+    await fr.evaluate(() => { window.STRIKE.G.bombT = 0; }); await page.evaluate(() => { window.__gaForceQuest = 1; window.__gaQuestBFire(); }); await page.waitForTimeout(400); g = await fr.evaluate(() => ({ bombs: window.STRIKE.G.bombs }));
     chk(g.bombs === 1 && (await page.evaluate(() => window.__gaQuestBomb)) >= 1, 'flat Quest: B (browser back, trapped) = BOMB in Strike (2 -> ' + g.bombs + ')');
     await fr.evaluate(() => { window.STRIKE.G.slowCD = 0; window.STRIKE.G.slowT = 0; }); await fr.evaluate(() => { const e = o => window.dispatchEvent(new KeyboardEvent(o, { code: 'KeyC', bubbles: true })); e('keydown'); }); await page.waitForTimeout(150); await fr.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyC', bubbles: true })));
     chk((await fr.evaluate(() => window.STRIKE.G.slowT)) > 0, 'flat keyboard: C = hyper speed (unchanged)');
     // co-op HUD (P2 joined): the buttons are drawn there too (v248 pattern)
     await fr.evaluate(() => { window.__strikeCoop.p2on = true; }); const c0 = await fr.evaluate(() => ({ ...window.__strikeBtnDraws })); await page.waitForTimeout(500); const c1 = await fr.evaluate(() => ({ ...window.__strikeBtnDraws }));
     chk(c1.bomb > c0.bomb && c1.slow > c0.slow, 'co-op HUD: HYPER SPEED + BOMB buttons drawn', c1);
-    await fr.evaluate(() => { window.STRIKE.G.bombs = 2; }); await click('bomb'); chk((await fr.evaluate(() => window.STRIKE.G.bombs)) === 1, 'co-op: BOMB button works');
+    await fr.evaluate(() => { window.STRIKE.G.bombs = 2; window.STRIKE.G.bombT = 0; }); await click('bomb'); chk((await fr.evaluate(() => window.STRIKE.G.bombs)) === 1, 'co-op: BOMB button works');
     const png = await fb.screenshot(); require('fs').writeFileSync('/workspace/.stt-fixtures/strike_coop_btns.png', png);
     await fr.evaluate(() => { window.__strikeCoop.p2on = false; });
   } catch (e) { chk(false, 'flat threw: ' + e.message); }
@@ -59,7 +58,7 @@ async function vr() {
     chk(d1.bomb > d0.bomb && d1.slow > d0.slow, 'VR: the buttons are drawn on the in-world screen', d1);
     // point at the in-game buttons + trigger
     const at = async id => { const xy = await fr.evaluate(id => window.__strikeBtnXY(id), id); return page.evaluate(([x, y]) => window.__gaVR.gameScreenWorld(x, y), xy); };
-    await fr.evaluate(() => { window.STRIKE.G.slowT = 0; window.STRIKE.G.slowCD = 0; window.STRIKE.G.bombs = 3; });
+    await fr.evaluate(() => { window.STRIKE.G.slowT = 0; window.STRIKE.G.slowCD = 0; window.STRIKE.G.bombs = 3; window.STRIKE.G.bombT = 0; });
     let w = await at('slow'); await H.aim(page, 'right', [0.2, 1.2, -0.2], w); await H.frames(page, 4);
     await H.btn(page, 'right', 'trigger', 1); await H.frames(page, 5); g = await fr.evaluate(() => ({ slowT: window.STRIKE.G.slowT, fire: !!window.STRIKE.Input.keys.fire })); await H.btn(page, 'right', 'trigger', 0); await H.frames(page, 3);
     chk(g.slowT > 0 && !g.fire, 'VR: point at HYPER SPEED + trigger = hyper speed (no shot)', g);
