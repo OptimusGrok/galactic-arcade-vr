@@ -1,6 +1,6 @@
 {
-  "name": "Galactic Arcade VR",
-  "short_name": "Arcade VR",
+  "name": "Galactic Arcade VR TEST",
+  "short_name": "Arcade VR TEST",
   "description": "Walk a neon cyberpunk arcade as the monkey.",
   "start_url": "./",
   "scope": "./",
