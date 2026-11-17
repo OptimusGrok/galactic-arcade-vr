@@ -1982,7 +1982,8 @@ function loadShop() { return shopP || (shopP = import('./shop.js').then(m => { s
 let NK = null, nkP = null; const nkRoot = new THREE.Group(); nkRoot.name = 'nkStudio'; nkRoot.position.set(NKX, 0, 0); nkRoot.visible = false; scene.add(nkRoot);
 const nkFlat = { base: null, headH: 0 };
 function loadNK() { return nkP || (nkP = import('./nk/nkgame.js').then(m => { NK = m.createNK({ root: nkRoot, renderer, camera, padLocal: NK_PAD,
-    isVR: () => !!(renderer.xr && renderer.xr.isPresenting), inStudio: () => monkey.position.x < NKX / 2,
+    isVR: () => !!(renderer.xr && renderer.xr.isPresenting), inStudio: () => (renderer.xr.isPresenting ? viewPos().x : monkey.position.x) < NKX / 2,   // v18: in the headset the studio shows until your eyes have left it (no void on the beam-out frame)
+   
     headWorld: out => (renderer.xr && renderer.xr.isPresenting ? renderer.xr.getCamera() : camera).getWorldPosition(out),
     grip: hand => { const S = window.__gaVR; return S && S.nkGrip ? S.nkGrip(hand) : null; },
     setHide: o => { const S = window.__gaVR; if (S) S.nkHide = o; },

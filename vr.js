@@ -953,7 +953,7 @@ export function setupVR(A) {
   function post(dt) {
     if (S.walkStart) { moveRig(monkey.position.x - S.walkStart.x, monkey.position.z - S.walkStart.z, monkey.position.y - S.rig.y); }
     // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
-    if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; } if (UI.open) uiClose(); }
+    if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; applyRig(); S.rigDirty = false; } if (UI.open) uiClose(); }   // v18: the new reference space now, so the very next headset frame is already at the destination
     monkey.visible = false;
     const chessOn = !!(chessT() && chessT().state !== 'idle');
     if (S.head && !chessOn) monkey.rotation.y = S.head.yaw + Math.PI;   // the avatar (seen in the mirror / by other players) faces where you look
