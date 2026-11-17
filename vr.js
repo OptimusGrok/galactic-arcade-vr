@@ -58,7 +58,8 @@ export function setupVR(A) {
   for (const ev of ['pointerdown', 'touchstart', 'mousedown']) btn.addEventListener(ev, e => e.stopPropagation());
   btn.addEventListener('click', e => { e.stopPropagation(); enter(); });
   function checkSupport() { const xr = navigator.xr; if (!xr || !xr.isSessionSupported) { S.supported = false; return; }
-    xr.isSessionSupported('immersive-vr').then(ok => { S.supported = !!ok; }).catch(() => { S.supported = false; }); }
+    xr.isSessionSupported('immersive-vr').then(ok => { S.supported = !!ok; document.body.classList.toggle('gaQuestVR', !!ok && !!A.QUEST); }).catch(() => { S.supported = false; }); }
+  window.__gaVRPlay = () => enter();   // v18: the start screen's PLAY on a Quest headset browser (called inside the click: requestSession needs the gesture)
   checkSupport(); if (navigator.xr && navigator.xr.addEventListener) navigator.xr.addEventListener('devicechange', checkSupport);
   setInterval(() => { const startUp = document.getElementById('start') && window.__start && window.__start.shown && !window.__start.dismissed;
     btn.classList.toggle('on', S.supported && !S.presenting && !startUp && play.mode === 'walk'); }, 300);

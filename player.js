@@ -389,6 +389,9 @@
     + '.gaWho.sel{border-color:#ffd98a;color:#fff;background:#2a1840;box-shadow:0 0 12px #ffb000cc,inset 0 0 10px #ffb00033}'
     + '.gaWhoI{font-size:20px;line-height:1;filter:drop-shadow(0 0 5px #00e5ff66)}.gaWho.sel .gaWhoI{filter:drop-shadow(0 0 6px #ffd98a)}.gaWhoN{letter-spacing:.12em}'
     + '#gaGo{flex:none;font:900 clamp(26px,8vw,38px)/1 "Arial Black",Impact,sans-serif;letter-spacing:.1em;color:#dffbff;padding:12px 54px;border-radius:14px;border:3px solid #00e5ff;background:linear-gradient(#0c1a3aee,#050a1aee);text-shadow:0 0 8px #00e5ff,0 0 20px #00a0ff;box-shadow:0 0 18px #00e5ffaa,inset 0 0 14px #00e5ff44;cursor:pointer;animation:pp 1.6s ease-in-out infinite}'
+    // v18 (t408u/t409u, Dave): on a Quest headset browser PLAY goes straight into VR; PLAY ON SCREEN (only there, only when PLAY shows) = the flat game
+    + '#gaGoFlat{display:none;flex:none;font:900 15px/1 "Arial Black",Arial,sans-serif;letter-spacing:.08em;color:#dffbff;padding:9px 22px;border-radius:12px;border:2px solid #7f9bff;background:#0c1a3acc;cursor:pointer}'
+    + 'body.gaQuestVR #gaGo:not([hidden])+#gaGoFlat{display:block}'
     + '#gaHint.gaTaken{color:#ff5a7a;font-weight:900}#gaGo[hidden]{display:none}#gaGo:not([hidden]){animation:gaPop .45s cubic-bezier(.2,1.6,.4,1) both}@keyframes gaPop{0%{opacity:0;transform:scale(.6)}100%{opacity:1;transform:scale(1)}}#gaHint{flex:none;font:700 12px system-ui;color:#ffd0fa;opacity:.85;min-height:48px;display:flex;align-items:center}#gaHint[hidden]{display:none}'
     + '#start.ga #stBtns{display:none!important}#start.ga #stBox{visibility:hidden}'
     + '#gaW{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;gap:6px;box-sizing:border-box;padding:max(10px,env(safe-area-inset-top)) 10px max(12px,env(safe-area-inset-bottom));font-family:"Courier New",monospace;color:#fff;touch-action:pan-y;overflow-y:auto;'
@@ -410,6 +413,7 @@
     + '#gaNm{grid-column:1;grid-row:4;align-self:end;padding:4px 8px}#gaNm label{font-size:11px;margin-bottom:2px;letter-spacing:.08em}#gaIn{padding:5px 8px;font-size:14px}'
     + '#gaP>.gaBox:not(#gaNm){grid-column:2;grid-row:4;align-self:end;justify-self:center;max-width:460px;overflow:hidden}'
     + '#gaGo{grid-column:2;grid-row:3;align-self:end;justify-self:center;padding:7px 34px;font-size:clamp(18px,6.4vh,30px)}'
+    + '#gaGoFlat{grid-column:2;grid-row:3;align-self:end;justify-self:end;padding:6px 12px;font-size:12px}'
     + '#gaHint{grid-column:2;grid-row:3;align-self:end;min-height:0;justify-self:center;font-size:12px;padding-bottom:4px}'
     + '.gaRow{padding:2px}.gaO{width:34px;height:28px;font-size:16px}.gaRow span{width:48px;font-size:10px}.gaAr{width:36px;height:44px;font-size:32px}'
     + '#gaWho{padding:4px 8px 6px;gap:4px}.gaWhoH{font-size:10px;letter-spacing:.16em;text-shadow:0 0 5px #00e5ff,0 0 10px #0090ff}'
@@ -452,7 +456,7 @@
       + '<button type="button" class="gaWho" data-v="monkey"><span class="gaWhoI" aria-hidden="true">🐵</span><span class="gaWhoN">MONKEY</span></button>'
       + '<button type="button" class="gaWho" data-v="alien"><span class="gaWhoI" aria-hidden="true">👽</span><span class="gaWhoN">ALIEN</span></button>'
       + '</div></div></div>'
-      + '<button id="gaGo" hidden>PLAY</button><div id="gaHint">Type your name to play</div>';
+      + '<button id="gaGo" hidden>PLAY</button><button id="gaGoFlat" type="button">PLAY ON SCREEN</button><div id="gaHint">Type your name to play</div>';
     st.appendChild(ov); st.classList.add('ga'); var inp = ov.querySelector('#gaIn'); inp.value = P.name;
     inp.addEventListener('input', function () { var v = clean(inp.value); if (v !== inp.value) inp.value = v; P.name = v; save(); sync(); apply(); nameCheck(); });
     nameCheck(1);
@@ -520,6 +524,7 @@
     else if (shop) L = (BASE[k] || OPTS[k]).filter(function (a) { return has(k, a[0]); });
     else L = START[k].filter(function (a) { return has(k, a[0]); });
     var i = 0; for (var j = 0; j < L.length; j++) if (L[j][0] === P[k]) i = j; pick(k, L[(i + d + L.length) % L.length][0]); }
+  function questVR() { return !!(window.__gaVRPlay && document.body.classList.contains('gaQuestVR')); }
   function play(fast) { if (!named() || !goOK() || TP.st === 'out' || nmFree !== clean(P.name).trim().toLowerCase()) return; window.__gaEntering = 1; try { if (window.__wantWide) window.__wantWide(); } catch (e) {} if (window.__gaNames) window.__gaNames.claim(P.name); musicStop(); P.name = clean(P.name).trim(); save(); apply(); try { var A0 = window.__arcade; if (window.__compileForPlay && A0) window.__compileForPlay(A0.monkey, A0.camera, A0.scene).catch(function () {}); } catch (e) {}   /* t768u: the look / name tag just applied -> start compiling them now (GPUs with parallel compile finish during the teleport-out) */ var inp = document.getElementById('gaIn'); if (inp) inp.blur();
     var cv = ov && ov.querySelector('#gaCv'); if (prev.r && cv && prev.r.domElement === cv && cv.clientWidth && !fast && !window.__gaNoTp) { var done = 0, fin = function () { if (done++) return; TP.gone = true; go2(); }; tpStart('out', fin); setTimeout(function () { if (!done) { TP.st = 'idle'; TP.cb = null; fin(); } }, 2600); return; } go2(); }
   function go2() { var b = document.getElementById('stStart'); if (!b) return; var ev; try { ev = new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerType: 'touch' }); } catch (e) { ev = new Event('pointerup', { bubbles: true, cancelable: true }); }
@@ -570,7 +575,8 @@
     if (e.type === 'touchstart' && cv && e.cancelable) e.preventDefault();
     if (e.type !== 'click') return;
     var b;
-    if (t.closest('#gaGo')) play();
+    if (t.closest('#gaGo')) { if (questVR()) { play(1); if (window.__gaEntering) window.__gaVRPlay(); } else play(); }   // v18: the click itself asks for the headset session (needs this user gesture)
+    else if (t.closest('#gaGoFlat')) play();
     else if (t.closest('#gaL')) { prev.auto = false; prev.want -= Math.PI / 4; }
     else if (t.closest('#gaR')) { prev.auto = false; prev.want += Math.PI / 4; }
     else if ((b = t.closest('.gaWho'))) setChar(b.dataset.v);
