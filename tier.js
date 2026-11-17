@@ -283,8 +283,13 @@ export function memSnapshot({ THREE, renderer, scene, composer, extras = {} } = 
   const seen = new Set();
   let texBytes = 0, texN = 0, rtBytes = 0, rtN = 0, geoN = 0, geoBytes = 0;
   const bppOf = typ => (T && (typ === T.HalfFloatType || typ === T.FloatType)) ? 8 : 4;
+  let ktxBytes = 0, ktxN = 0;
   const addTex = t => {
     if (!t || seen.has(t)) return; seen.add(t);
+    // vrtest-v4: format-aware. A compressed (KTX2/Basis -> ASTC / ETC2 / BC) texture's GPU size is its mip chain's data, ~1 byte per
+    // pixel for UASTC targets, not width x height x 4.
+    if (t.isCompressedTexture) { let b = 0; for (const mp of (t.mipmaps || [])) b += (mp && mp.data && mp.data.byteLength) || 0;
+      if (!b && t.image && t.image.width) b = t.image.width * t.image.height; texBytes += b; ktxBytes += b; texN++; ktxN++; return; }
     const img = t.image;
     const w = (img && (img.width || img.videoWidth)) || t.image && t.image.data && t.source && 0 || (img && img.data ? Math.sqrt(img.data.length / 4) : 0) || 0;
     const h = (img && (img.height || img.videoHeight)) || w;
@@ -338,7 +343,7 @@ export function memSnapshot({ THREE, renderer, scene, composer, extras = {} } = 
     dpr, drawingBuffer: [dbw, dbh],
     maxTex: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
     info: r ? { tex: r.info.memory.textures, geo: r.info.memory.geometries, prog: (r.info.programs || []).length, calls: r.info.render.calls, tris: r.info.render.triangles } : null,
-    texMB: +(texBytes / 1e6).toFixed(2), texN,
+    texMB: +(texBytes / 1e6).toFixed(2), texN, ktxMB: +(ktxBytes / 1e6).toFixed(2), ktxN,
     rtMB: +(rtBytes / 1e6).toFixed(2), rtN,
     geoMB: +(geoBytes / 1e6).toFixed(2), geoN,
     lights, lightsOn,

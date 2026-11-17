@@ -4,7 +4,7 @@
 // node test/vr_mem.js [scene ...]   (WHISPER needs /workspace/.stt-fixtures/speech_q1.wav)
 const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
 const WAV = '/workspace/.stt-fixtures/speech_q1.wav';
-const ALL = ['room1', 'shop', 'nk', 'chess', 'play'];   // v23 removed TALK (still runnable by name on old builds)
+const ALL = ['room1', 'room2', 'shop', 'nk', 'chess', 'play'];   // v4: + room2 (Dead Signal room, streamed in)   // v23 removed TALK (still runnable by name on old builds)
 const SETTLE = +(process.env.SETTLE || 9000);   // test-v1: let room streaming reach steady state (8 s hold) before measuring; same wait on old builds
 const want = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 async function measure(page, scene) {
@@ -17,11 +17,12 @@ async function measure(page, scene) {
     A.scene.traverse(o => { const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
       for (const q of ms) { const ts = []; for (const k in q) { const v = q[k]; if (v && v.isTexture) ts.push(v); } if (q.uniforms) for (const k in q.uniforms) { const v = q.uniforms[k] && q.uniforms[k].value; if (v && v.isTexture) ts.push(v); }
         for (const t of ts) { if (seen.has(t)) continue; seen.add(t); const im = t.image || {}; const w = im.width || 0, h = im.height || 0; if (!w) continue;
-          list.push({ mb: +(w * h * 4 * (t.generateMipmaps ? 4 / 3 : 1) / 1e6).toFixed(2), wh: w + 'x' + h, name: (t.name || '') + '@' + (o.name || o.parent && o.parent.name || '?') + (im.src ? ':' + String(im.src).split('/').pop().slice(0, 40) : (im.getContext ? ':canvas' : '')) }); } } });
+          let cb = 0; if (t.isCompressedTexture) for (const mp of (t.mipmaps || [])) cb += (mp && mp.data && mp.data.byteLength) || 0;   // v4: format-aware (KTX2)
+          list.push({ ktx: !!t.isCompressedTexture || undefined, mb: +((t.isCompressedTexture ? cb : w * h * 4 * (t.generateMipmaps ? 4 / 3 : 1)) / 1e6).toFixed(2), wh: w + 'x' + h, name: (t.name || '') + '@' + (o.name || o.parent && o.parent.name || '?') + (im.src ? ':' + String(im.src).split('/').pop().slice(0, 40) : (im.getContext ? ':canvas' : '')) }); } } });
     list.sort((a, b) => b.mb - a.mb);
     const ifr = [...document.querySelectorAll('iframe')].map(f => (f.getAttribute('src') || '').split('?')[0]).filter(Boolean);
     return { jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(1) : null, uasmMB: uasm, textures: info.memory.textures, geometries: info.memory.geometries, programs: (info.programs || []).length,
-      texMB: m.texMB, rtMB: m.rtMB, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8),
+      texMB: m.texMB, ktxMB: m.ktxMB != null ? m.ktxMB : 0, rtMB: m.rtMB, cabBufs: window.__cabMusic ? Object.keys(window.__cabMusic.cached || {}).length || (window.__cabMusic.bufCount || 0) : null, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8),
       musicMB: window.__music ? (window.__music.decodedMB != null ? window.__music.decodedMB : (window.__music.loaded ? 'loaded' : 0)) : null, stream: window.__gaStream ? { shop: window.__gaStream.shop, room2: window.__gaStream.room2 } : null,
       compRT: (() => { try { const c = A.renderer.xr.isPresenting; return c; } catch (e) { return null; } })() };
   });
@@ -42,6 +43,7 @@ async function measure(page, scene) {
       await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 30000);
       await until(() => window.__shop && window.__tp && window.__chessTable, 90000); await page.waitForTimeout(6000);
       if (scene === 'room1') { const c = await E(() => { const u = window.__arcade.strikeCab.userData, f = u.front, n = u.inward; return [f.x + n.x * 4, f.z + n.z * 4, Math.atan2(n.x, n.z)]; }); await place(...c); }
+      if (scene === 'room2') { await place(0, -26.6, Math.PI); await page.waitForFunction(() => !window.__gaStream || window.__gaStream.room2 === 'on', null, { timeout: 30000 }).catch(() => {}); }
       if (scene === 'shop' || scene === 'talk') { await E(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await until(() => window.__tp.where === 2 && window.__tp.state === 'idle', 120000); }
       if (scene === 'nk') { await E(() => { window.__tpTimeScale = 3; window.__tp.go('nk'); }); await until(() => window.__tp.where === 3 && window.__tp.state === 'idle', 120000); }
       if (scene === 'chess') {
