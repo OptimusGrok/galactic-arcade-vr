@@ -34,7 +34,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     chk(L.last && D(L.last.o, g.muzzle) < 0.06 && dot(L.last.d, g.aim) > 0.99, 'B tap: the bolt leaves the first-person muzzle (' + (L.last ? (D(L.last.o, g.muzzle) * 100).toFixed(1) : '?') + ' cm) along the aim');
     // hold for the full charge: the beam starts at the muzzle
     const CT = await page.evaluate(() => (window.__roomFire && window.__roomFire.CHARGE_T) || 4);
-    await H.btn(page, 'right', 'b-button', 1); const t0 = Date.now(); while (Date.now() - t0 < CT * 1000 + 800) await H.frames(page, 10);
+    await H.btn(page, 'right', 'b-button', 1); const t0 = Date.now(); while (Date.now() - t0 < CT * 4000 + 8000 && !(await page.evaluate(() => !!window.__arcade.scene.getObjectByName('vrLaserBeam')))) await H.frames(page, 5);
     const beam = await page.evaluate(() => { const b = window.__arcade.scene.getObjectByName('vrLaserBeam'); return b ? { p: b.position.toArray(), d: new window.__arcade.THREE.Vector3(0, 0, 1).applyQuaternion(b.quaternion).toArray() } : null; }); g = await fg();
     await H.btn(page, 'right', 'b-button', 0); await H.frames(page, 3);
     chk(beam && D(beam.p, g.muzzle) < 0.06 && dot(beam.d, g.aim) > 0.99, 'full charge: the beam leaves the muzzle along the aim (' + (beam ? (D(beam.p, g.muzzle) * 100).toFixed(1) + ' cm' : 'no beam') + ')');

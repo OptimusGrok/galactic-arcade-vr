@@ -17,7 +17,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
   const dbg = () => page.evaluate(() => { const Q = window.__gaQuestPad; Q.showDebug(true); const t = document.getElementById('gaQdbg').textContent; Q.showDebug(false); return t; });
   try {
     const v = await page.evaluate(() => ({ q: window.__gaQuestPad.isQuest(), ver: window.__gaQuestPad.VER, split: window.__gaQuestPad.split, cal: localStorage.getItem('gaQuest.stickCal'), lsv: localStorage.getItem('gaQuest.ver'), page: window.__GA_VR }));
-    chk(v.q && v.ver === 'v13' && !v.split && /^vr1[34]$/.test(v.page), 'Quest flat, quest-pad v13, page vr13, classifier off by default ' + JSON.stringify(v));
+    chk(v.q && v.ver === 'v13' && !v.split && /^vr1[345]$/.test(v.page), 'Quest flat, quest-pad v13, page vr13, classifier off by default ' + JSON.stringify(v));
     chk(v.cal === null && v.lsv === 'v13', 'an old STICK SETUP saved by v12 is wiped on the version change');
     await page.waitForTimeout(400);
     const vis = await page.evaluate(() => ({ cal: (document.getElementById('gaQcal') || { hidden: true }).hidden, look: (document.getElementById('gaQlook') || { hidden: true }).hidden, tl: !!document.getElementById('gaQturnL') && !document.getElementById('gaQturnL').hidden, tr: !!document.getElementById('gaQturnR') && !document.getElementById('gaQturnR').hidden }));
@@ -65,7 +65,7 @@ const FAKE = `Object.defineProperty(navigator, 'userAgent', { configurable: true
     b = await pose(); chk(Math.abs(b.yaw - a.yaw) < 1e-9, 'a ray hovering across the screen (buttons=0) never turns');
     // ---- ?qdbg=1: version + every yaw cause ----
     const t = await dbg();
-    chk(/VR v13 \| page vr1[34] \| sw /.test(t) && /STICKS: both WALK/.test(t) && /yaw by .*quest-look:turn=\d+/.test(t) && /trigger-drag=\d+/.test(t) && /stick look ignored /.test(t), '?qdbg=1: version, stick rule, yaw causes, ignored stick looks:\n' + t.split('\n').slice(0, 5).join('\n'));
+    chk(/VR v13 \| page vr1[345] \| sw /.test(t) && /STICKS: both WALK/.test(t) && /yaw by .*quest-look:turn=\d+/.test(t) && /trigger-drag=\d+/.test(t) && /stick look ignored /.test(t), '?qdbg=1: version, stick rule, yaw causes, ignored stick looks:\n' + t.split('\n').slice(0, 5).join('\n'));
     // ---- handed gamepads (a browser that exposes them): left stick walks, right stick turns; their wheel is ignored ----
     await reset(); await page.waitForTimeout(300); a = await pose();
     await page.evaluate(() => { window.__pads = [{ id: 'Oculus Touch (Left)', index: 0, hand: 'left', mapping: 'xr-standard', connected: true, axes: [0, 0, 0, -1], buttons: [] }]; });

@@ -244,3 +244,15 @@ On a real Quest the room was pitch black after ENTER VR. Cause: before drawing e
   flat screen first is the smoothest.
 - **Tests:** `test/voice.js` (three browsers, fake mic). The box's managed Chrome policy blocks non-proxied UDP, so real WebRTC is tested up to
   offer/answer (two-way Opus negotiated); the media path (levels, indicator, mute, panner, listen-only) uses `test/fakertc.js`'s stand-in.
+
+## v15 (t397u): the gun in your own hand, first person (cache v15)
+
+- **First person:** with the laser pistol out (monkey), your own view now shows the monkey's right hand holding the gun on the right
+  controller: exactly the mirror's hand + gun (same world transform). The right controller model and its cone ray are hidden while the
+  gun is out; a thin aim ray leaves the **muzzle**, and all of that hand's pointing (Y menu, signs, screens, teleport) starts there.
+  The left controller is unchanged. Putting the gun away (or exiting VR) brings the controller and its normal ray back.
+- **Natural size:** in VR the held gun is a real-size blaster (~30 cm, `GUN_S` 0.42 of the model) with its grip in the hand on the
+  controller; the muzzle is ~27 cm ahead of the controller grip (was ~69 cm at the avatar's scale). Same for the mirror and for other
+  VR players' avatars (aligned with their grip). Bolts, the charge glow and the full-charge beam leave the muzzle along the aim.
+- **Flat screen:** unchanged (third-person monkey holds the gun as before); exiting VR restores the gun's flat pose exactly.
+- **Test:** `test/vr_fpgun.js`.
