@@ -63,8 +63,11 @@
   // vrtest-v5 (t458u): "some don't play their own music when approaching": side-by-side cabinets (strike/ghost, pip/bb, cyber/claw) have front
   // points ~1.5 m apart, so walking straight up to one you heard its NEIGHBOUR until 2 m out. Distance is now facing-aware: sideways offset
   // (across the cabinet's facing) counts 1.8x, so the cabinet you are walking up to wins. Cabinets without a facing use plain distance.
-  function dist(p, x, z) { var dx = x - p.x, dz = z - p.z; if (!p.nx && !p.nz) return Math.hypot(dx, dz); var along = dx * p.nx + dz * p.nz, side = dx * p.nz - dz * p.nx; return Math.hypot(side * 1.8, along); }
-  C.nearest = function (x, z) { var best = null, bd = Infinity; (pos || []).forEach(function (p) { var d = dist(p, x, z); if (d < bd) { bd = d; best = p.k; } });
+  // plus the way you face (VR: your head, flat: the monkey): a cabinet straight ahead counts as is, one beside you 1.25x, behind you 1.5x
+  var fx = 0, fz = 0;
+  function dist(p, x, z) { var dx = x - p.x, dz = z - p.z, d; if (!p.nx && !p.nz) d = Math.hypot(dx, dz); else { var along = dx * p.nx + dz * p.nz, side = dx * p.nz - dz * p.nx; d = Math.hypot(side * 1.8, along); }
+    if (fx || fz) { var cx = p.x - (p.nx || 0) * 1.2 - x, cz = p.z - (p.nz || 0) * 1.2 - z, L = Math.hypot(cx, cz) || 1; d *= 1.25 - 0.25 * ((cx * fx + cz * fz) / L); } return d; }
+  C.nearest = function (x, z, yaw) { if (yaw != null) { fx = -Math.sin(yaw); fz = -Math.cos(yaw); } else fx = fz = 0; var best = null, bd = Infinity; (pos || []).forEach(function (p) { var d = dist(p, x, z); if (d < bd) { bd = d; best = p.k; } });
     var r = RADIUS + (best && best === lastNear ? HYST : 0); return bd <= r ? best : null; };
   function wanted() {
     var A = window.__arcade, S = window.__start, M = window.__music;
@@ -72,7 +75,7 @@
     var P = A.play;
     if (P.mode === 'game') return P.sub === 'demo' && P.cur && TRACKS[P.cur.key] ? P.cur.key : null;
     if (P.mode !== 'walk' || !positions(A)) return null;
-    var m = A.monkey.position, k = C.nearest(m.x, m.z); lastNear = k; return k;
+    var m = A.monkey.position, k = C.nearest(m.x, m.z, A.st && typeof A.st.yaw === 'number' ? A.st.yaw : null); lastNear = k; return k;
   }
   // vrtest-v4 (t911u port): one song at a time. Besides the drop when a loop fades out (above), anything still cached is freed once no
   // cabinet has wanted music for 1 s (a decode that finished after you walked on), so at most one cabinet AudioBuffer stays decoded.

@@ -18,7 +18,7 @@ const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
   const rows = [];
   for (const k of keys) {
     const I = info[k]; if (!I || !I.cab || !I.f) { chk(false, k + ': no cabinet / front point ' + JSON.stringify(I)); continue; }
-    const n = I.n || [0, 1], yaw = Math.atan2(-n[0], -n[1]);
+    const n = I.n || [0, 1], yaw = Math.atan2(n[0], n[1]);   // facing the cabinet (forward = (-sin yaw, -cos yaw) = -inward)
     // start well away (in the room centre side) so the previous loop has faded out
     await place(I.f[0] + n[0] * 6, I.f[1] + n[1] * 6, yaw); await H.frames(page, 10); await page.waitForTimeout(900);
     const seen = [];
