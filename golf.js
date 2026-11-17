@@ -195,7 +195,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     monkey.position.x = S.addr.x; monkey.position.z = S.addr.z; ground(monkey.position); st.vel.set(0, 0, 0); st.face = f + Math.PI / 2; monkey.rotation.y = st.face; }
   function startAim(h) { S.cur = h.i; S.aiming = true; const b = h.ball; S.aim = S.camYaw = Math.atan2(h.H.cup.x - b.x, h.H.cup.z - b.z); S.camInit = false;
     addressBall(); aimEl.style.display = 'block'; puttBtn.style.display = 'none'; const k = window.__arcade && window.__arcade.keys; if (k) for (const c in k) k[c] = false; }
-  function stopAim() { if (!S.aiming) return; S.aiming = false; S.addr = null; drag = null; aimEl.style.display = 'none'; aimLine.visible = false; putter.visible = false; powI.style.height = '0'; }
+  function stopAim() { if (!S.aiming) return; S.aiming = false; S.vr = false; S.addr = null; drag = null; aimEl.style.display = 'none'; aimLine.visible = false; putter.visible = false; powI.style.height = '0'; }
   let drag = null; S.power = 0;
   aimEl.addEventListener('pointerdown', e => { if (e.target !== aimEl || S.rolling) return; drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; try { aimEl.setPointerCapture(e.pointerId); } catch (_) {} });
   aimEl.addEventListener('pointermove', e => { if (!drag || e.pointerId !== drag.id) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y, L = Math.hypot(dx, dy);
@@ -206,7 +206,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   aimEl.addEventListener('pointerup', release); aimEl.addEventListener('pointercancel', e => { drag = null; S.power = 0; });
   let swingT = -1;
   function strike(angle, power) { const h = holes[S.cur]; if (!h || h.ball.sunk || S.rolling) return false;
-    S.aim = angle; addressBall(); puttBall(h.ball, angle, power); h.strokes++; S.putts++; S.rolling = true; S.last = { x: h.ball.x, z: h.ball.z }; swingT = 0; tone(900, 500, 0.08, 'triangle', 0.08); return true; }
+    S.aim = angle; if (!S.vr) addressBall(); puttBall(h.ball, angle, power); h.strokes++; S.putts++; S.rolling = true; S.last = { x: h.ball.x, z: h.ball.z }; swingT = 0; tone(900, 500, 0.08, 'triangle', 0.08); return true; }
   function finishHole(h, sunk) { h.done = true; const hole = h.i + 1; let n = 0, first = S.paid[hole] == null;
     if (first) { n = sunk ? golfPayout(h.strokes) : 0; S.paid[hole] = n; S.payouts.push({ hole, strokes: h.strokes, n }); if (n) { S.earned += n; play.addTickets(n); } }
     const what = sunk ? (h.strokes === 1 ? 'HOLE IN ONE!' : h.strokes + ' SHOTS') : 'STROKE CAP';
@@ -217,8 +217,16 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     if (b.sunk || (r && r.sunk)) { b.sunk = true; S.rolling = false; placeBall(h); finishHole(h, true); return; }
     if (!inBounds(b, h.H.bounds)) { h.strokes++; b.x = S.last.x; b.z = S.last.z; b.vx = b.vz = 0; b.moving = false; }   // out: +1, back to the last spot
     const sp = Math.hypot(b.vx, b.vz);
-    if (S.rolling && !b.rolling && sp < STOP_SPEED) { b.vx = b.vz = 0; S.rolling = false; if (h.strokes >= STROKE_CAP) finishHole(h, false); else { S.aim = S.camYaw = Math.atan2(h.H.cup.x - b.x, h.H.cup.z - b.z); placeBall(h); addressBall(); } }
+    if (S.rolling && !b.rolling && sp < STOP_SPEED) { b.vx = b.vz = 0; S.rolling = false; if (h.strokes >= STROKE_CAP) finishHole(h, false); else { S.aim = S.camYaw = Math.atan2(h.H.cup.x - b.x, h.H.cup.z - b.z); placeBall(h); if (!S.vr) addressBall(); } }
     placeBall(h); }
+  // v19 (t411u, Dave: "can't play mini golf in VR"): headset putting. vr.js points the controller ray at the green: the aim line runs from the
+  // ball toward that spot, further = harder; holding the trigger aims, letting go putts. Your body is your headset, so nothing moves you
+  // to the ball (no addressBall) - the putter swings at the ball wherever you stand.
+  function vrNear(x, z, R = 3.0) { if (!S.below) return null; if (S.aiming && holes[S.cur] && !holes[S.cur].ball.sunk) return holes[S.cur]; let best = null, bd = R;
+    for (const h of holes) { if (h.ball.sunk) continue; const b = ballW(h), d = Math.hypot(b.x - x, b.z - z); if (d < bd) { bd = d; best = h; } } return best; }
+  function vrAim(h, angle, power) { if (!h || S.rolling || h.ball.sunk) return false; if (S.aiming && !S.vr) stopAim(); S.cur = h.i; S.aiming = true; S.vr = true; S.addr = null; S.aim = S.camYaw = angle; S.power = Math.max(0, Math.min(1, power)); return true; }
+  function vrStrike() { if (!S.aiming || !S.vr || S.rolling) return false; const p = S.power; S.power = 0; if (p < 0.03) return false; S.vrPutts = (S.vrPutts || 0) + 1; return strike(S.aim, p); }
+  function ballAt(h) { return h ? ballW(h) : null; }
   // test / helper hooks
   function sink() { const h = holes[S.cur]; if (!h || h.ball.sunk) return false; h.ball.sunk = true; S.rolling = false; placeBall(h); finishHole(h, true); return true; }
   function goTee(i) { const h = holes[i], [x, z] = toW(h, h.H.tee.x, h.H.tee.z - 0.6); monkey.position.set(x, FY + 0.08, z); st.vel.set(0, 0, 0); prev.copy(monkey.position); }
@@ -245,11 +253,11 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   }
   // aiming camera: behind the ball looking down the aim view (⟲ ⟳ rotate it); called from main.js frame() after its own camera
   const cT = new THREE.Vector3(), cP = new THREE.Vector3();
-  function cam(camera, dt) { if (!S.aiming) return; const h = holes[S.cur], b = ballW(h), f = S.camYaw;
+  function cam(camera, dt) { if (!S.aiming || st.vr) return; const h = holes[S.cur], b = ballW(h), f = S.camYaw;
     cP.set(b.x - Math.sin(f) * 2.6, b.y + 1.9, b.z - Math.cos(f) * 2.6); camClamp(cP); cT.set(b.x + Math.sin(f) * 1.6, b.y, b.z + Math.cos(f) * 1.6);
     if (!S.camInit) { camera.position.copy(cP); S.camInit = true; } else camera.position.lerp(cP, 1 - Math.exp(-(dt || 0.016) * 6)); camera.lookAt(cT); }
   function ballSnap() { if (!S.below) return undefined; const h = holes[S.cur]; if (!h || h.ball.sunk || (!S.aiming && !S.rolling)) return undefined; const b = ballW(h); return [Math.round(b.x * 100) / 100, Math.round(b.y * 100) / 100, Math.round(b.z * 100) / 100]; }
   Object.assign(S, { update, block, collideBelow, ground, camBlock, camClamp, cam, unlock, arm, refresh, pop, shield, group: grp, room, holes, payout: golfPayout, entry: { x: X0 - 1.0, z: ZM },
-    startAim, stopAim, strike, sink, goTee, nearBall, ballSnap, enterVisit, AREAS });
+    startAim, stopAim, strike, sink, goTee, nearBall, ballSnap, enterVisit, AREAS, vrNear, vrAim, vrStrike, ballAt });
   cutFloor(); return S;
 }
