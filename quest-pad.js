@@ -970,7 +970,9 @@
     var s;
     if (isQuest()) {
       if (!sentinel && document.body) installScrollCatcher();
-      var cv = document.querySelector('canvas');
+      // v17: the ARENA canvas (the renderer's), never just the first <canvas> in the page: that was the 56 px OPTIONS icon in #ui,
+      // stretched full-screen over the HUD, so on a Quest 2D tab it swallowed taps on PLAY CHESS and other buttons
+      var AR = window.__arcade, cv = (AR && AR.renderer && AR.renderer.domElement) || document.querySelector('body>canvas');
       if (cv && !cv.__gaQWheel) { cv.__gaQWheel = 1; try { cv.classList.add('gaQuestRoom'); } catch (e) {} attachWheel(cv); }
       if (!lookBtn) ensureLookBtn();
       if (lookBtn) lookBtn.hidden = !SPLIT || !!startUp();

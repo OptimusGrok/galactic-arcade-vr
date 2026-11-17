@@ -33,7 +33,7 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     await H.press(page, 'right', 'a-button');
     await page.waitForFunction(() => { const C = window.__chessTable; try { return C.state === 'play' && C.frame.contentWindow.chessApp && C.frame.contentWindow.__chessVR && C.frame.contentWindow.__chessVR.ready(); } catch (e) { return false; } }, null, { timeout: 30000 }).catch(() => {});
     await H.frames(page, 10);
-    const game = await profile('chess game up');
+    const game = await profile('chess game up', 8);
     if (PROFILE_ONLY) { console.log('PROFILE_ONLY done'); return; }
     // ---- immersive scene ----
     const im = await page.evaluate(() => { const S = window.__gaVR, V = S.vrChess, T = window.__arcade.THREE, h = S.head, w = window.__chessTable.frame.contentWindow, b = V.board.getWorldPosition(new T.Vector3()), tp = window.__tp;
@@ -84,7 +84,7 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     sans = await page.evaluate(() => window.__chessTable.frame.contentWindow.chessApp.sans.slice());
     chk(l2.last === 'move' && sans[0] === 'd4', 'the left controller moves pieces too (d2-d4) ' + JSON.stringify({ l1, l2, sans }));
     for (let i = 0; i < 120; i++) { const n = await page.evaluate(() => window.__chessTable.frame.contentWindow.chessApp.sans.length); if (n >= 2) break; await H.frames(page, 4); }
-    const late = await profile('immersive, mid-game');
+    const late = await profile('immersive, mid-game', 20);
     chk(late.uploadsPerFrame < 0.1 && late.pumpsPerFrame <= 0.3 && late.calls < shop.calls, 'perf mid-game stays low ' + JSON.stringify(late));
     // X = back to the shop
     await H.press(page, 'left', 'x-button');
@@ -98,18 +98,21 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     for (let i = 0; i < 80 && !(await page.evaluate(() => window.__chessTable.gstate === 'home')); i++) await H.frames(page, 3);
     await page.evaluate(() => { const S = window.__gaVR, C = window.__chessTable, x = C.CX - 2.4, z = C.CZ - 0.6; S.rig = { x, y: 0, z, yaw: 0.4 }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); });
     await H.frames(page, 4);
-    await H.aim(page, 'right', LOCAL, tbl); await H.frames(page, 3); await H.press(page, 'right', 'trigger');
+    await H.aim(page, 'right', LOCAL, tbl); await H.frames(page, 3);
+    console.log('INFO before 2nd sit ' + JSON.stringify(await page.evaluate(() => { const C = window.__chessTable, A = window.__arcade, P = window.__pool, Sh = window.__shop; return { can: C.canStart(), tpl: window.__tp && window.__tp.locked, mode: A.play && A.play.mode, pool: P && P.open, shop: Sh && Sh.open, ward: !!(window.__wardrobe && window.__wardrobe.isOpen), inv: !!document.querySelector('#inv.on'), air: !!(A.st.fly && A.st.fly.air), x: A.monkey.position.x, hover: window.__gaVR.hover, panel: window.__gaVR.state().panel }; })));
+    await H.press(page, 'right', 'trigger');
     await page.waitForFunction(() => window.__chessTable.state !== 'idle', null, { timeout: 5000 }).catch(() => {});
     await H.press(page, 'right', 'a-button');
     await page.waitForFunction(() => { try { return window.__gaVR.chessImmOn(); } catch (e) { return false; } }, null, { timeout: 30000 }).catch(() => {});
     for (let i = 0; i < 40 && !(await page.evaluate(() => window.__gaVR.chessImmOn())); i++) await H.frames(page, 3);
     const again = await page.evaluate(() => window.__gaVR.chessImmOn());
-    const w2 = await page.evaluate(() => { const w = window.__chessTable.frame.contentWindow; return w.__chessWinRef = true; });
+    const w2 = await page.evaluate(() => ({ s: window.__chessTable.state, g: window.__chessTable.gstate, hover: window.__gaVR.hover && window.__gaVR.hover.target }));
+    console.log('INFO second sit ' + JSON.stringify(w2));
     await H.press(page, 'right', 'squeeze');
     await page.waitForFunction(() => window.__chessTable.state === 'idle', null, { timeout: 5000 }).catch(() => {});
     await H.frames(page, 3);
     const g2 = await page.evaluate(() => ({ s: window.__chessTable.state, on: window.__gaVR.chessImmOn(), backs: window.__gaVR.backs.chess, white: window.__tp.whiteRoom.visible }));
-    chk(again && w2 && g2.s === 'idle' && !g2.on && g2.backs === 2 && g2.white, 'sit again -> immersive again; GRIP = back to the shop ' + JSON.stringify({ again, g2 }));
+    chk(again && g2.s === 'idle' && !g2.on && g2.backs === 2 && g2.white, 'sit again -> immersive again; GRIP = back to the shop ' + JSON.stringify({ again, g2 }));
     chk(!errors.length, 'no page errors (VR) ' + errors.join(' | '));
   } finally { await o.close(); }
   if (PROFILE_ONLY) process.exit(0);
