@@ -600,12 +600,27 @@ const carpet = new THREE.Mesh(carpetGeo, new THREE.MeshStandardMaterial({
   map: carpetTex, color: 0xb4b4b4, roughness: 1, metalness: 0, emissive: 0xc8c8c8, emissiveMap: carpetTex, emissiveIntensity: 0.22 }));   // matte light grey (ARCADE); a little self-light keeps the prints readable under the neon
 carpet.rotation.x = -Math.PI / 2; carpet.position.y = 0.005; carpet.name = 'carpet1'; carpet.visible = false; room.add(carpet);
 const carpet2 = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), carpet.material); carpet2.rotation.x = -Math.PI / 2; carpet2.position.y = 0.005; carpet2.name = 'carpet2'; carpet2.visible = false; room2.add(carpet2);
-let carpetW = null;
+let carpetW = null, neonW = null;
+// v20 (Dave: in the shop, NEON showed plain white and CARPET showed black):
+//  - CARPET: the shop copy cloned the carpet texture once, when carpetW was made. A clone has its own version counter, so when the
+//    image arrived later (or, on the low tier, the 4 px blank stub was swapped for the real texture) the clone was never re-uploaded
+//    and drew black. syncCarpetW() now re-clones whenever the source texture or its version changes, and keeps the tile repeat in
+//    step with shop.js's floor stretch (room 1's tile size).
+//  - NEON: the neon look is room 1/2's Reflector + hex overlay, which doesn't exist in the shop, so NEON just hid the floor options
+//    and left the white room's plain floor. neonW is a dark glossy hex floor with the same purple neon hex texture for the shop.
 function carpetWhite() {   // white room floor plane lives in teleport.js (shop.js only scales it); the carpet rides on it as a child so it follows the shop's size
   if (carpetW || !tp) return carpetW; const fl = tp.whiteRoom.children.find(o => o.isMesh && o.geometry.type === 'PlaneGeometry' && o.rotation.x < -1.5 && Math.abs(o.position.y) < 1e-3); if (!fl) return null;
-  const t = currentCarpetTex().clone(); t.repeat.set(3 * fl.scale.x, 3 * fl.scale.y); t.needsUpdate = true;
-  const m = floorMats.carpet.clone(); m.map = m.emissiveMap = t;
-  carpetW = new THREE.Mesh(fl.geometry, m); carpetW.position.z = 0.005; carpetW.name = 'carpetW'; carpetW.userData.carpetMat = m; carpetW.visible = false; fl.add(carpetW); return carpetW; }
+  const m = floorMats.carpet.clone(); m.map = m.emissiveMap = null;
+  carpetW = new THREE.Mesh(fl.geometry, m); carpetW.position.z = 0.005; carpetW.name = 'carpetW'; carpetW.userData.carpetMat = m; carpetW.visible = false; fl.add(carpetW); syncCarpetW();
+  const pw = fl.geometry.parameters, ht = hexTex.clone(); ht.needsUpdate = true; ht.userData.base = [pw.width, pw.height];
+  neonW = new THREE.Mesh(fl.geometry, new THREE.MeshStandardMaterial({ color: 0x0c0814, map: ht, emissive: 0x6a2cc0, emissiveMap: ht, emissiveIntensity: 0.35, roughness: 0.3, metalness: 0.6 }));
+  neonW.position.z = 0.005; neonW.name = 'neonW'; neonW.visible = false; fl.add(neonW); syncNeonW();
+  neonW.onBeforeRender = syncNeonW;
+  return carpetW; }
+function syncCarpetW() { const cw = carpetW; if (!cw) return; const m = cw.userData.carpetMat, src = currentCarpetTex(), fl = cw.parent; let t = m.map;
+  if (!t || t.userData.src !== src || t.userData.v !== src.version) { const old = t; t = src.clone(); t.userData = { src, v: src.version }; t.needsUpdate = true; m.map = m.emissiveMap = t; m.needsUpdate = true; if (old) old.dispose(); }
+  const rx = 3 * fl.scale.x, ry = 3 * fl.scale.y; if (t.repeat.x !== rx || t.repeat.y !== ry) t.repeat.set(rx, ry); }
+function syncNeonW() { if (!neonW) return; const t = neonW.material.map, fl = neonW.parent, [w, h] = t.userData.base, rx = 14 * w * fl.scale.x / (HALF * 2), ry = 14 * h * fl.scale.y / (HALF * 2); if (t.repeat.x !== rx || t.repeat.y !== ry) t.repeat.set(rx, ry); }
 // ---------- CHECKERS (black + gold 1 m checkerboard, slight gloss) and LAVA ('floor is lava' with cave-rock paths) ----------
 // both tile by WORLD x/z in the shader, so one material covers room 1 + hallway, room 2 and the white room at the same scale.
 const floorWP = (sh, head) => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vFW;').replace('#include <project_vertex>', '#include <project_vertex>\nvFW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -684,7 +699,9 @@ function setFloor(mode) {
   if (floorMode === 'carpet') ensureCarpetTex(); else releaseCarpetTex();
   if (c) carpet.material = carpet2.material = floorMats[floorMode];
   carpet.visible = carpet2.visible = c; floorTop.visible = room2.getObjectByName('floorHex2').visible = !c;   // mirrors/bases are hidden per frame in cullRooms
-  const cw = carpetWhite(); if (cw) { cw.visible = c; if (c) cw.material = floorMode === 'carpet' ? cw.userData.carpetMat : floorMats[floorMode]; cw.onBeforeRender = carpet.onBeforeRender; }
+  const cw = carpetWhite(); if (cw) { cw.visible = c; if (c) cw.material = floorMode === 'carpet' ? cw.userData.carpetMat : floorMats[floorMode];
+    cw.onBeforeRender = (...a) => { carpet.onBeforeRender(...a); if (floorMode === 'carpet') syncCarpetW(); }; if (floorMode === 'carpet') syncCarpetW(); }
+  if (neonW) { neonW.visible = !c; syncNeonW(); }
   if (c) mirror.visible = floorBase1.visible = room2.userData.mirror.visible = room2.userData.base.visible = false;   // right away (cullRooms keeps them off every frame)
   if (spaceWin) spaceWin.dirty();
   try { localStorage.setItem(FLOOR_KEY, floorMode); } catch (e) {}
