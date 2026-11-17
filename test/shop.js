@@ -20,7 +20,7 @@ const SH = process.env.NOSHOTS ? 0 : 1;
   await page.click('#shopBtn'); await page.waitForTimeout(800);
   if (SH) await page.screenshot({ path: S + pre + 'hologram_open.png' });
   const window_items = await page.evaluate(() => window.__shop.ITEMS.length);
-  const r = await page.evaluate(() => { const sh = window.__shop; const rows = document.querySelectorAll('#holoL .hT').length; const said = sh.said.slice();
+  const r = await page.evaluate(() => { const sh = window.__shop; const rows = document.querySelectorAll('#holoL .hT:not([data-nkt])').length; const said = sh.said.slice();
     const b0 = sh.balance(); document.querySelector('#holoL button[data-id="monkeyBrown"]').click(); const b1 = sh.balance();
     document.querySelector('#holoL button[data-id="grok"]').click(); const b2 = sh.balance();
     return { rows, said, b0, b1, b2, ls: localStorage.getItem('neonarcade.tickets'), badge: document.getElementById('tixN').textContent, prizes: localStorage.getItem('neonarcade.prizes'), last: sh.said[sh.said.length - 1] }; });
