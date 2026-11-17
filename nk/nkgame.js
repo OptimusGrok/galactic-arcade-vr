@@ -592,7 +592,12 @@ function endRound() {
   panelC.m.visible = true; drawBoard(); showMenu(); ui(); ENV.setHide({ models: true, rays: false });
 }
 function toTitle() { state.mode = 'title'; state.duckT = 0; targets.forEach(freeTarget); targets = []; state.result = null; showMenu(); drawMenu(); ui(); ENV.setHide({ models: true, rays: false }); }
-function abort(why) { if (state.mode !== 'play') return; state.aborts = (state.aborts || 0) + 1; state.lastAbort = why; toTitle(); }
+function abort(why) { if (state.mode !== 'play') return; state.paused = false; state.aborts = (state.aborts || 0) + 1; state.lastAbort = why; toTitle(); }
+// v17 (t404u): VR grip pause. The round clock, the orbs and the music stop; nothing is scored while paused. RESET = a fresh round,
+// EXIT = abort (an unfinished round pays no tickets); both go through abort(), never endRound().
+function pause() { if (state.mode !== 'play' || state.paused) return false; state.paused = true; state.pauses = (state.pauses || 0) + 1; if (master) master.gain.value = 0; ENV.setHide({ models: true, rays: false }); return true; }
+function resume() { if (state.mode !== 'play' || !state.paused) return false; state.paused = false; for (const s of ['L', 'R']) { glove[s].fresh = true; glove[s].cool = 0.3; } ENV.setHide({ models: true, rays: true }); return true; }
+function resetRound() { if (state.mode !== 'play') return false; abort('reset'); state.resets = (state.resets || 0) + 1; return startRound(); }
 function setDiff(d) { if (!NK_DIFF[d]) return; state.diff = d; state.daily = false; lsSet('gaNK.diff', d); drawMenu(); ui(); }
 
 // ---------- local high scores (the original has no world board; this copy keeps a local top 10) ----------
@@ -764,7 +769,7 @@ function update(dt) {
     const ud = g.obj.userData, pw = state.power > 0;
     ud.blue.color.set(pw ? COL.gold : skin.band); ud.halo.material.color.set(pw ? COL.gold : skin.glow); ud.halo.material.opacity = 0.35 + clamp(g.speed / 6, 0, 0.5);
   });
-  if (state.vr) vrHits();
+  if (state.vr && !(state.mode === 'play' && state.paused)) vrHits();
   updParticles(dt); updShards(dt); updFx(dt);
   floorMat.uniforms.uT.value = state.clock; floorMat.uniforms.uBeat.value = state.beatPulse; floorMat.uniforms.uPow.value += ((state.power > 0 ? 1 : 0) - floorMat.uniforms.uPow.value) * Math.min(1, dt * 3); floorMat.uniforms.uO.value.copy(root.position);
   cones.forEach(c => { c.m.rotation.z = Math.sin(state.clock * 0.6 + c.ph) * 0.28; c.m.rotation.x = Math.cos(state.clock * 0.45 + c.ph) * 0.18; c.m.material.uniforms.uI.value = 0.22 + state.beatPulse * 0.14 + (state.power > 0 ? 0.12 : 0); });
@@ -787,7 +792,7 @@ function tick(dt) {
 }
 root.visible = false; toTitle();
 const api = {
-  state, tick, startRound, endRound, toTitle, abort, punch, duck, setDiff, menuAct, applySkin, scores, drawBoard, bestScore,
+  state, tick, startRound, endRound, toTitle, abort, pause, resume, resetRound, punch, duck, setDiff, menuAct, applySkin, scores, drawBoard, bestScore,
   get frames() { return frames; }, get inStudio() { return inStudio; }, get BPM() { return BPM; },
   events: () => state.events, menuOrbs, gloves, glove, board,
   orbWorld(id) { const o = menuOrbs.find(o => o.id === id); return o ? toWorld(o.pos, new THREE.Vector3()) : null; },

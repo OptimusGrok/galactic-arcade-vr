@@ -240,7 +240,15 @@ export function setupVR(A) {
   function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : undefined); S.beams++; return true; }
   // v16 Neon Knockout studio (nk/nkgame.js, lazy): its gloves replace the controller models there; rays hide during a round
   const nkIn = () => !!(A.tp && A.tp.NKX != null && monkey.position.x < A.tp.NKX / 2);
-  const nkPlaying = () => { const N = window.__nkGame; return !!(N && N.inStudio && N.state.mode === 'play'); };
+  const nkRound = () => { const N = window.__nkGame; return !!(N && N.inStudio && N.state.mode === 'play'); };
+  const nkPlaying = () => nkRound() && !window.__nkGame.state.paused;   // v17: a paused round shows the rays again (for the pause panel)
+  const nkPaused = () => nkRound() && !!window.__nkGame.state.paused;
+  S.nkPauses = 0; S.nkResets = 0; S.nkExits = 0;
+  // v17 (t404u): GRIP during a Neon Knockout round = pause: RESUME / RESET GAME / EXIT GAME (exit beams back to the arcade, no tickets)
+  function nkPause() { const N = window.__nkGame; if (!N || !N.pause()) return false; S.nkPauses++; uiOpen('nkPause'); return true; }
+  function nkResume() { const N = window.__nkGame; if (UI.open === 'nkPause') uiClose(); if (N) N.resume(); }
+  function nkReset() { const N = window.__nkGame; if (UI.open === 'nkPause') uiClose(); if (N && N.resetRound()) S.nkResets++; }
+  function nkExit() { const N = window.__nkGame; if (UI.open === 'nkPause') uiClose(); if (N) N.abort('exit'); S.nkExits++; beam(); }
   S.nkGrip = hand => { const i = ctrls.findIndex(c => c.userData.hand === hand && c.userData.src); return i >= 0 ? { obj: grips[i], src: ctrls[i].userData.src } : null; };
   S.nkHide = null; S.nkHid = false;
   function nkCtrl() { const want = nkIn() && !!(S.nkHide && S.nkHide.models) && !!window.__nkGame; if (want) { ctrlModelsVis(false); S.nkHid = true; } else if (S.nkHid) { ctrlModelsVis(true); S.nkHid = false; } }
@@ -264,6 +272,8 @@ export function setupVR(A) {
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
     let title = '', sub = '', body = '';
     add('close', 'X', 900, 22, 100, 90, true, uiClose);
+    if (UI.open === 'nkPause') { B[0].act = nkResume; title = 'PAUSED'; sub = 'EXIT = BACK TO THE ARCADE · NO TICKETS FOR AN UNFINISHED ROUND';
+      add('nkResume', 'RESUME', 162, 210, 700, 140, true, nkResume); add('nkReset', 'RESET GAME', 162, 390, 700, 140, true, nkReset); add('nkExit', 'EXIT GAME', 162, 570, 700, 140, true, nkExit); }
     if (UI.open === 'tickets') { const K = kiosk(); title = 'TICKET EXCHANGE';
       if (!K) sub = 'NOT READY'; else { const bal = K.C.bal, left = Math.max(0, Math.ceil((K.C.at + 36e5 - Date.now()) / 6e4));
         sub = 'CASH $' + bal + (bal < 5 ? '  ·  +$' + (5 - bal) + ' IN ' + left + ' MIN' : '');
@@ -971,7 +981,10 @@ export function setupVR(A) {
       if (S.nbGripT >= GRIP_EXIT_S) { S.nbGripT = 0; n.stop('exit'); S.nbExits++; S.backs.nb++; pulse((L && L.grip ? L : R).src, 0.8, 60); }
       if (n.zoomAmt) n.setZoomAmt(0);
     } else if (mode === 'walk') {
-      if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
+      if (nkRound()) {   // v17: Neon Knockout round: GRIP pauses / resumes; the pause panel stays up until a choice
+        if (anyP('gripDown')) { if (nkPaused()) nkResume(); else nkPause(); pulse((L && L.gripDown ? L : R).src, 0.6, 40); }
+        else if (nkPaused() && UI.open !== 'nkPause') uiOpen('nkPause'); }
+      else if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
       if (nkPlaying()) { for (const c of ctrls) c.userData.ray.visible = false; }   // v16: boxing round: the controllers are gloves (no rays, no floor teleports)
