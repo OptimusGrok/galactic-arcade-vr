@@ -22,7 +22,7 @@ const WAV = process.env.WAV || '/tmp/speech_q1.wav';
     let p = await P(); chk(p.panel === 'chat' && p.open, 'trigger on the sign opens the chat panel', p);
     // every question page: no WHO IS DAVE?
     const labels = new Set(); for (let i = 0; i < 6; i++) { (await E(() => window.__gaVR.ui.btns.filter(b => /^q_/.test(b.id)).map(b => b.label))).forEach(l => labels.add(l)); const nx = await E(() => (window.__gaVR.ui.btns.find(b => b.id === 'next') || {}).on); if (!nx) break; await tap('next'); }
-    chk(labels.size >= 20 && ![...labels].some(l => /DAVE/.test(l)) && !window.__x, 'no "WHO IS DAVE?" on any page (' + labels.size + ' questions)');
+    chk(labels.size >= 20 && ![...labels].some(l => /DAVE/.test(l)), 'no "WHO IS DAVE?" on any page (' + labels.size + ' questions)');
     const bt = await E(() => window.__gaVR.ui.btns.map(b => b.id)); chk(bt.includes('type') && bt.includes('talk'), 'TYPE A MESSAGE + TALK TO GROK buttons', bt);
     // TYPE: floating keyboard
     await tap('type'); p = await P(); chk(p.panel === 'chatType', 'TYPE opens the floating keyboard', p.panel);
