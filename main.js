@@ -704,7 +704,13 @@ let lightsIn = 1;
 const skipFar = (m, far) => { const orig = m.onBeforeRender; m.onBeforeRender = function (...args) { const v = far.visible; far.visible = false; try { orig.apply(this, args); } finally { far.visible = v; } }; };
 skipFar(mirror, room2); skipFar(room2.userData.mirror, room);
 let nbHold = null;   // t854u / v235: while Neon Bricks is zoomed full-screen, don't draw the rest of the arcade
+// v18 (t405u, Dave: beaming in VR "goes black and freezes"): in the headset camera.position is last frame's head (three copies the XR pose
+// into it only inside render()), so on the frame after a beam cut the rooms were culled for the room you just LEFT = a black void around you.
+// In XR the cull reads this frame's eye pose instead; cullFor() lets vr.js stage another room's culling to pre-warm its shaders.
+let cullPosOverride = null;
+function viewPos() { if (cullPosOverride) return cullPosOverride; if (renderer.xr.isPresenting) { const c = renderer.xr.getCamera(), e = c && c.cameras && c.cameras[0]; if (e && (e.position.x || e.position.z)) return e.position; } return camera.position; }
 function cullRooms(fr) {
+  const cpos = viewPos();
   const nbZoom = !!(typeof nb !== 'undefined' && nb && nb.playing && (nb.zoomK || 0) > 0.85);
   if (nbZoom) {
     if (!nbHold) {
@@ -725,11 +731,11 @@ function cullRooms(fr) {
     nbHold = null;
   }
   if (window.__chessImmersive) { if (tp) tp.whiteRoom.visible = false; hall.visible = room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v17 immersive VR chess: the shop is not drawn
-  const inW = camera.position.x > WX / 2; if (tp) tp.whiteRoom.visible = inW;
+  const inW = cpos.x > WX / 2; if (tp) tp.whiteRoom.visible = inW;
   hall.visible = !inW;
-  if (camera.position.x < NKX / 2) { hall.visible = false; room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v16: Neon Knockout studio (far west)
+  if (cpos.x < NKX / 2) { hall.visible = false; room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }   // v16: Neon Knockout studio (far west)
   if (inW) { room.visible = room2.visible = false; mirror.visible = false; room2.userData.mirror.visible = false; return; }
-  const z = camera.position.z, in1 = z > -HALF, in2 = z < -HALF - HALL_L;
+  const z = cpos.z, in1 = z > -HALF, in2 = z < -HALF - HALL_L;
   room.visible = !in2 || fr.intersectsBox(doorBox2);
   room2.visible = !in1 || fr.intersectsBox(doorBox1);
   const deep = !in1; room2.userData.mirror.visible = deep; room2.userData.base.visible = !deep; // far room seen through the door: no second reflector pass
@@ -1989,6 +1995,7 @@ function loadNK() { return nkP || (nkP = import('./nk/nkgame.js').then(m => { NK
     const back = () => { if (tp.where !== 3) return; if (tp.state !== 'idle') { setTimeout(back, 500); return; } tp.go(); }; setTimeout(back, 800);   // could not load (offline?): beam straight back
     throw e; })); }
 window.__loadNK = loadNK;
+window.__cullFor = (pos, fr) => { cullPosOverride = pos; try { cullRooms(fr); } finally { cullPosOverride = null; } };   // v18: vr.js pre-warm stages each room's culling
 tp.onNK = () => { loadNK().catch(() => {}); };
 kiosk = setupKiosk({ room, camera, monkey, st, play, blockers });
 // ---------- CLAW MACHINE (#12, t215/t216): free-standing in room 1 on the 2x2 grid block Dave highlighted: cells i -7..-6, j -1..0 of the
