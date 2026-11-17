@@ -24,7 +24,7 @@ async function measure(page, scene) {
     return { jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(1) : null, uasmMB: uasm, textures: info.memory.textures, geometries: info.memory.geometries, programs: (info.programs || []).length,
       texMB: m.texMB, ktxMB: m.ktxMB != null ? m.ktxMB : 0, rtMB: m.rtMB, cabBufs: window.__cabMusic ? Object.keys(window.__cabMusic.cached || {}).length || (window.__cabMusic.bufCount || 0) : null, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8),
       musicMB: window.__music ? (window.__music.decodedMB != null ? window.__music.decodedMB : (window.__music.loaded ? 'loaded' : 0)) : null, stream: window.__gaStream ? { shop: window.__gaStream.shop, room2: window.__gaStream.room2 } : null,
-      compRT: (() => { try { const c = A.renderer.xr.isPresenting; return c; } catch (e) { return null; } })() };
+      ktxPool: window.__ktxStats || null, compRT: (() => { try { const c = A.renderer.xr.isPresenting; return c; } catch (e) { return null; } })() };
   });
   // whole-browser resident memory by Chromium process type (Whisper's worker, iframes and the GPU process are not in the page's JS heap)
   try { const out = require('child_process').execSync('ps -eo rss=,args= | grep -E "[c]hrom(e|ium).*--type=(renderer|gpu-process)"', { encoding: 'utf8' }); const rss = { renderer: 0, gpu: 0 };

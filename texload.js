@@ -9,7 +9,16 @@ import { capCabSideTexture, capLoadedTexture, flagTex, skipMips, streamRetarget 
 import { KTX2 as KTX2_MAP } from './tex_ktx2.js';
 
 const shared = new Map();
-let _ktx = null, _ktxOk = false;
+let _ktx = null, _ktxOk = false, _ktxR = null, _ktxPend = 0, _ktxIdle = 0;
+// vrtest-v4: the Basis transcoder lives in worker threads (each with its own wasm heap, counted in the renderer process).
+// Use 2 workers, and drop the whole pool 6 s after the last transcode finishes; a later picture re-creates it on demand
+// (streamed re-uploads keep their compressed mips in JS and never transcode again).
+const KTX_IDLE_MS = 6000;
+export const ktxStats = { pools: 0, disposed: 0, loads: 0 };
+function newKtx() { const k = new KTX2Loader().setTranscoderPath('vendor/basis/').setWorkerLimit(2).detectSupport(_ktxR); ktxStats.pools++; return k; }
+function ktxGet() { clearTimeout(_ktxIdle); if (!_ktx && _ktxOk && _ktxR) _ktx = newKtx(); return _ktx; }
+function ktxDone() { if (--_ktxPend > 0) return; clearTimeout(_ktxIdle);
+  _ktxIdle = setTimeout(() => { if (_ktxPend > 0 || !_ktx) return; try { _ktx.dispose(); } catch (e) {} _ktx = null; ktxStats.disposed++; }, KTX_IDLE_MS); }
 
 export function ktx2For(url) {
   if (!url || /\.ktx2(\?|$)/i.test(url)) return url;
@@ -22,10 +31,11 @@ export function ktx2For(url) {
 
 export function initTexLoader(renderer, THREE) {
   try {
-    _ktx = new KTX2Loader().setTranscoderPath('vendor/basis/').detectSupport(renderer);
+    _ktxR = renderer; _ktx = newKtx();
     const cfg = (_ktx && _ktx.workerConfig) || {};
     _ktxOk = !!(cfg.astcSupported || cfg.etc1Supported || cfg.etc2Supported || cfg.dxtSupported || cfg.bptcSupported || cfg.pvrtcSupported);
     if (!_ktxOk) { try { _ktx.dispose && _ktx.dispose(); } catch (e) {} _ktx = null; }
+    if (typeof window !== 'undefined') window.__ktxStats = ktxStats;
   } catch (e) { _ktx = null; _ktxOk = false; }
   return _ktxOk;
 }
@@ -130,7 +140,7 @@ export function loadPicture(THREE, url, opt = {}) {
     for (const fn of wait) { try { fn(t); } catch (e) {} }
     if (opt.onLoad) { try { opt.onLoad(t); } catch (e) {} }
   };
-  const ktx = (_ktxOk && _ktx && ktx2For(url)) || null;
+  const ktx = (_ktxOk && _ktxR && ktx2For(url)) || null;
   let tex;
   if (ktx) {
     // KTX2Loader.load() does not return a Texture; keep a CompressedTexture stub so
@@ -142,10 +152,13 @@ export function loadPicture(THREE, url, opt = {}) {
     if (THREE.LinearFilter) tex.minFilter = THREE.LinearFilter;
     flagTex(tex, THREE);
     applyWrap(tex, opt);
-    _ktx.load(ktx, loaded => {
+    const L = ktxGet(); _ktxPend++; ktxStats.loads++;
+    L.load(ktx, loaded => {
+      ktxDone();
       fillCompressed(tex, loaded, THREE, opt);
       finish(tex);
     }, undefined, () => {
+      ktxDone();
       const fb = new THREE.TextureLoader().load(url, imgTex => {
         applyFlags(imgTex, THREE, opt);
         applyWrap(imgTex, opt);
