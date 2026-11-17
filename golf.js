@@ -121,7 +121,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   addEventListener('keydown', e => { if (!S.popShown || S.open || play.mode !== 'walk' || (play.view && play.view.open)) return;
     if (/^(Enter|KeyE|Space)$/.test(e.code)) { e.stopImmediatePropagation(); e.preventDefault(); if (!e.repeat) unlock(); } }, true);
   const tickets = () => play.tickets.total;
-  function refresh() { const ok = tickets() >= GOLF_COST; btn.textContent = ok ? 'PAY 5 TICKETS' : 'NEED 5 TICKETS';   // v19 (t411u): spelled out btn.classList.toggle('need', !ok);
+  function refresh() { const ok = tickets() >= GOLF_COST; btn.textContent = ok ? 'PAY 5 TICKETS' : 'NEED 5 TICKETS'; btn.classList.toggle('need', !ok);   // v19 (t411u): spelled out
     hint.textContent = ok ? (coarse ? 'TAP TO OPEN THE SHIELD · YOU HAVE ' : 'ENTER / E / SPACE · YOU HAVE ') + tickets() + ' 🎟' : 'NOT ENOUGH TICKETS · YOU HAVE ' + tickets() + ' 🎟'; }
   let ac = null; const ctx = () => (ac = ac || new (window.AudioContext || window.webkitAudioContext)());
   const tone = (f0, f1, dur, type, vol) => { try { const c = ctx(), t = c.currentTime, o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
