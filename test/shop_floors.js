@@ -46,8 +46,8 @@ function judge(chk, p, tag) {
     } catch (e) { chk(false, 'flat exception ' + String(e && e.stack || e).slice(0, 500)); }
     const errs = errors.filter(e => !/supabase|ERR_FAILED|net::/i.test(e)); chk(errs.length === 0, 'flat: no page errors ' + errs.slice(0, 3).join(' | '));
     await close(); }
-  { const { page, errors, close } = await open({ w: 480, h: 270, init: () => { try { localStorage.setItem('neonarcade.floor', 'carpet'); } catch (e) {} } });
-    try { await page.evaluate(() => { window.__arcade.setTier && window.__arcade.setTier('low'); const A = window.__arcade; A.monkey.position.set(83, 0, -3); window.__tp.where = 2; });
+  { const { page, errors, close } = await open({ w: 480, h: 270, qs: '?tier=low', init: () => { try { localStorage.setItem('neonarcade.floor', 'carpet'); } catch (e) {} } });   // low tier from the start: the shop copy is made from the 4 px stub
+    try { await page.evaluate(() => { const A = window.__arcade; A.monkey.position.set(83, 0, -3); window.__tp.where = 2; });
       judge(chk, await probe(page, 'carpet'), 'flat low-tier, carpet saved before load');
       judge(chk, await probe(page, 'neon'), 'flat low-tier');
     } catch (e) { chk(false, 'low exception ' + String(e && e.stack || e).slice(0, 500)); }
