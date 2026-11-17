@@ -667,7 +667,7 @@ export function setupVR(A) {
   const IC = { done: false, loaded: [], failed: [], cell: 0, claw: false, k: 0 };
   function iconArt() { const icons = window.__neonIcons; if (!icons || !icons.material || !icons.material.map || IC.started) return; IC.started = true;
     const old = icons.material.map, oc = old.image, low = (A.TIER && A.TIER.name === 'low') || !oc || oc.width <= 512, S0 = oc ? oc.width / 4 : 256;
-    const C = IC.cell = low ? 256 : 512, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
+    const C = IC.cell = 256, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
     if (oc) g.drawImage(oc, 0, 0, cv.width, cv.height);   // start from the old icons (fallback for any picture that fails)
     const info = {}; (icons.userData.icons || []).forEach(i => { info[i.key] = i; });
     const load = k => new Promise(res => { const im = new Image(); im.onload = () => res([k, im]); im.onerror = () => res([k, null]); im.src = 'tex/icons/' + k + '.webp'; });
@@ -677,7 +677,7 @@ export function setupVR(A) {
         // the quad shows the cell's inner square stretched to w x h: draw the picture at h/w of the height (or w/h of the width) so it looks square
         const r = q && q.w > 0 && q.h > 0 ? q.w / q.h : 1, dw = r >= 1 ? inner / r : inner, dh = r >= 1 ? inner : inner * r;
         g.clearRect(x, y, C, C); g.drawImage(im, x + pad + (inner - dw) / 2, y + pad + (inner - dh) / 2, dw, dh); IC.loaded.push(k); }
-      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4;
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;   // TEST v1: 256 px cells, 1024 atlas, no mips
       try { renderer.initTexture(t); } catch (e) {}
       icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8));   // painted art: a bit brighter than the dim neon (0.55)
       icons.material.needsUpdate = false; old.dispose(); IC.done = true;

@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { capLoadedTexture, flagTex, tierQuality } from './tier.js';
+import { bindStreamGpu, capLoadedTexture, flagTex, skipMips, tierQuality } from './tier.js';
 
 let api_sky = null;
 export const SHOP_HALF = 14;
@@ -324,7 +324,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     for (const sd of [-1, 1]) rim.push(new THREE.BoxGeometry(0.14, 0.1, VL).translate(sd * (VR - 0.07), CH + 0.02, VZ));
     add(rim, new THREE.MeshBasicMaterial({ color: 0xdfe4ec }), 'shopRoofRim'); }
   // ---------- MURALS: painted straight onto the walls, edge to edge, floor to ceiling ----------
-  const loadT = f => { const t = new THREE.TextureLoader().load(new URL('./tex/' + f, import.meta.url).href, tex => capLoadedTexture(tex, THREE)); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t; };
+  const loadT = f => { const t = new THREE.TextureLoader().load(new URL('./tex/' + f, import.meta.url).href, tex => capLoadedTexture(tex, THREE, { max: 1024, mips: false })); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); skipMips(t, THREE); return t; };
   const SW = 9.2, MB = 0.0, MT = CH - 0.06, MHh = MT - MB, xE = SW / 2 + 0.15, TB = 5.08, zm = ZW + 0.012;
   const mat = f => new THREE.MeshBasicMaterial({ map: loadT(f), toneMapped: false });
   add([setUV(new THREE.PlaneGeometry(HS - xE, MHh), 0.38, 1, 0, 1).translate(-(HS + xE) / 2, MB + MHh / 2, zm)], mat('shop_mural_left.jpg'), 'muralLeft');      // back wall left of the shelves
@@ -416,6 +416,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
       const K3 = 1.32, sp = SPAN[id] * K3; let x = x0 + sp / 2 + (r ? sp * 0.5 : 0), v = r * 3 + b;
       while (x < x1 - sp / 2 + 0.01) { toyJobs.push([id, x, y, z, K3 * (0.92 + rnd() * 0.12), v++, (rnd() - 0.5) * 0.6 + (id === 'roadster' || id === 'dino' ? -0.5 : 0)]); x += sp + rnd() * 0.02; } }
     label(it || { id: id, name: 'Mars Roadster Car', price: byId.roadster.price }, (UX[b] + UX[b + 1]) / 2, SY[s] - 0.1, LZ, 0, LBW); });
+  capLoadedTexture(atl.t, THREE, { max: 1024, mips: false }); if (atl.t.image) atl.c = atl.t.image;
   add(sprBox, new THREE.MeshStandardMaterial({ map: atl.t, roughness: 0.45, emissive: 0xffffff, emissiveMap: atl.t, emissiveIntensity: 0.22 }), 'shelfBoxes');
   mesh(mfr, new THREE.MeshBasicMaterial({ vertexColors: true }), 'marsBoxFrames');
   const toyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, emissive: 0x2e2e32 });
@@ -502,7 +503,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     m.rotation.x = -Math.PI / 2; m.position.set(0, 0.004, (ZW + ZF) / 2); m.renderOrder = 1; m.name = 'glossFloor'; G.add(m); }
 
   add(ledB, ledM, 'shopLedBlue'); add(ledP, ledM2, 'shopLedPurple'); add(ledCy, ledC, 'shopLedCyan'); add(lit, litM, 'ceilingLight');
-  lab.t.needsUpdate = true; add(labelGeos, new THREE.MeshBasicMaterial({ map: lab.t, toneMapped: false }), 'priceLabels'); add(cardGeos, new THREE.MeshBasicMaterial({ color: 0x1b1f2e }), 'priceCards');
+  lab.t.needsUpdate = true; capLoadedTexture(lab.t, THREE, { max: 1024, mips: false }); if (lab.t.image) lab.c = lab.t.image; add(labelGeos, new THREE.MeshBasicMaterial({ map: lab.t, toneMapped: false }), 'priceLabels'); add(cardGeos, new THREE.MeshBasicMaterial({ color: 0x1b1f2e }), 'priceCards');
 
   // t563: teleporter pad moved from the room centre to the far-left corner (title wall's car end meets the left wall's Viking end),
   // 2 m clear of both walls. teleport.js reads tp.PAD2 live (proximity button, beam, arrival), so moving the vector + the pad group moves it all.
@@ -1200,5 +1201,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
   window.__shop = api;
+  api.gpu = bindStreamGpu(G, { minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
+  api.setGpu = on => api.gpu.set(!!on);
   return api;
 }

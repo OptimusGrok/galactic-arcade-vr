@@ -735,7 +735,7 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   // wall icons could paint over it ("cut off"); on its own mesh it draws after them (renderOrder 4) and depth-tests against the room.
   if (clawQuads.length) { const cs = new THREE.Mesh(mergeGeometries(clawQuads), mat); cs.name = 'neonClawSign'; cs.renderOrder = 4; cs.matrixAutoUpdate = false; cs.updateMatrix(); cs.frustumCulled = false; mesh.add(cs); mesh.userData.clawSign = cs; if (typeof window !== 'undefined') window.__neonClawSign = cs; }
   if (iconQuads.length) {
-    const itex = new THREE.CanvasTexture(atlas.cv); itex.colorSpace = THREE.SRGBColorSpace; itex.anisotropy = opt.aniso || 4;
+    const itex = new THREE.CanvasTexture(atlas.cv); itex.colorSpace = THREE.SRGBColorSpace; itex.anisotropy = opt.aniso || 4; itex.generateMipmaps = false; itex.minFilter = THREE.LinearFilter;
     try { if (opt.renderer) opt.renderer.initTexture(itex); } catch (err) {}
     const imat = new THREE.MeshBasicMaterial({ map: itex, transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1).multiplyScalar(opt.k || 0.55) });
     imat.name = 'neonIcons';

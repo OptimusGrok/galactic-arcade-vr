@@ -36,7 +36,8 @@ import { setupTeleport, WX, NKX, NK_PAD } from './teleport.js';
 import { lavaPaths, PATH_HW } from './lavapaths.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { setupVR } from './vr.js';   // Galactic Arcade VR: WebXR (Meta Quest Browser)
-import { detectTier, probeGPU, qualityForTier, persistTier, installContextLossHandler, memSnapshot, ensureLostOverlay, isSoftwareGL, capLoadedTexture, cabWH, flagTex, tierQuality } from './tier.js';
+import { detectTier, probeGPU, qualityForTier, persistTier, installContextLossHandler, memSnapshot, ensureLostOverlay, isSoftwareGL, capLoadedTexture, cabWH, flagTex, tierQuality, setStreamThree } from './tier.js';
+setStreamThree(THREE);   // TEST v1: stream placeholders
 
 const MOBILE = matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && matchMedia('(hover: none)').matches);
 // t767u: iPad (incl. iPadOS 'desktop' Safari = MacIntel + multi-touch) plays as held: no landscape lock, no 'turn sideways' hint
@@ -1849,6 +1850,49 @@ const LIVE_SCREENS = /[?&]liveScreens=1/.test(location.search);
 const stillDemo = cab => ({ ready: false, frames: 0, running: false, err: null, still: true, texture: cab.userData.viewTex, view: cab.userData.view, attach() {}, detach() {} });
 const demo = LIVE_SCREENS ? startStrikeDemo(strikeCab) : stillDemo(strikeCab), ghostDemo = LIVE_SCREENS ? startGhostDemo(ghostCab) : stillDemo(ghostCab), _v = new THREE.Vector3();
 window.__stillScreens = !LIVE_SCREENS;
+// TEST v1 (Chief's t893u memory cuts, VR port): the shop and room 2 (Dead Signal + its floor mirror) stream their big textures in when you
+// get near (teleporter pad / shop / hallway door) and evict them from the GPU after an 8 s hold with a 2 m deadband. VR: textures are swapped
+// for a 1x1 placeholder (never nulled), so no material changes shader program: no compiles on a beam (v18 pre-warm keeps working), and a
+// beam to the shop starts the upload when the beam starts (tp.locked), before the cut.
+const STREAM = window.__gaStream = { shop: 'off', room2: 'off', wantShop: false, wantRoom2: false, ups: 0, evicts: 0 };
+function streamHold() { const ms = window.__gaStreamHold; return ms != null ? Math.max(200, +ms) : 8000; }
+function streamWant() {
+  const m = viewPos(), pad = tp && tp.PAD1;
+  const inShop = (tp && tp.where === 2) || m.x > WX - 14;
+  const padD = pad ? Math.hypot(m.x - pad.x, m.z - pad.z) : 99;
+  const locking = !!(tp && tp.locked);
+  return { wantShop: inShop || padD < 8 || locking, evictShop: !inShop && padD > 10 && !locking,
+    wantRoom2: m.z < -HALF + 5 || (tp && tp.where === 1 && m.z < -HALF), evictRoom2: m.z > -HALF + 7 };
+}
+function setRoom2Gpu(on) {
+  on = !!on;
+  try { if (dsCab && dsCab.userData && dsCab.userData.gpu) dsCab.userData.gpu.set(on); } catch (e) {}
+  const mir = room2 && room2.userData && room2.userData.mirror;
+  if (mir && typeof mir.getRenderTarget === 'function') { const rt = mir.getRenderTarget();
+    if (rt) { if (!rt.__gaSz) rt.__gaSz = [rt.width, rt.height]; try { rt.setSize(on ? rt.__gaSz[0] : 1, on ? rt.__gaSz[1] : 1); } catch (e) {} } }
+  if ((STREAM.room2 === 'on') !== on) { if (on) STREAM.ups++; else STREAM.evicts++; }
+  STREAM.room2 = on ? 'on' : 'off';
+}
+let _shopGpuGen = 0;
+function setShopGpu(on) {
+  on = !!on; const gen = ++_shopGpuGen, was = STREAM.shop === 'on';
+  const note = () => { const now = STREAM.shop === 'on'; if (now !== was) { if (now) STREAM.ups++; else STREAM.evicts++; } };
+  if (on) { const p = loadShop();
+    const apply = () => { if (gen !== _shopGpuGen) return; try { if (shop && shop.gpu) shop.gpu.set(true); } catch (e) {} STREAM.shop = (shop && shop.gpu && shop.gpu.on) ? 'on' : 'off'; note(); };
+    if (shop && shop.gpu) apply(); else if (p && p.then) p.then(apply).catch(() => {}); }
+  else { try { if (shop && shop.gpu) shop.gpu.set(false); } catch (e) {} STREAM.shop = (shop && shop.gpu && shop.gpu.on) ? 'on' : 'off'; note(); }
+}
+const _streamT = { shop: 0, room2: 0 };
+function tickRoomStream(now) {
+  const w = streamWant(); STREAM.wantShop = w.wantShop; STREAM.wantRoom2 = w.wantRoom2;
+  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); }
+  else if (w.evictShop) { if (!_streamT.shop) _streamT.shop = now; else if (now - _streamT.shop >= streamHold()) setShopGpu(false); }
+  else _streamT.shop = 0;
+  if (w.wantRoom2) { _streamT.room2 = 0; setRoom2Gpu(true); }
+  else if (w.evictRoom2) { if (!_streamT.room2) _streamT.room2 = now; else if (now - _streamT.room2 >= streamHold()) setRoom2Gpu(false); }
+  else _streamT.room2 = 0;
+}
+try { setRoom2Gpu(false); } catch (e) {}
 try { applyLowBudget(); } catch (e) {}
 // t295u start-screen freeze: the two attract-demo iframes (strike-demo ~1.8 s pix + ~1.2 s cityDecor at 4x CPU, ghost-demo) booted on the main
 // thread during the start screen's first frames. Load them only once the start screen is gone (or skipped), one per idle slot.
@@ -1933,6 +1977,7 @@ function frame(now, xrFrame) {
     _frus.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     cullRooms(_frus);
     if (!nbHold) {   // Neon Bricks fullscreen: room is hidden, skip cabinet attract work
+    try { tickRoomStream(now); } catch (e) {}
     const vis = c => { const sc = c.userData.centre, maxD = PS.on ? PS.cabFar : 18; return (_frus.intersectsSphere(_sph.set(_v.copy(sc).setY(1.2), 1.4)) && camera.position.distanceTo(sc) < maxD) || !!window.__forceDemo; };
     const dts = Math.min(gap / 1000, 0.1);
     if (draw) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
@@ -2010,7 +2055,7 @@ window.__grid = setupGrid({ THREE, scene, camera, cv, HALF, DOOR_W, HALL_L, Z2 }
 // teleporter is used; window.__arcade.shopReady resolves once it is set up (same setupShop call as before, Chief's shop.js unchanged).
 let shopP = null;
 function loadShop() { return shopP || (shopP = import('./shop.js').then(m => { shop = m.setupShop({ scene, tp, play, monkey, camera, st }); AREAS[3] = shop.extraBounds; CAM_AREAS[3] = shop.camBounds; CLIP_AREA[1] = shop.extraBounds; setFloor(floorMode);
-  try { if (window.__shop && window.__shop.reloadPrizes) window.__shop.reloadPrizes(); } catch (e) {} return shop; })); }   // white-room carpet now that the shop has sized the floor
+  try { if (window.__shop && window.__shop.reloadPrizes) window.__shop.reloadPrizes(); } catch (e) {} try { if (shop && shop.gpu && !streamWant().wantShop) shop.gpu.set(false); } catch (e) {} return shop; })); }   // white-room carpet now that the shop has sized the floor
 // v16 (t399u) NEON KNOCKOUT: an arcade copy of Side Scroller Platform's VR boxing game in its own studio far west (x = NKX), reached by
 // the room-1 teleporter's NEON KNOCKOUT button / VR sign. nk/nkgame.js is only imported on the first beam there (lazy: startup unchanged).
 let NK = null, nkP = null; const nkRoot = new THREE.Group(); nkRoot.name = 'nkStudio'; nkRoot.position.set(NKX, 0, 0); nkRoot.visible = false; scene.add(nkRoot);
@@ -2164,7 +2209,7 @@ const opts = setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor: ()
 schedule();
 
 // hooks for tests / future art work
-window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHold.lock, k: zoomHold.k }; }, powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow) };
+window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHold.lock, k: zoomHold.k }; }, powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow), stream: STREAM };
 // ---------- Galactic Arcade VR (vr.js): ENTER VR, head tracking, thumbstick / teleport movement, cabinet games on an in-world screen ----------
 VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playables, collide, frame, TIER, QUEST,
   resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
