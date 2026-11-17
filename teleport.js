@@ -157,11 +157,14 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   function chargeRings(pd, t, k) { pd.charge.forEach((m, j) => { const on = Math.min(1, Math.max(0, (t - j * 0.2) / 0.12)); const o = on * k; m.visible = o > 0.01; m.material.opacity = o * (0.75 + 0.25 * Math.sin(t * 30 + j)) * DB; m.scale.setScalar(1 + 0.04 * on * Math.sin(t * 20)); }); }
   function power(pd, k, t) { pd.beam.visible = k > 0.01; pd.beam.material.opacity = k * (0.55 + 0.15 * Math.sin(t * 18)) * DB;
     pd.rings.forEach((m, j) => { const f = (t * 0.7 + j / 3) % 1; m.visible = k > 0.01; m.position.y = 0.08 + f * 1.9; m.scale.setScalar(1 - f * 0.12); m.material.opacity = k * (1 - f) * 0.9 * DB; }); }
+  // v18 (t405u, Dave: teleporting "should be instant"): in the headset you don't see your own avatar dissolve, so the walk-to-centre, charge and
+  // dematerialise run 6x faster and the arrival 3x (about 1.2 s pad to pad instead of ~5 s). Flat screens keep the full show.
+  const VR_TP = { walk: 6, charge: 6, demat: 6, flash: 2, remat: 3 }; api.VR_TP = VR_TP;
   api.update = (dt, canShow) => {
     const pd = from(), mp = monkey.position, d = Math.hypot(mp.x - pd.x, mp.z - pd.z); api.near = d;
     if (api.state === 'idle') { const show = canShow && d < R + 0.35; btn.textContent = api.where === 1 ? 'SHOP' : 'ARCADE'; btn.classList.toggle('on', show); nkBtn.classList.toggle('on', show && api.where === 1); btn.classList.toggle('pair', show && api.where === 1); menu.classList.toggle('on', show && api.where === 1); power(padOf(api.where), 0, 0); }
     else {
-      dt *= window.__tpTimeScale || 1; api.t += dt; const T = api.t;   // tests may speed the sequence up (slow software GL)
+      dt *= (window.__tpTimeScale || 1) * (st.vr ? (VR_TP[api.state] || 1) : 1); api.t += dt; const T = api.t;   // tests may speed the sequence up (slow software GL)
       if (api.state === 'walk') { const k = 1 - Math.exp(-dt * 6); mp.x += (pd.x - mp.x) * k; mp.z += (pd.z - mp.z) * k; st.vel.set(0, 0, 0);
         if (Math.hypot(mp.x - pd.x, mp.z - pd.z) < 0.03 || T > 1.2) { mp.x = pd.x; mp.z = pd.z; api.state = 'charge'; api.t = 0; clip(); vwoom(); lsw = swirlAt(pd.x, pd.z, 1.0 + 1.8 + 0.2); } }
       else if (api.state === 'charge') { const p0 = padOf(api.where); chargeRings(p0, T, 1); power(p0, Math.min(1, T) * 0.35, T); emit(Math.round(dt * 60), 2, 0.05, mp.x, mp.z);   // rings light one by one over ~1 s
