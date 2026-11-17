@@ -11,6 +11,12 @@ const H = {
   async axes(page, hand, x, y) { await page.evaluate(([hand, x, y]) => window.__xrd.controllers[hand].updateAxes('thumbstick', x, y), [hand, x, y]); },
   async press(page, hand, id, holdFrames = 3) { await H.btn(page, hand, id, 1); await H.frames(page, holdFrames); await H.btn(page, hand, id, 0); await H.frames(page, 3); },
   // point a controller (local XR coords relative to the rig) at a world-space target
+  // v15: with the laser pistol out, the right hand's pointing ray leaves the gun muzzle (parallel to the controller ray, a few cm off):
+  // aim, then shift the target by that offset so the MUZZLE ray lands on it
+  async aimGun(page, hand, local, target) { await H.aim(page, hand, local, target); await H.frames(page, 2);
+    const g = await page.evaluate(() => window.__gaVR.fpGun && window.__gaVR.fpGun()); if (!g || !g.on || hand !== 'right' || !g.ctrl) return;
+    const o = g.rayO.map((v, i) => v - g.ctrl[i]), d = g.aim, t = o[0] * d[0] + o[1] * d[1] + o[2] * d[2]; const t2 = target.map((v, i) => v - (o[i] - t * d[i]));
+    await H.aim(page, hand, local, t2); await H.frames(page, 2); },
   async aim(page, hand, local, target) { await page.evaluate(([hand, local, target]) => { const A = window.__arcade, T = A.THREE, S = window.__gaVR, r = S.rig;
       const c = Math.cos(r.yaw), s = Math.sin(r.yaw), wx = r.x + local[0] * c + local[2] * s, wz = r.z - local[0] * s + local[2] * c, wy = r.y + local[1];
       const m = new T.Matrix4().lookAt(new T.Vector3(wx, wy, wz), new T.Vector3(...target), new T.Vector3(0, 1, 0)), qw = new T.Quaternion().setFromRotationMatrix(m);

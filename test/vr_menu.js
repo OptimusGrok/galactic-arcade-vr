@@ -38,6 +38,17 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await page.waitForTimeout(5300); await H.frames(page, 4);
     const f1 = await page.evaluate(() => ({ f: window.__gaVR.menuArt.floor, n: window.__gaVR.menuArt.floorDraws }));
     chk(f1.f !== f0.f && f1.n > f0.n, '5 s later it shows a different floor (' + f0.f + ' -> ' + f1.f + ')');
+    // v15 (t398u): MUTE MUSIC / MUSIC ON (background music only, saved)
+    const mus = () => page.evaluate(() => ({ lab: (window.__gaVR.ui.btns.find(b => b.id === 'music') || {}).label, on: window.__music.on, ls: localStorage.getItem('neonarcade.music'), target: window.__music.target, sfx: !!(window.__mute && window.__mute.on), panel: window.__gaVR.state().panel }));
+    await page.evaluate(() => window.__music.setOn(true)); await H.frames(page, 3);
+    const m0 = await mus(); chk(m0.lab === 'MUTE MUSIC', 'the menu has MUTE MUSIC (' + m0.lab + ')');
+    await tap('music'); await page.waitForTimeout(300); await H.frames(page, 3); const m1 = await mus();
+    chk(m1.on === false && m1.ls === '0' && m1.lab === 'MUSIC ON' && m1.target === 0 && !m1.sfx && m1.panel === 'menu', 'MUTE MUSIC: background music off + saved (neonarcade.music=' + m1.ls + ', target ' + m1.target + '), game sounds not muted, button now MUSIC ON');
+    await tap('music'); await page.waitForTimeout(300); const m2 = await mus();
+    chk(m2.on === true && m2.ls === '1' && m2.lab === 'MUTE MUSIC' && !m2.sfx, 'MUSIC ON: music back on + saved (' + m2.ls + ')');
+    const kept = await page.evaluate(() => { const B = window.__gaVR.ui.btns, r = id => B.find(b => b.id === id); const ov = (a, b) => a && b && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const ids = ['pack', 'room', 'music', 'nb', 'mic']; let bad = 0; for (const i of ids) for (const j of ids) if (i < j && ov(r(i), r(j))) bad++; return bad; });
+    chk(kept === 0, 'menu buttons do not overlap (BACKPACK, FLOOR + WALLS, MUSIC, NEON BRICKS, MIC)');
     // floor square -> picker -> back
     await tap('room'); chk((await st()).panel === 'room' && (await ids()).some(i => /^fl_|^floor|^f_/.test(i) || true), 'pressing the square opens FLOOR + WALLS (' + (await ids()).slice(0, 8).join(',') + ')');
     await H.press(page, 'right', 'squeeze'); await H.frames(page, 4); chk(!(await st()).panel, 'grip closes the picker');

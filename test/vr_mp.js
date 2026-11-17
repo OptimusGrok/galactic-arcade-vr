@@ -55,7 +55,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib'); const moc
     chk(pc && !pc.vr && !pc.visor && pc.vis && cs === 0, 'A sees the flat player as a normal avatar (no visor; the flat client sends no VR pose)');
     // ---- laser: B buys + holds the pistol (ray menu), shoots down, then charges ----
     await place(b, 2, 1.5, Math.PI); await b.evaluate(() => window.__arcade.play.addTickets(40));
-    const LOCAL = [0.2, 1.3, -0.2], aimB = async t => { await H.aim(b, 'right', LOCAL, t); await H.frames(b, 3); };
+    const LOCAL = [0.2, 1.3, -0.2], aimB = async t => { await H.aimGun(b, 'right', LOCAL, t); await H.frames(b, 3); };
     const tapB = async id => { for (let i = 0; i < 3; i++) { const w = await b.evaluate(id => window.__gaVR.ui.btnWorld(id), id); if (!w) throw new Error('no button ' + id); await aimB(w); await H.press(b, 'right', 'trigger'); await H.frames(b, 3); if ((await b.evaluate(() => window.__gaVR.lastPress)) === id) break; } await b.evaluate(() => { window.__gaVR.lastPress = null; }); };
     await H.press(b, 'left', 'y-button'); await H.frames(b, 3); await tapB('pack'); await tapB('ward'); await tapB('cat_hand'); await tapB('w_hand_pistol'); await tapB('cat_back'); await tapB('w_back_jetpack'); await tapB('close');
     const gB = await b.evaluate(() => window.__gaVR.gear()); chk(gB.laser && gB.jet, 'B holds the laser pistol and wears the jetpack');

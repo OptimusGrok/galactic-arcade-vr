@@ -7,7 +7,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
   const st = () => page.evaluate(() => window.__gaVR.state());
   const place = async (x, z, yaw = 0) => { await page.evaluate(([x, z, yaw]) => { const S = window.__gaVR; S.rig = { x, y: 0, z, yaw }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); }, [x, z, yaw]); await H.frames(page, 6); };
   const LOCAL = [0.2, 1.3, -0.2];
-  const aim = async (target, hand = 'right') => { await H.aim(page, hand, LOCAL, target); await H.frames(page, 3); };
+  const aim = async (target, hand = 'right') => { await H.aimGun(page, hand, LOCAL, target); await H.frames(page, 3); };
   const btnAt = id => page.evaluate(id => window.__gaVR.ui.btnWorld(id), id);
   const tap = async id => { const w = await btnAt(id); if (!w) throw new Error('no button ' + id + ' in ' + (await page.evaluate(() => window.__gaVR.ui.kind + ': ' + window.__gaVR.ui.btns.map(b => b.id).join(',')))); for (let i = 0; i < 3; i++) { await aim(await btnAt(id) || w); await H.press(page, 'right', 'trigger'); await H.frames(page, 3); if ((await page.evaluate(() => window.__gaVR.lastPress)) === id) break; await page.evaluate(() => { window.__gaVR.lastPress = null; }); } await page.evaluate(() => { window.__gaVR.lastPress = null; }); };
   const held = () => page.evaluate(() => { const h = window.__shop && window.__shop.held; return h ? { R: h.R || null, L: h.L || null } : null; });

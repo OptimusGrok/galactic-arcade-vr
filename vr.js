@@ -312,8 +312,11 @@ export function setupVR(A) {
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
       // v12 (t388u): the monkey BACKPACK (prizes + accessories inside) and a FLOOR + WALLS square that shows a different floor every 5 s;
       // no BEAM (the pad signs beam) / BUY TICKETS (the ticket machine + its sign) / CLOSE: just the X (or GRIP)
-      add('pack', 'BACKPACK', 70, 180, 420, 400, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
-      add('room', 'FLOOR + WALLS', 534, 180, 420, 400, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
+      add('pack', 'BACKPACK', 70, 180, 420, 350, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
+      add('room', 'FLOOR + WALLS', 534, 180, 420, 350, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
+      // v15 (t398u): background music only (music.js 'neonarcade.music', the same switch as the flat Options MUSIC button); game sounds + voice chat stay
+      { const mu = window.__music, on = !mu || mu.on !== false; add('music', on ? 'MUTE MUSIC' : 'MUSIC ON', 70, 546, 884, 58, !!(mu && mu.setOn), () => { mu.setOn(!(mu.on !== false)); say(mu.on ? 'MUSIC ON' : 'MUSIC MUTED · GAME SOUNDS + VOICE STAY ON'); UI.key = ''; });
+        if (!on) B[B.length - 1].sel = true; }
       // v14 (t396u): voice chat. MIC ON asks for the mic (only on this tap), then the same button mutes / unmutes; ✕ VC leaves voice
       const vc = window.__voice, vin = !!(vc && vc.state !== 'off');
       if (!inShop) add('nb', 'PLAY NEON BRICKS', 70, 620, 520, 100, !!nbApi(), nbStart);
@@ -547,7 +550,7 @@ export function setupVR(A) {
     if (!GF.on) return out; const v = new THREE.Vector3(), g = myGrip('right'); out.grip = g ? g.p.toArray() : null;
     out.muzzle = GF.fpMuzzle ? GF.fpMuzzle.getWorldPosition(v).toArray() : null; out.mirrorMuzzle = pz ? pz.getWorldPosition(new THREE.Vector3()).toArray() : null;
     out.hand = new THREE.Vector3().setFromMatrixPosition(GF.hand.matrixWorld).toArray(); const ws = new THREE.Vector3(); GF.gun.matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), ws); out.gunScale = Math.abs(ws.x);
-    out.barrel = new THREE.Vector3(0, 0, 1).transformDirection(GF.gun.matrixWorld).toArray(); out.aim = GF.d.toArray(); out.rayO = GF.o.toArray();
+    out.barrel = new THREE.Vector3(0, 0, 1).transformDirection(GF.gun.matrixWorld).toArray(); out.aim = GF.d.toArray(); out.rayO = GF.o.toArray(); out.ctrl = new THREE.Vector3().setFromMatrixPosition(GF.ctrl.matrixWorld).toArray();
     out.gunVis = GF.gun.visible; out.handVis = GF.hand.visible; out.fpRay = GF.ray.visible; out.fpRayLen = GF.ray.scale.z; out.ctrlRay = GF.ctrl.userData.ray.visible;
     const gi = ctrls.indexOf(GF.ctrl), gd = grips[gi] && grips[gi].userData; out.ctrlModel = !!(gd && ((gd.fallback && gd.fallback.visible) || (gd.model && gd.model.visible)));
     const ld = ctrls.findIndex(c => c.userData.hand === 'left'), lg = grips[ld] && grips[ld].userData; out.leftModel = !!(lg && ((lg.fallback && lg.fallback.visible) || (lg.model && lg.model.visible))); return out; };
