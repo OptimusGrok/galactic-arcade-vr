@@ -268,6 +268,9 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   // test / helper hooks
   function sink() { const h = holes[S.cur]; if (!h || h.ball.sunk) return false; h.ball.sunk = true; S.rolling = false; placeBall(h); finishHole(h, true); return true; }
   function goTee(i) { const h = holes[i], [x, z] = toW(h, h.H.tee.x, h.H.tee.z - 0.6); monkey.position.set(x, FY + 0.08, z); st.vel.set(0, 0, 0); prev.copy(monkey.position); }
+  // vrtest-v6 (t464u) debug URL flags so the Quest can bisect the shop freezes: ?nogolfroom=1 keeps the basement hidden until you are down
+  // there, ?nogolflamps=1 keeps the 5 stair lamps off until you are down there (vr.js reads ?nomirror=1 ?nogrok=1 ?nowarm=1 the same way).
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm') }; } return window.__gaDbg; }
   function update(dt) {
     U.uT.value += dt; if (performance.now() - lastCut > 1000) { lastCut = performance.now(); cutFloor(); }
     if (offT >= 0) { const k = (performance.now() - offT) / 900; U.uOff.value = Math.min(1, k); if (k >= 1) { shield.visible = false; offT = -1; } }
@@ -275,7 +278,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     if (near !== S.popShown) { S.popShown = near; pop.classList.toggle('on', near); }
     if (near) refresh(); S.near = near;
     const cam = camera ? camera.position : p, show = S.below || (cam.x > X0 - 8 && cam.x < BX1 + 2 && cam.z < 6 && cam.z > -6);
-    room.visible = show; setLights(S.below || (p.x > X0 - 3 && p.x < X1 && p.z < Z1 + 2));
+    const D = dbg(); room.visible = show && !(D.nogolfroom && !S.below); setLights(S.below || (!D.nogolflamps && p.x > X0 - 3 && p.x < X1 && p.z < Z1 + 2));
     if (show) for (const h of holes) for (const m of h.H.movers) m.update(dt);
     if (S.below && S.rolling) { const h = holes[S.cur]; let t = Math.min(dt, 0.05); while (t > 1e-6) { const s = Math.min(t, 1 / 120); stepHole(h, s); t -= s; } }
     const nb = nearBall(); puttBtn.style.display = nb && play.mode === 'walk' ? 'block' : 'none';

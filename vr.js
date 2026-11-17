@@ -549,7 +549,12 @@ export function setupVR(A) {
   function mirrorVR(on) { const m = mirrorMesh(), t = on ? mirrorTwin() : MV.twin; if (t) t.visible = !!on;
     if (m) { if (on && t) { if (m.userData.vrLayers == null) m.userData.vrLayers = m.layers.mask; m.layers.set(31); }   // shop.js keeps toggling .visible, so hide it from every camera by layer
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
-  function mirrorFrame() { const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
+  // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
+  // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm') }; } return window.__gaDbg; }
+  S.dbg = dbg;
+  function mirrorFrame() { if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
+    const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
     t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
     const d = _mp.distanceTo(_mc); if (d > MIRROR_FAR || (_mn.x * (_mc.x - _mp.x) + _mn.y * (_mc.y - _mp.y) + _mn.z * (_mc.z - _mp.z)) <= 0) { MV.skips++; return; }
     if (!t.geometry.boundingSphere) t.geometry.computeBoundingSphere();
@@ -1082,7 +1087,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    avatarHands(); fpGun(); nkCtrl(); mpStep(); mirrorFrame();
+    avatarHands(); fpGun(); nkCtrl(); mpStep(); mirrorFrame(); if (dbg().nogrok && A.shop && A.shop.grok) A.shop.grok.visible = false;
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -1214,7 +1219,7 @@ export function setupVR(A) {
           finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } } }
       catch (e) { PW.err = 'draw ' + e; }
       finally { renderer.setScissorTest(st0); renderer.setScissor(sc); renderer.setViewport(vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; if (undoG) undoG(); } }); }
-  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
+  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; if (dbg().nowarm) { PW.done = true; PW.ms = 0; return; } PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
     try {
       try { if (window.__arcade && window.__arcade.loadShop) await window.__arcade.loadShop(); } catch (e) {}
       try { if (window.__loadNK) await window.__loadNK(); } catch (e) {}   // the studio's code + scene now, not during the first beam
