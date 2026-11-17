@@ -1,7 +1,7 @@
 // v18 (t405u / t407u, Dave: "teleporting goes black and freezes", "entering VR freezes"): measures the XR frames on ENTRY (click -> first XR
 // frame, longest frame interval in the first 120 XR frames) and around every beam CUT (room 1 -> shop -> room 1 -> Neon Knockout -> room 1):
 // longest interval, new shader programs compiled on/after the cut, and what the headset shows on the frames right after the cut
-// (% lit pixels; a black void would read ~0). Works on old builds too (GA_ROOT=<checkout>) for before/after numbers. CHECK=1 asserts.
+// (% lit pixels; a black void would read ~0). Every XR frame waits for its GPU work (1-pixel read), so a slow GPU frame shows on itself. Works on old builds too (GA_ROOT=<checkout>) for before/after numbers. CHECK=1 asserts.
 const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
 const CHECK = !!process.env.CHECK;
 (async () => {
@@ -17,7 +17,8 @@ const CHECK = !!process.env.CHECK;
     await E(() => { const r = window.__arcade.renderer, o = r.render.bind(r), A = window.__arcade;
       const P = window.__xp = { iv: [], prog: [], where: [], lit: [], last: 0, t0: 0, first: 0, cutAt: [], pend: 0, w0: null };
       r.render = function (s, c) { if (!r.xr.isPresenting || s !== A.scene) return o(s, c); const t = performance.now(), n0 = r.info.programs.length; if (!P.first) P.first = t;
-        if (P.last) P.iv.push(+(t - P.last).toFixed(1)); P.last = t; o(s, c); (P.rd = P.rd || []).push(+(performance.now() - t).toFixed(1)); const n1 = r.info.programs.length; P.prog.push(n1 - n0);
+        if (P.last) P.iv.push(+(t - P.last).toFixed(1)); P.last = t; o(s, c); try { const L = window.__hsLayer; if (L && L.__fb) { const gl = L.context, px = new Uint8Array(4), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, L.__fb); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr); } } catch (e) {}   // sync with the GPU every frame: each interval includes its own GPU work
+        (P.rd = P.rd || []).push(+(performance.now() - t).toFixed(1)); const n1 = r.info.programs.length; P.prog.push(n1 - n0);
         const w = window.__tp ? window.__tp.where : 0; if (P.w0 !== null && w !== P.w0) { P.cutAt.push(P.iv.length); P.pend = 6; } P.w0 = w; P.where.push(w);
         if (P.pend > 0) { P.pend--; try { const h = window.__hsRead(); P.lit.push([P.cutAt.length, h ? h.left.lit : -1]); } catch (e) {} } }; });
     await E(() => { window.__xp.t0 = performance.now(); document.getElementById('vrBtn').click(); });
