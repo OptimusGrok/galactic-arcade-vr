@@ -439,6 +439,31 @@ export function setupVR(A) {
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
   // v16 (t399u): the room-1 pad also beams to the NEON KNOCKOUT studio (sign stacked above BEAM TO SHOP); the studio pad beams back
   addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(1, 2.36), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD3);
+  // v19 (t411u, Dave: "can't play mini golf in VR"): the stairwell's energy shield only had a flat-screen PAY button. In the headset a sign
+  // over the shield: trigger = pay 5 tickets (only if you have them) and the shield drops; then walk down the stairs with the stick.
+  const golfA = () => A.golf || null;
+  addSign('golfPay', 'MINI GOLF · PAY 5 TICKETS', '#ffb000', () => { const G = golfA(); return G ? [G.X0 - 0.15, 2.05, (G.Z0 + G.Z1) / 2] : null; }, () => golfPay(),
+    () => { const G = golfA(); if (!G || G.open || G.below || !A.tp || A.tp.where !== 2 || !S.head) return false; return Math.hypot(S.head.x - G.X0, S.head.z - (G.Z0 + G.Z1) / 2) < 9; });
+  function golfPay() { const G = golfA(); if (!G) return false; const t = play.tickets.total;
+    if (G.unlock()) { S.golfPays = (S.golfPays || 0) + 1; S.msg = 'SHIELD DOWN · WALK DOWN THE STAIRS TO PLAY'; S.msgT = 3.5; return true; }
+    S.msg = 'NEED 5 TICKETS · YOU HAVE ' + t; S.msgT = 3; return false; }
+  S.golfPay = golfPay;
+  // putting: near a ball (3 m) your pointing hand aims instead of teleporting. Point at the green where the ball should go (further = harder),
+  // HOLD the trigger to aim (line + putter), LET GO to putt; grip while aiming cancels. The other hand still teleports.
+  const GV = { hand: null };
+  function golfVR(L, R) { const G = golfA(), h0 = S.head; if (!G || !G.below || !h0) { GV.hand = null; return null; }
+    const h = G.vrNear(h0.x, h0.z); if (!h) { if (G.aiming && G.vr && !G.rolling) G.stopAim(); GV.hand = null; return null; }
+    if (G.rolling) { GV.hand = null; return 'rolling'; }
+    if (!GV.hand) { if (R && R.trigDown) GV.hand = 'right'; else if (L && L.trigDown) GV.hand = 'left'; }
+    const hand = GV.hand || 'right', c = ctrlFor(hand), P = hand === 'right' ? R : L; if (!c || !P) return null;
+    if (GV.hand && ((L && L.gripDown) || (R && R.gripDown))) { if (G.aiming && G.vr) G.stopAim(); GV.hand = null; S.msg = 'PUTT CANCELLED'; S.msgT = 1.5; return hand; }
+    const ray = rayOf(c), b = G.ballAt(h); let p = null;
+    if (ray.direction.y < -0.02) { const t = (b.y - ray.origin.y) / ray.direction.y; if (t > 0 && t < 25) { p = ray.at(t, _hit); c.userData.ray.scale.z = t; c.userData.ray.material.color.setHex(0xffb000); dot.position.copy(p); dot.visible = true; } }
+    if (GV.hand) {
+      if (P.trig) { if (p) { const ang = Math.atan2(p.x - b.x, p.z - b.z), pw = Math.min(1, Math.hypot(p.x - b.x, p.z - b.z) / 3.0); G.vrAim(h, ang, pw); S.golfAim = { ang, pw }; } }
+      else { if (G.aiming && G.vr && G.vrStrike()) { pulse(P.src, 0.8, 50); S.golfPutts = (S.golfPutts || 0) + 1; } else if (G.aiming && G.vr) G.stopAim(); GV.hand = null; } }
+    return hand; }
+  S.golfVR = () => ({ hand: GV.hand, aiming: !!(golfA() && golfA().aiming), vr: !!(golfA() && golfA().vr) });
   addSign('beamArcadeNK', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(3), beam, () => A.tp && A.tp.where === 3 && A.tp.state === 'idle' && !nkPlaying());
   addSign('shop', 'PRIZE SHOP', '#ff3fd2', () => { const g = A.shop && A.shop.grok; if (!g) return null; const p = g.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 2.3, p.z]; }, () => uiOpen('shop'), () => A.tp && A.tp.where === 2 && !!A.shop && !grokAway());
   // t356u/t358u: the shop mirror. shop.js's Reflector is 512x420 (blurred in a headset) and its own hook only draws within 12 m of the
@@ -988,8 +1013,9 @@ export function setupVR(A) {
       else if ((laserOn() ? !!(L && L.bDown) : anyP('bDown')) && !(A.tp && A.tp.locked) && !nkPlaying()) { if (UI.open) uiClose(); else uiOpen('menu'); }   // Y / B = menu (Y only while the laser pistol is on: B shoots)
       else if (anyP('gripDown') && UI.open) { uiClose(); S.backs.menu++; pulse((L && L.gripDown ? L : R).src, 0.5, 30); }   // v12 (t382u): GRIP (short press) = back: closes any panel (menu, shop, accessories, tickets, chat, pack)
       UI.hover = null;
+      const golfHand = !UI.open && !nkPlaying() ? golfVR(L, R) : null;   // v19: mini golf putting owns the pointing hand near a ball
       if (nkPlaying()) { for (const c of ctrls) c.userData.ray.visible = false; }   // v16: boxing round: the controllers are gloves (no rays, no floor teleports)
-      else for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; const ray = rayOf(c);
+      else for (const [hand, P] of order) { const c = ctrlFor(hand); if (!c || !P) continue; if (golfHand === hand || golfHand === 'rolling' && P.trigDown) continue; const ray = rayOf(c);
         if (UI.open) { const u = uiHit(ray);
           if (u) { c.userData.ray.scale.z = u.t; c.userData.ray.material.color.setHex(0x7dff9a); dot.position.copy(u.p); dot.visible = true; if (u.btn && !UI.hover) UI.hover = u.btn.id;
             if (P.trigDown && u.btn && u.btn.on) { pulse(P.src, 0.5, 30); S.lastPress = u.btn.id; u.btn.act(); UI.key = ''; } continue; } }
@@ -1039,9 +1065,10 @@ export function setupVR(A) {
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
     const CTs = chessOn ? chessT() : null, chessLine = CTs ? (CTs.state === 'play' ? 'TRIGGER: MOVE A PIECE · GRIP: STAND UP' : CTs.state === 'stand' ? 'STANDING UP' : CTs.gstate === 'seated' || CTs.gstate === 'sitdown' ? 'GROK SITS DOWN · GRIP: STAND UP' : 'GROK IS COMING · A: SKIP · GRIP: STAND UP') : null;
-    const line2 = S.msgT > 0 ? S.msg : chessLine ? chessLine : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : UI.open ? 'TRIGGER: PRESS · GRIP: BACK' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
+    const GA = golfA(), golfLine = GA && GA.below && S.head ? (GA.rolling ? 'ROLLING…' : GA.aiming && GA.vr ? 'LET GO: PUTT · POWER ' + Math.round((GA.power || 0) * 100) + '% · GRIP: CANCEL' : GA.vrNear(S.head.x, S.head.z) ? 'POINT WHERE TO PUTT · HOLD TRIGGER TO AIM' : null) : null;
+    const line2 = S.msgT > 0 ? S.msg : chessLine ? chessLine : golfLine ? golfLine : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : UI.open ? 'TRIGGER: PRESS · GRIP: BACK' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
     batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
