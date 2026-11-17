@@ -20,12 +20,12 @@ export function createVRChess({ scene }) {
   const floor = new THREE.Mesh(new THREE.CircleGeometry(3.2, 48), new THREE.MeshBasicMaterial({ color: 0x120c22, fog: false, toneMapped: false })); floor.rotation.x = -Math.PI / 2; floor.position.y = 0.005; floor.renderOrder = -9; G.add(floor);
   const ring = new THREE.Mesh(new THREE.RingGeometry(3.1, 3.2, 64), new THREE.MeshBasicMaterial({ color: 0x7f5cff, fog: false, toneMapped: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.006; G.add(ring);
   // board (canvas texture, square) on a tilted "table" in front of you
-  const BS = 0.84, BC = 1024, bc = document.createElement('canvas'); bc.width = bc.height = BC; const bg = bc.getContext('2d'), bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; bt.anisotropy = 4;
+  const BS = 0.84, BC = 1024, bc = document.createElement('canvas'); bc.width = bc.height = 1;   // TEST v1: full size only while you play (mem()) const bg = bc.getContext('2d'), bt = new THREE.CanvasTexture(bc); bt.colorSpace = THREE.SRGBColorSpace; bt.anisotropy = 4;
   const board = new THREE.Mesh(new THREE.PlaneGeometry(BS, BS), new THREE.MeshBasicMaterial({ map: bt, fog: false, toneMapped: false })); board.name = 'vrChessBoard';
   const frame = new THREE.Mesh(new THREE.BoxGeometry(BS + 0.08, BS + 0.08, 0.03), new THREE.MeshBasicMaterial({ color: 0x4a3220, fog: false, toneMapped: false })); frame.position.z = -0.017;
   const tbl = new THREE.Group(); tbl.add(frame, board); G.add(tbl);
   // status + buttons bar
-  const PW = 0.9, PH = 0.2, pc = document.createElement('canvas'); pc.width = 1024; pc.height = 228; const pg = pc.getContext('2d'), ptx = new THREE.CanvasTexture(pc); ptx.colorSpace = THREE.SRGBColorSpace;
+  const PW = 0.9, PH = 0.2, pc = document.createElement('canvas'); pc.width = 1; pc.height = 1; const pg = pc.getContext('2d'), ptx = new THREE.CanvasTexture(pc); ptx.colorSpace = THREE.SRGBColorSpace;
   const bar = new THREE.Mesh(new THREE.PlaneGeometry(PW, PH), new THREE.MeshBasicMaterial({ map: ptx, transparent: true, fog: false, toneMapped: false })); bar.name = 'vrChessBar'; G.add(bar);
   const BTN = [{ id: 'new', label: 'NEW GAME', x: 24 }, { id: 'undo', label: 'UNDO', x: 362 }, { id: 'exit', label: 'EXIT  (GRIP / X)', x: 700 }];
   const V = { on: false, sel: -1, hover: -1, hbtn: null, key: '', bkey: '', draws: 0, bdraws: 0, moves: 0, picks: 0, lastErr: null, flip: false, msg: '', msgT: 0 };
@@ -89,5 +89,12 @@ export function createVRChess({ scene }) {
     if (mine && (mine & 8) === A.pos.turn && legalFrom(A, sq).length) { V.sel = sq === V.sel ? -1 : sq; return 'select'; }
     if (mine && (mine & 8) === A.pos.turn) { V.sel = -1; say('THAT PIECE CANNOT MOVE'); return 'stuck'; }
     V.sel = -1; return 'clear'; }
-  return { G, dome, board, bar, V, place, frameUpdate, hit, pick, say, BTN, uci, legalFrom };
+  // TEST v1 (VR memory): the 1024x1024 board + 1024x228 bar canvases (and their GPU textures) exist only while you are seated at chess.
+  // Off: canvases shrink to 1x1 and the textures are freed. Same materials (programs) either way, so nothing compiles when you sit.
+  const M = { on: false, ons: 0, offs: 0 };
+  function mem(on) { on = !!on; if (on === M.on) return; M.on = on; if (on) M.ons++; else M.offs++;
+    bc.width = bc.height = on ? BC : 1; pc.width = on ? 1024 : 1; pc.height = on ? 228 : 1;
+    for (const t of [bt, ptx]) { try { t.dispose(); } catch (e) {} if (on) t.needsUpdate = true; }
+    V.key = ''; V.bkey = ''; }
+  return { G, dome, board, bar, V, M, mem, place, frameUpdate, hit, pick, say, BTN, uci, legalFrom };
 }

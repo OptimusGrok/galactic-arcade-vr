@@ -479,7 +479,7 @@ export function setupVR(A) {
   const MV = { twin: null, src: null, draw: null, renders: 0, skips: 0, far: 0 };
   function mirrorTwin() { const m = mirrorMesh(); if (!m || !m.parent) return null;
     if (MV.twin && MV.src === m) return MV.twin;
-    const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 1024 : 1536;
+    const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 768 : 1024;   // TEST v1 (VR memory): was 1536 / 1024
     const w = gh >= gw ? Math.round(L * gw / gh) : L, h = gh >= gw ? L : Math.round(L * gh / gw);
     const col = (m.material && m.material.uniforms && m.material.uniforms.color) ? m.material.uniforms.color.value.getHex() : 0xa8c4d4;
     const t = new Reflector(m.geometry, { textureWidth: w, textureHeight: h, color: col, multisample: 0 });
@@ -745,7 +745,10 @@ export function setupVR(A) {
   // Once Grok sits, the real chess page (chess-play/: same pieces, battles, robot arm) is painted by its own window.__chessVR painter onto a
   // panel over the table; ray + trigger press / drag / release go into that page at the same spot. GRIP (short press) = stand up.
   const chessT = () => window.__chessTable || null, CHW = 1180, CHH = 720, CPW = 1.36, CPH = CPW * CHH / CHW;
-  const chessM = panel(CPW, CPH, CHW, CHH); chessM.name = 'vrChess'; chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
+  const chessM = panel(CPW, CPH, 1, 1); chessM.name = 'vrChess';   // TEST v1: 1x1 until you sit down (chessMem)
+  function chessMem(on) { const u = chessM.userData; on = !!on; if (u.memOn === on) return; u.memOn = on; u.cv.width = on ? CHW : 1; u.cv.height = on ? CHH : 1;
+    try { u.tex.dispose(); } catch (e) {} if (on) u.tex.needsUpdate = true; try { VC.mem(on); } catch (e) {} S.chessMemN = (S.chessMemN || 0) + 1; }
+  S.chessMem = () => ({ panel: chessM.userData.cv.width, board: VC.board.material.map.image.width, on: !!chessM.userData.memOn, vc: VC.M }); chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
   const CS = { was: 'idle', down: false, hand: null, u: 0, v: 0, drawT: -9, draws: 0, ptr: 0, placed: false, aligns: 0, downEl: null };
   S.chess = CS; S.chessM = chessM; S.backs = { menu: 0, chess: 0, game: 0, nb: 0 };
   // v17 (t403u): IMMERSIVE chess (vrchess.js) replaces the painted-page panel once the game is up: own scene around you, own board
@@ -775,7 +778,7 @@ export function setupVR(A) {
   // before the step: seat the headset. Returns true while the chess table has you (sitting, playing, standing up).
   function chessPre() { const C = chessT(), now = C ? C.state : 'idle', ch = now !== CS.was;
     if (ch) { if (CS.was === 'idle' && S.head) { turnRig(-Math.PI / 2 - S.head.yaw); CS.aligns++; }   // face the board (+x) once
-      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; immOff(); }
+      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; immOff(); chessMem(false); } else chessMem(true);
       CS.was = now; }
     if (now !== 'idle' && S.head && (ch || now === 'sit' || now === 'stand')) moveRig(monkey.position.x - S.head.x, monkey.position.z - S.head.z);   // the headset rides the sit / stand tween
     return now !== 'idle'; }

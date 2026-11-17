@@ -1366,6 +1366,11 @@ function disposeComposer() {
   composer = null; bloom = null; rt = null; usePost = false;
 }
 if (Q.post) makeComposer();
+// TEST v1 (VR memory): the composer (scene RT + bloom mip chain) is never used inside an XR session (the headset draws the scene
+// directly), so its targets shrink to 1x1 while you are in VR and come back on exit. Passes/programs are kept, so nothing recompiles.
+const vrPost = window.__gaVRPost = { shrinks: 0, restores: 0 };
+renderer.xr.addEventListener('sessionstart', () => { try { if (composer) { composer.setPixelRatio(1); composer.setSize(1, 1); if (bloom) bloom.resolution.set(1, 1); vrPost.shrinks++; } } catch (e) {} });
+renderer.xr.addEventListener('sessionend', () => { try { vrPost.restores++; setTimeout(() => resize(true), 0); } catch (e) {} });
 ensureLostOverlay();
 installContextLossHandler(renderer.domElement, {});
 // iPad Safari fix: setSize used to write inline px width/height from innerWidth/innerHeight at load, which on iPad can be

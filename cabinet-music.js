@@ -7,7 +7,8 @@
 // before the next fades in). Tracks are fetched + decoded on first need (lazy) and kept in a small cache (MAX_CACHE).
 // Room music hook: music.js multiplies its target by (1 - window.__cabMusic.duck)  (see INTEGRATION.md).
 (function () {
-  var VOL = 0.38, FADE = 0.6, RADIUS = 2.8, HYST = 0.5, MAX_CACHE = 3, BASE = '';
+  var VOL = 0.38, FADE = 0.6, RADIUS = 2.8, HYST = 0.5, MAX_CACHE = 1,   // TEST v1 (VR memory): only the current loop stays decoded (was 3)
+      BASE = '';
   // t771u: strike = the game's own stage-1 track (HC 's1', 155 bpm), rendered offline from strike-play's engine: one pass of its
   // 48-bar loop (after the intro), seamless. The other loops are kit compositions (cabinet-kit/audio/gen.py), not the games' music.
   // exact loop lengths (samples) let us skip mp3 encoder padding like music.js does; berserker reuses its own title music
@@ -42,7 +43,8 @@
   var busyUntil = 0;
   function apply(k) {
     if (k === curKey) return; var now = performance.now();
-    if (node) { fadeOut(); busyUntil = now + FADE * 1000 + 40; }
+    if (node) { var old = curKey; fadeOut(); busyUntil = now + FADE * 1000 + 40;
+      setTimeout(function () { if (old && old !== curKey && old !== C.want) { delete cache[old]; order = order.filter(function (o) { return o !== old; }); C.drops = (C.drops || 0) + 1; } }, FADE * 1000 + 80); }
     if (!k) return;
     load(k).then(function (buf) { var wait = Math.max(0, busyUntil - performance.now());
       setTimeout(function () { if (C.want === k && !node) { if (ac.state === 'suspended') ac.resume(); fadeIn(k, buf); } }, wait); }).catch(function () {});
