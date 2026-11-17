@@ -137,7 +137,8 @@ export function setupVR(A) {
   // we read one only if the browser exposes it on the input source / gamepad (none known on the Quest Browser), else show '--'.
   function ctrlBattery(hand) { try { const ss = renderer.xr.getSession && renderer.xr.getSession(); if (!ss) return null;
       for (const src of ss.inputSources) { if (src.handedness !== hand) continue; const gp = src.gamepad || {}, b = src.battery || gp.battery || null;
-        const v = b && typeof b.level === 'number' ? b.level : typeof gp.batteryLevel === 'number' ? gp.batteryLevel : typeof src.batteryLevel === 'number' ? src.batteryLevel : null;
+        let v = b && typeof b.level === 'number' ? b.level : typeof gp.batteryLevel === 'number' ? gp.batteryLevel : typeof src.batteryLevel === 'number' ? src.batteryLevel : null;
+        if (v == null) for (const obj of [src, src.gamepad]) { if (!obj || v != null) continue; for (let p = obj; p && p !== Object.prototype && v == null; p = Object.getPrototypeOf(p)) for (const k of Object.getOwnPropertyNames(p)) { if (!/batt/i.test(k)) continue; let x; try { x = obj[k]; } catch (e) { continue; } if (typeof x === 'number') { v = x; break; } if (x && typeof x.level === 'number') { v = x.level; break; } } }
         return v == null ? null : Math.round(v <= 1 ? v * 100 : v); } } catch (e) {} return null; }
   const ST = { t: -1, txt: '', l: null, r: null, players: 1, time: '', builds: 0 };
   function hudStatus(now) { if (now - ST.t < 1000 && ST.txt) return ST.txt; ST.t = now;   // at most once a second; drawPanel redraws only if the text changed
@@ -145,7 +146,37 @@ export function setupVR(A) {
     const d = new Date(); ST.time = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
     ST.txt = 'L ' + (ST.l == null ? '--' : ST.l + '%') + '  R ' + (ST.r == null ? '--' : ST.r + '%') + '  ·  ' + ST.time + '  ·  ' + ST.players + (ST.players === 1 ? ' PLAYER' : ' PLAYERS'); ST.builds++; return ST.txt; }
   S.hudStatus = () => Object.assign({}, ST, { drawn: !!(hud.userData.txt && hud.userData.txt.indexOf('|st' + ST.txt) >= 0) });
-  const hud = panel(0.2, 0.118, 512, 302); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
+  const hud = panel(0.2, 0.118, 512, 302);
+  // vrtest-v6 (Dave t465u): ?padinfo=1 = a debug board above the left-controller display listing every property (own + prototype chain,
+  // values for plain fields) of each XRInputSource and its Gamepad, plus navigator.getGamepads() outside XR, so a headset build can show
+  // whatever the browser really exposes (no standard controller battery exists in WebXR / the Gamepad API; we look anyway: any field whose
+  // name contains 'batt' is picked up by ctrlBattery's scan below and shown on the status line).
+  const PADINFO = /[?&]padinfo=1\b/.test(location.search);
+  const padBoard = PADINFO ? panel(0.42, 0.42, 1024, 1024) : null; if (padBoard) { padBoard.name = 'vrPadInfo'; padBoard.visible = false; scene.add(padBoard); }
+  function propsOf(o, depth) { const out = []; if (!o || typeof o !== 'object') return out; const seen = new Set(); let p = o, lvl = 0;
+    while (p && p !== Object.prototype && lvl < 6) { const cn = (p.constructor && p.constructor.name) || '?';
+      for (const k of Object.getOwnPropertyNames(p)) { if (seen.has(k) || k === 'constructor') continue; seen.add(k); let v; try { v = o[k]; } catch (e) { v = '!' + e.name; }
+        const t = typeof v, sv = t === 'function' ? '()' : v === null ? 'null' : t === 'object' ? (Array.isArray(v) || (v && typeof v.length === 'number') ? '[' + v.length + ']' : '{' + ((v && v.constructor && v.constructor.name) || 'obj') + '}') : String(v).slice(0, 24);
+        out.push((lvl ? cn + '.' : '') + k + '=' + sv); }
+      p = Object.getPrototypeOf(p); lvl++; }
+    return out; }
+  const PI_ = { t: -1e9, lines: [], key: '' };
+  function battScan(o) { const r = []; for (const line of propsOf(o)) if (/batt|power|charge/i.test(line)) r.push(line); return r; }
+  function padInfoUpdate(now) { if (!padBoard) return; padBoard.visible = S.presenting; if (!S.presenting) return;
+    padBoard.position.set(0, 0.3, 0).applyQuaternion(hud.quaternion).add(hud.position); padBoard.quaternion.copy(hud.quaternion);
+    if (now - PI_.t < 2000) return; PI_.t = now; const L = ['PADINFO  ' + navigator.userAgent.slice(0, 90)];
+    try { const ss = renderer.xr.getSession(); for (const src of (ss && ss.inputSources) || []) { L.push('== ' + src.handedness + ' ' + src.targetRayMode + ' profiles=' + (src.profiles || []).join(','));
+        L.push('src: ' + propsOf(src).join('  ')); if (src.gamepad) { L.push('pad: ' + propsOf(src.gamepad).join('  ')); const h = src.gamepad.hapticActuators; if (h && h[0]) L.push('haptic[0]: ' + propsOf(h[0]).join('  ')); }
+        const b = battScan(src).concat(src.gamepad ? battScan(src.gamepad) : []); L.push('battery-like: ' + (b.length ? b.join('  ') : 'none')); } } catch (e) { L.push('err ' + e); }
+    try { const gp = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : []; L.push('navigator.getGamepads(): ' + gp.length + ' ' + gp.map(g => g.id + ' ' + propsOf(g).filter(x => /batt|power|charge|hand|pose/i.test(x)).join(' ')).join(' | ')); } catch (e) {}
+    L.push('navigator: getBattery=' + !!navigator.getBattery + ' hid=' + !!navigator.hid + ' bluetooth=' + !!navigator.bluetooth + ' usb=' + !!navigator.usb + ' headset bat=' + (BAT.level != null ? Math.round(BAT.level * 100) + '%' : '--'));
+    const key = L.join('\n'); if (key === PI_.key) return; PI_.key = key; PI_.lines = L; try { console.log('[padinfo]\n' + key); } catch (e) {}
+    const { cv, g, tex } = padBoard.userData; g.clearRect(0, 0, 1024, 1024); g.fillStyle = 'rgba(6,4,18,0.92)'; g.fillRect(0, 0, 1024, 1024); g.strokeStyle = '#ffde00'; g.lineWidth = 6; g.strokeRect(3, 3, 1018, 1018);
+    g.fillStyle = '#e8f6ff'; g.font = '20px monospace'; g.textAlign = 'left'; g.textBaseline = 'top'; let y = 10;
+    for (const line of L) { let rest = line; g.fillStyle = /^==/.test(line) ? '#ffde00' : /^battery-like: (?!none)/.test(line) ? '#7dff9a' : '#e8f6ff';
+      while (rest.length && y < 1000) { g.fillText(rest.slice(0, 84), 10, y); rest = rest.slice(84); y += 22; } }
+    tex.needsUpdate = true; }
+  S.padInfo = () => ({ on: PADINFO, lines: PI_.lines }); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
 
   // ---------- the game screen (shown while a cabinet game runs) ----------
   const scr = new THREE.Group(); scr.name = 'vrGameScreen'; scr.visible = false; scene.add(scr);
@@ -1137,7 +1168,7 @@ export function setupVR(A) {
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
     batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({ status: hudStatus(performance.now()) }, jb ? { bar: jb } : {}, bat ? { bat } : {}));
+    padInfoUpdate(performance.now()); drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({ status: hudStatus(performance.now()) }, jb ? { bar: jb } : {}, bat ? { bat } : {}));
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }

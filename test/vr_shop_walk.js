@@ -31,6 +31,15 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
           const names = {}; for (const q of add) { const k = q.name + (q.cacheKey && /,true,|clipping/i.test(q.cacheKey) ? '' : ''); names[k] = (names[k] || 0) + 1; }
           (R.pl = R.pl || []).push({ t: Math.round(n - R.t0), add: add.length, gone: gone.length, names: Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 12), key0: add[0] && add[0].cacheKey && add[0].cacheKey.slice(0, 400) }); }
         if (R.pn == null || np !== R.pn) R.pids = new Set((i.programs || []).map(q => q.id)); R.pn = np; } return out; }; });
+  // TRACE=1: wrap the WebGL context; per frame count (and CPU ms of) every non-draw call that can mean GPU work (uploads, render-target
+  // allocation, compiles / links, syncs) plus draws, so a long frame shows what the GPU was given in it and in the frame before it.
+  if (process.env.TRACE) await E(() => { const gl = window.__arcade.renderer.getContext(), R = window.__walk, T = R.gt = { cur: {} };
+    const NAMES = ['texImage2D', 'texSubImage2D', 'compressedTexImage2D', 'compressedTexSubImage2D', 'texStorage2D', 'texImage3D', 'bufferData', 'bufferSubData', 'compileShader', 'linkProgram', 'getProgramParameter', 'getShaderParameter',
+      'framebufferTexture2D', 'framebufferRenderbuffer', 'renderbufferStorage', 'renderbufferStorageMultisample', 'createFramebuffer', 'createTexture', 'createBuffer', 'deleteTexture', 'deleteBuffer', 'deleteFramebuffer', 'readPixels', 'generateMipmap',
+      'blitFramebuffer', 'invalidateFramebuffer', 'clientWaitSync', 'fenceSync', 'getParameter', 'getError', 'finish', 'flush', 'clear', 'drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced', 'bindFramebuffer', 'useProgram'];
+    for (const n of NAMES) { const f = gl[n]; if (typeof f !== 'function') continue; gl[n] = function () { const t0 = performance.now(); try { return f.apply(gl, arguments); } finally { const c = T.cur[n] || (T.cur[n] = [0, 0]); c[0]++; c[1] += performance.now() - t0;
+      if (n === 'texImage2D' || n === 'texStorage2D' || n === 'compressedTexImage2D' || n === 'renderbufferStorageMultisample' || n === 'renderbufferStorage') { const a = arguments; T.cur['@' + n] = (T.cur['@' + n] || '') + (n === 'texStorage2D' ? a[3] + 'x' + a[4] : n.startsWith('renderbuffer') ? a[a.length - 2] + 'x' + a[a.length - 1] : (a[3] | 0) + 'x' + (a[4] | 0)) + ' '; } } }; }
+    const A = window.__arcade, r = A.renderer, o = r.render; r.render = function (sc, c) { const out = o.apply(this, arguments); if (r.xr.isPresenting && sc === A.scene && R.on) { (R.gl = R.gl || []).push(T.cur); T.cur = {}; } return out; }; });
   const place = (x, z, yaw) => E(([x, z, yaw]) => { const S = window.__gaVR; S.rig = { x, y: 0, z, yaw }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); }, [x, z, yaw]);
   await E(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await until(() => window.__tp.where === 2 && window.__tp.state === 'idle');
   await page.waitForTimeout(8000);   // the shop has streamed in and pre-warm is done; the walks start from a steady state
@@ -50,6 +59,10 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
     const iv = f.map(x => x[1]), med = iv.slice().sort((a, b) => a - b)[Math.floor(iv.length / 2)];
     const lab = f.map((x, j) => { const p = f[j - 1] || x; return [x[0], x[1], (x[2] - p[2] ? '+' + (x[2] - p[2]) + 'prog ' : '') + (x[3] - p[3] ? (x[3] > p[3] ? '+' : '') + (x[3] - p[3]) + 'tex ' : '') + (x[4] - p[4] ? (x[4] > p[4] ? '+' : '') + (x[4] - p[4]) + 'geo ' : '') + (x[6] - p[6] ? 'WARM ' : '') + (x[7] - p[7] ? '+' + (x[7] - p[7]) + 'up ' : '') + 'c' + x[5]]; });
     const top = lab.slice().sort((a, b) => b[1] - a[1]).slice(0, 8), max = top[0] ? top[0][1] : 0;
+    if (process.env.TRACE) { const G = await E(() => { const g = window.__walk.gl || []; window.__walk.gl = []; return g; }); const off = G.length - f.length;
+      const fmt = c => c ? Object.entries(c).filter(([k]) => !/^(drawElements|drawArrays|bindFramebuffer|useProgram|clear)$/.test(k) || true).map(([k, v]) => k + (Array.isArray(v) ? ':' + v[0] + (v[1] > 5 ? '/' + Math.round(v[1]) + 'ms' : '') : '=' + v.trim().slice(0, 80))).join(' ') : '-';
+      for (const t of top.slice(0, 4)) { const j = f.findIndex(x => x[0] === t[0]); console.log('  GL ' + name + ' ' + t[0] + ' ' + t[1] + 'ms\n    this: ' + fmt(G[j + off]) + '\n    prev: ' + fmt(G[j + off - 1])); }
+      const med = G[Math.floor(G.length / 2)]; console.log('  GL ' + name + ' typical frame: ' + fmt(med)); }
     console.log('WALK ' + name + ' ' + JSON.stringify({ frames: f.length, median: med, max, over100: iv.filter(v => v > 100).length, over250: iv.filter(v => v > 250).length, progs: f.length ? f[f.length - 1][2] - f[0][2] : 0, top }));
     // CHECK: no shader compiles / warm-ups / first texture or geometry uploads during the walk (what freezes a Quest). The emulator's other long
     // frames are GPU time inside IWER's onDeviceFrame (a sync getParameter waiting on SwiftShader), not page work, so they are only printed.
