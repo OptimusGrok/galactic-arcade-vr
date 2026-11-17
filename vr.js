@@ -75,6 +75,12 @@ export function setupVR(A) {
     } catch (e) { console.warn('ENTER VR failed', e); S.lastError = String(e); }
   }
   S.enter = enter; S.exit = () => { try { session && session.end(); } catch (e) {} };
+  // vrtest-v5 (Dave t462u): Y menu -> BACK TO TITLE SCREEN -> YES: end the XR session (three's sessionend releases held input, the
+  // animation loop, avatar hands, game page pumping) and then do exactly what the flat HOME button does (play.home.go: leave any cabinet
+  // game / demo, keys up, __startUI.show), so PLAY / PLAY ON SCREEN work again from the start screen.
+  function toTitleFlat() { S.toTitles = (S.toTitles || 0) + 1; try { if (play.home && play.home.go) play.home.go(); else if (window.__startUI && window.__startUI.show) window.__startUI.show(); } catch (e) { S.lastError = String(e); } }
+  function backToTitle() { uiClose(); if (S.presenting && session) { S.toTitle = true; try { releaseAll(); } catch (e) {} try { session.end(); } catch (e) { S.toTitle = false; toTitleFlat(); } } else toTitleFlat(); }
+  S.backToTitle = backToTitle;
 
   // ---------- controllers: ray + simple built-in model (Quest models load from the WebXR input-profile CDN when online) ----------
   const ctrls = [], grips = [];
@@ -351,13 +357,17 @@ export function setupVR(A) {
       const L = tb === 'floor' ? roomFloors() : ROOM_WALLS, cur = roomNow(tb);
       L.forEach(([v, nm], i) => add((tb === 'floor' ? 'fl_' : 'wl_') + v, nm + (cur === v ? '  ·  ON' : ''), 40 + (i % 2) * 484, 265 + Math.floor(i / 2) * 95, 460, 85, true, () => roomPick(tb, v, nm)));
       add('rback', 'BACK', 230, 640, 564, 96, true, () => uiOpen('menu')); }
+    else if (UI.open === 'toTitle') { title = 'BACK TO TITLE SCREEN?'; const P = play, inGame = P.mode === 'game' && P.sub === 'play';
+      sub = (inGame ? 'THE CURRENT GAME WILL END · ' : '') + 'LEAVES VR · TICKETS + PRIZES ARE KEPT';
+      add('ttYes', 'YES', 162, 260, 330, 160, true, backToTitle); add('ttNo', 'NO', 532, 260, 330, 160, true, () => uiOpen('menu')); }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
       // v12 (t388u): the monkey BACKPACK (prizes + accessories inside) and a FLOOR + WALLS square that shows a different floor every 5 s;
       // no BEAM (the pad signs beam) / BUY TICKETS (the ticket machine + its sign) / CLOSE: just the X (or GRIP)
       add('pack', 'BACKPACK', 70, 180, 420, 350, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
       add('room', 'FLOOR + WALLS', 534, 180, 420, 350, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
       // v15 (t398u): background music only (music.js 'neonarcade.music', the same switch as the flat Options MUSIC button); game sounds + voice chat stay
-      { const mu = window.__music, on = !mu || mu.on !== false; add('music', on ? 'MUTE MUSIC' : 'MUSIC ON', 70, 546, 884, 58, !!(mu && mu.setOn), () => { mu.setOn(!(mu.on !== false)); say(mu.on ? 'MUSIC ON' : 'MUSIC MUTED · GAME SOUNDS + VOICE STAY ON'); UI.key = ''; });
+      add('toTitle', 'BACK TO TITLE SCREEN', 524, 546, 430, 58, true, () => uiOpen('toTitle'));   // vrtest-v5 (Dave t462u)
+      { const mu = window.__music, on = !mu || mu.on !== false; add('music', on ? 'MUTE MUSIC' : 'MUSIC ON', 70, 546, 430, 58, !!(mu && mu.setOn), () => { mu.setOn(!(mu.on !== false)); say(mu.on ? 'MUSIC ON' : 'MUSIC MUTED · GAME SOUNDS + VOICE STAY ON'); UI.key = ''; });
         if (!on) B[B.length - 1].sel = true; }
       // v14 (t396u): voice chat. MIC ON asks for the mic (only on this tap), then the same button mutes / unmutes; ✕ VC leaves voice
       const vc = window.__voice, vin = !!(vc && vc.state !== 'off');
@@ -903,6 +913,7 @@ export function setupVR(A) {
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
     mirrorVR(false); avatarHandsOff(); unadoptAll(); LS.done.clear();
     A.resumeFlat();
+    if (S.toTitle) { S.toTitle = false; toTitleFlat(); }
   });
 
   function pump() { if (S.blurred) return; const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
