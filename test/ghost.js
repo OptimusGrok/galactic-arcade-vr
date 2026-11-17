@@ -1,6 +1,6 @@
 const { open } = require('./lib');
 (async () => {
-  const { page, errors, close, requests } = await open({ qs: '?liveScreens=1' });   // v22: idle screens are stills by default; this checks the live-demo mode let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
+  const { page, errors, close, requests } = await open({ qs: '?liveScreens=1' });   /* v22: idle screens are stills by default; this checks the live-demo mode */ let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
   await page.waitForFunction(() => (window.__arcade.ghostDemo.ready || window.__arcade.ghostDemo.err) && (window.__arcade.demo.ready || window.__arcade.demo.err), null, { timeout: 60000 });
   const info = await page.evaluate(() => { const A = window.__arcade, g = A.ghostCab, s = A.strikeCab; const names = []; g.traverse(o => o.name && names.push(o.name));
     const neonCheck = cab => { const bad = []; cab.traverse(o => { if (!o.isMesh) return; const m = o.material;
