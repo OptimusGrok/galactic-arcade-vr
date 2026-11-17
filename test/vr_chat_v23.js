@@ -18,6 +18,7 @@ const { openVR, H } = require('./vrlib');
     const labels = new Set(); for (let i = 0; i < 6; i++) { (await P()).labels.forEach(l => labels.add(l)); const nx = await E(() => (window.__gaVR.ui.btns.find(b => b.id === 'next') || {}).on); if (!nx) break; await tap('next'); }
     chk(!p.btns.includes('type') && !p.btns.includes('talk') && ![...labels].some(l => /TYPE|TALK|DAVE/.test(l)), 'no TYPE / TALK buttons (and no WHO IS DAVE) on any page', [...labels].filter(l => /TYPE|TALK|DAVE/.test(l)));
     chk([...labels].filter(l => /\?|!/.test(l)).length >= 20, 'preset questions on the pages (' + [...labels].filter(l => /\?|!/.test(l)).length + ')');
+    for (let i = 0; i < 6 && (await E(() => (window.__gaVR.ui.btns.find(b => b.id === 'prev') || {}).on)); i++) await tap('prev');
     await tap('q_1'); p = await P(); chk(/TICKET/.test(p.q) && p.a.length > 15, 'pointing at a question asks it: "' + p.q + '" -> "' + p.a.slice(0, 50) + '"');
     chk(!(await E(() => 'stt' in window.__grokChat || !!window.__gaSTT)) && !requests.some(u => /stt|whisper|onnx|transformers/i.test(u)), 'no speech-to-text code or model is loaded', requests.filter(u => /stt|whisper|onnx/i.test(u)).slice(0, 3));
     await tap('close'); p = await P(); chk(!p.panel && !p.open, 'CLOSE ends the chat');
