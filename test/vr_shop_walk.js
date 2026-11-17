@@ -37,9 +37,12 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
   });
   if (!process.env.EARLY) await until(() => { const S = window.__gaVR; return !S.prewarm || S.prewarm.done; });   // EARLY=1: enter VR straight away (pre-warm still running)
   await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 60000);
+  // the light set three actually draws with = counted inside the frame (vr.js pins lights before the render and unpins after it)
+  await E(() => { const sc = window.__arcade.scene, b = sc.onBeforeRender; sc.onBeforeRender = function () { if (b) b.apply(this, arguments); const R = window.__walk;
+    if (R && R.on && window.__arcade.renderer.xr.isPresenting && !window.__gaVR.inMirror) { let p = 0; sc.traverseVisible(o => { if (o.isPointLight) p++; }); (R.sigs = R.sigs || new Set()).add(p + 'p'); } }; });
   await E(() => { const A = window.__arcade, r = A.renderer, o = r.render.bind(r), R = window.__walk = { f: [], last: 0, t0: performance.now(), on: false };
     r.render = function (s, c) { const out = o(s, c); if (r.xr.isPresenting && s === A.scene && R.on) { const n = performance.now(), i = r.info;
-        if (R.last) (R.sigs = R.sigs || new Set()).add(window.__gaVR.lightSig()); R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls, ((window.__gaVR && window.__gaVR.warms) || []).length, (window.__gaStream && window.__gaStream.ups) || 0]); R.last = n;
+        if (R.last) R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls, ((window.__gaVR && window.__gaVR.warms) || []).length, (window.__gaStream && window.__gaStream.ups) || 0]); R.last = n;
         const np = i.programs ? i.programs.length : 0; if (R.pn != null && np !== R.pn) { const ids = new Set(i.programs.map(q => q.id)), prev = R.pids || new Set(), add = i.programs.filter(q => !prev.has(q.id)), gone = [...prev].filter(id => !ids.has(id));
           const names = {}; for (const q of add) { const k = q.name + (q.cacheKey && /,true,|clipping/i.test(q.cacheKey) ? '' : ''); names[k] = (names[k] || 0) + 1; }
           (R.pl = R.pl || []).push({ t: Math.round(n - R.t0), add: add.length, gone: gone.length, names: Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 12), key0: add[0] && add[0].cacheKey && add[0].cacheKey.slice(0, 400) }); }
