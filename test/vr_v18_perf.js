@@ -18,7 +18,7 @@ const CHECK = !!process.env.CHECK;
       const P = window.__xp = { iv: [], prog: [], where: [], lit: [], last: 0, t0: 0, first: 0, cutAt: [], pend: 0, w0: null };
       r.render = function (s, c) { if (!r.xr.isPresenting || s !== A.scene) return o(s, c); const t = performance.now(), n0 = r.info.programs.length; if (!P.first) P.first = t;
         if (P.last) P.iv.push(+(t - P.last).toFixed(1)); P.last = t; o(s, c); const n1 = r.info.programs.length; P.prog.push(n1 - n0);
-        const w = A.tp ? A.tp.where : 0; if (P.w0 !== null && w !== P.w0) { P.cutAt.push(P.iv.length); P.pend = 6; } P.w0 = w; P.where.push(w);
+        const w = window.__tp ? window.__tp.where : 0; if (P.w0 !== null && w !== P.w0) { P.cutAt.push(P.iv.length); P.pend = 6; } P.w0 = w; P.where.push(w);
         if (P.pend > 0) { P.pend--; try { const h = window.__hsRead(); P.lit.push([P.cutAt.length, h ? h.left.lit : -1]); } catch (e) {} } }; });
     await E(() => { window.__xp.t0 = performance.now(); document.getElementById('vrBtn').click(); });
     await page.waitForFunction(() => window.__gaVR.presenting && window.__xp.iv.length >= 120, null, { timeout: 180000 });
