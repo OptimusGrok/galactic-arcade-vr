@@ -2235,7 +2235,8 @@ const UI = {
 const BOMB_BTN = { x: W - 30, y: H - 52, r: 21 };
 // v21 (Dave, Galactic Arcade VR): bottom-right HYPER SPEED (A) + BOMB (B) buttons, visible in every play mode (solo + co-op), on touch,
 // mouse, the Quest laser and the VR headset (vr.js points / presses A / B). The A / B badges match the controller buttons.
-function btnBadge(b, ch, col) { const x = b.x - b.r + 3, y = b.y + b.r - 5; ctx.globalAlpha = 1; C(ctx, x, y, 7, '#05060c'); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 7, 0, TAU); ctx.stroke(); text(ch, x + 1, y - 3, '#ffffff', 1, 'c'); }
+function btnBadge(b, ch, col) { const x = b.x - b.r + 2, y = b.y + b.r - 4; ctx.save(); ctx.globalAlpha = 1; C(ctx, x, y, 8, '#05060c'); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 8, 0, TAU); ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 11px Arial, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(ch, x, y + 0.5); ctx.restore(); }
 const BTN_DRAWS = window.__strikeBtnDraws = { bomb: 0, slow: 0 };
 function drawBombBtn() { if (G.scene !== 'play' && G.scene !== 'pause') return; BTN_DRAWS.bomb++; ctx.globalAlpha = G.bombs ? 0.55 : 0.25; C(ctx, BOMB_BTN.x, BOMB_BTN.y, BOMB_BTN.r, '#103a20'); ctx.strokeStyle = '#40ff80'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(BOMB_BTN.x, BOMB_BTN.y, BOMB_BTN.r, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; text('BOMB', BOMB_BTN.x, BOMB_BTN.y - 7, '#80ffa0', 1, 'c'); text(String(G.bombs | 0), BOMB_BTN.x, BOMB_BTN.y + 3, '#ffffff', 1, 'c'); btnBadge(BOMB_BTN, 'B', '#40ff80'); }
 function newStats() { return { kills: 0, spawned: 0, deaths: 0, bombs: 0, items: 0, bosses: 0 }; }
