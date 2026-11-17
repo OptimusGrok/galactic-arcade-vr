@@ -78,7 +78,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const lamp = new THREE.PointLight(0xff4fd8, 3, 6, 1.6); lamp.position.set(BX1 - 1.2, FY + 1.6, (Z0 + WZ1) / 2); grp.add(lamp);
   // sign over the top of the stairs
   const signT = canvasTex(512, 160, (g, w, h) => { g.clearRect(0, 0, w, h); g.textAlign = 'center'; g.font = '900 58px Arial Black, Impact, sans-serif'; g.shadowColor = '#2de8ff'; g.shadowBlur = 22;
-    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 72); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 72); g.font = '800 40px Courier New, monospace'; g.fillStyle = '#ffe08a'; g.shadowColor = '#ffb000'; g.fillText('5 🎟 PER VISIT', w / 2, 132); });
+    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 72); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 72); });   // vrtest-v5 (t458u): golf is free, the old '5 🎟 PER VISIT' line is gone
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.81), new THREE.MeshBasicMaterial({ map: signT, transparent: true, depthWrite: false, toneMapped: false })); sign.position.set(X0 + 1.6, 2.9, Z0 + 0.05); sign.name = 'golfSign'; grp.add(sign);
   // ---- the energy shield across the top step (hex field, like room 2's old shield, cyan) ----
   const U = { uT: { value: 0 }, uHit: { value: -9 }, uOff: { value: 0 } }, SH = 2.4;
@@ -113,7 +113,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
 #gfToast{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:12;font:900 clamp(20px,6vw,30px)/1.15 'Courier New',monospace;color:#fff;text-align:center;text-shadow:0 0 14px #ff2bd6;pointer-events:none;opacity:0;transition:opacity .3s}#gfToast.on{opacity:1}`;
   document.head.appendChild(css);
   const pop = document.createElement('div'); pop.id = 'gfPop';
-  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">5 TICKETS PER VISIT · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 TICKETS</button><div id="gfHint"></div>';
+  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">FREE · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 TICKETS</button><div id="gfHint"></div>';
   document.body.appendChild(pop);
   const btn = pop.querySelector('#gfBtn'), hint = pop.querySelector('#gfHint'), coarse = matchMedia('(pointer:coarse)').matches;
   const swallow = e => e.stopPropagation(); pop.addEventListener('pointerdown', swallow); pop.addEventListener('touchstart', swallow, { passive: true });

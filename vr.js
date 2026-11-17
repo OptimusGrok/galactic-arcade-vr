@@ -102,7 +102,7 @@ export function setupVR(A) {
   function panel(w, h, cw, ch) { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, toneMapped: false, depthTest: false, depthWrite: false }));
     m.renderOrder = 1001; m.userData = { cv, g: cv.getContext('2d'), tex, txt: '' }; return m; }
-  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : '') + (opts.bat ? '|bat' + opts.bat.pct + (opts.bat.charging ? 'c' : '') : ''); if (m.userData.txt === key) return; m.userData.txt = key;
+  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : '') + (opts.bat ? '|bat' + opts.bat.pct + (opts.bat.charging ? 'c' : '') : '') + (opts.status ? '|st' + opts.status : ''); if (m.userData.txt === key) return; m.userData.txt = key;
     const { cv, g, tex } = m.userData, W = cv.width, H0 = cv.height, H = opts.bar ? Math.round(H0 * 0.72) : H0; g.clearRect(0, 0, W, H0);
     if (opts.bar) { const b = opts.bar, y = H + 2, bh = H0 - H - 8, x = 150, bw = W - x - 16;   // t358u: jetpack ENERGY bar under the text
       g.fillStyle = 'rgba(20,8,4,0.9)'; g.strokeStyle = '#ffb060'; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(4, y, W - 8, bh, bh * 0.3) : g.rect(4, y, W - 8, bh); g.fill(); g.stroke();
@@ -110,12 +110,16 @@ export function setupVR(A) {
       const gr = g.createLinearGradient(x, 0, x + bw, 0); gr.addColorStop(0, '#ff3b1a'); gr.addColorStop(0.55, '#ffb020'); gr.addColorStop(1, '#ffe080');
       g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y + 8, bw, bh - 16); g.fillStyle = b.low ? '#ff3030' : gr; g.fillRect(x, y + 8, Math.max(0, Math.min(1, b.v)) * bw, bh - 16); }
     g.fillStyle = 'rgba(10,6,24,0.86)'; g.strokeStyle = opts.border || '#3ff3ff'; g.lineWidth = Math.max(3, H * 0.03); g.beginPath(); g.roundRect ? g.roundRect(4, 4, W - 8, H - 8, H * 0.12) : g.rect(4, 4, W - 8, H - 8); g.fill(); g.stroke();
-    const n = lines.length, lh = (H - 16) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
-    let bw = 0; if (opts.bat) { const B = opts.bat, lh0 = (H - 16) / lines.length, bh = lh0 * 0.5, bwid = bh * 2, x = W - 24 - bwid - 92, y = 8 + lh0 * 0.5 - bh / 2, col = B.charging ? '#7dff9a' : B.pct <= 20 ? '#ff4040' : '#e8f6ff';   // battery icon + %, top right
+    // vrtest-v5 (t460u): optional status strip on top (controller batteries · local time · players), drawn small above the lines
+    const y0 = opts.status ? Math.round(H * 0.24) : 0;
+    if (opts.status) { g.fillStyle = 'rgba(63,243,255,0.14)'; g.fillRect(12, 10, W - 24, y0 - 6); g.fillStyle = '#9fe8ff'; g.font = '900 ' + Math.round(y0 * 0.5) + 'px "Arial Black", Arial, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(opts.status, W / 2, 8 + y0 / 2, W - 36); }
+    const n = lines.length, lh = (H - 16 - y0) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let bw = 0; if (opts.bat) { const B = opts.bat, lh0 = lh, bh = lh0 * 0.5, bwid = bh * 2, x = W - 24 - bwid - 92, y = 8 + y0 + lh0 * 0.5 - bh / 2, col = B.charging ? '#7dff9a' : B.pct <= 20 ? '#ff4040' : '#e8f6ff';   // battery icon + %, top right
       g.strokeStyle = col; g.lineWidth = 4; g.strokeRect(x, y, bwid, bh); g.fillStyle = col; g.fillRect(x + bwid, y + bh * 0.3, 6, bh * 0.4); g.fillRect(x + 4, y + 4, Math.max(0, (bwid - 8) * B.pct / 100), bh - 8);
       if (B.charging) { g.fillStyle = '#ffe14a'; g.strokeStyle = '#1a1030'; g.lineWidth = 2; const cx = x + bwid / 2, cy = y + bh / 2; g.beginPath(); g.moveTo(cx + 4, cy - bh * 0.62); g.lineTo(cx - 9, cy + 3); g.lineTo(cx - 1, cy + 3); g.lineTo(cx - 5, cy + bh * 0.62); g.lineTo(cx + 9, cy - 3); g.lineTo(cx + 1, cy - 3); g.closePath(); g.fill(); g.stroke(); }
       g.fillStyle = col; g.font = '900 ' + Math.round(bh * 0.95) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(B.pct + '%', x + bwid + 14, y + bh / 2 + 1, 84); g.textAlign = 'center'; bw = bwid + 120; }
-    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, i === 0 && bw ? (W - bw) / 2 : W / 2, 8 + lh * (i + 0.5), i === 0 && bw ? W - 24 - bw : W - 24); });
+    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, i === 0 && bw ? (W - bw) / 2 : W / 2, 8 + y0 + lh * (i + 0.5), i === 0 && bw ? W - 24 - bw : W - 24); });
     tex.needsUpdate = true; }
   // t361u: headset battery on the left-controller display (navigator.getBattery, live via its events). Hidden when the browser has no Battery API.
   const BAT = { supported: false, level: null, charging: false, tried: false, updates: 0 };
@@ -123,7 +127,19 @@ export function setupVR(A) {
       const up = () => { BAT.level = typeof b.level === 'number' ? b.level : null; BAT.charging = !!b.charging; BAT.updates++; }; up(); for (const ev of ['levelchange', 'chargingchange']) try { b.addEventListener(ev, up); } catch (e) {} }).catch(() => {}); } catch (e) {} }
   S.battery = () => ({ supported: BAT.supported, level: BAT.level, charging: BAT.charging, updates: BAT.updates, shown: !!(hud.userData.txt && /\|bat/.test(hud.userData.txt)) });
   const HUD_TILT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0));
-  const hud = panel(0.2, 0.09, 512, 230); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
+  // vrtest-v5 (t460u): controller batteries, local time and player count on the same display. WebXR has no standard controller battery;
+  // we read one only if the browser exposes it on the input source / gamepad (none known on the Quest Browser), else show '--'.
+  function ctrlBattery(hand) { try { const ss = renderer.xr.getSession && renderer.xr.getSession(); if (!ss) return null;
+      for (const src of ss.inputSources) { if (src.handedness !== hand) continue; const gp = src.gamepad || {}, b = src.battery || gp.battery || null;
+        const v = b && typeof b.level === 'number' ? b.level : typeof gp.batteryLevel === 'number' ? gp.batteryLevel : typeof src.batteryLevel === 'number' ? src.batteryLevel : null;
+        return v == null ? null : Math.round(v <= 1 ? v * 100 : v); } } catch (e) {} return null; }
+  const ST = { t: -1, txt: '', l: null, r: null, players: 1, time: '', builds: 0 };
+  function hudStatus(now) { if (now - ST.t < 1000 && ST.txt) return ST.txt; ST.t = now;   // at most once a second; drawPanel redraws only if the text changed
+    ST.l = ctrlBattery('left'); ST.r = ctrlBattery('right'); const mp = window.__mp; ST.players = mp && mp.state === 'on' ? (mp.count || 1) : 1;
+    const d = new Date(); ST.time = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    ST.txt = 'L ' + (ST.l == null ? '--' : ST.l + '%') + '  R ' + (ST.r == null ? '--' : ST.r + '%') + '  ·  ' + ST.time + '  ·  ' + ST.players + (ST.players === 1 ? ' PLAYER' : ' PLAYERS'); ST.builds++; return ST.txt; }
+  S.hudStatus = () => Object.assign({}, ST, { drawn: !!(hud.userData.txt && hud.userData.txt.indexOf('|st' + ST.txt) >= 0) });
+  const hud = panel(0.2, 0.118, 512, 302); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
 
   // ---------- the game screen (shown while a cabinet game runs) ----------
   const scr = new THREE.Group(); scr.name = 'vrGameScreen'; scr.visible = false; scene.add(scr);
@@ -1093,7 +1109,7 @@ export function setupVR(A) {
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
     batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({}, jb ? { bar: jb } : {}, bat ? { bat } : {}));
+    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({ status: hudStatus(performance.now()) }, jb ? { bar: jb } : {}, bat ? { bat } : {}));
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
