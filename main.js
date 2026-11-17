@@ -1124,7 +1124,8 @@ addEventListener('mousemove', e => {
   if (document.pointerLockElement === cv) { look(e.movementX, e.movementY, 'mouse-lock'); return; }
   if (!mouseDrag) return; if (questStickDrag()) { mouseDrag = { x: e.clientX, y: e.clientY }; return; } look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y, 'mouse-drag'); mouseDrag = { x: e.clientX, y: e.clientY };
 });
-cv.addEventListener('dblclick', () => { if (!MOBILE) cv.requestPointerLock?.(); });
+cv.addEventListener('dblclick', () => { if (!MOBILE && !QUEST) cv.requestPointerLock?.(); });   // vrtest-v5 (t461u): never lock the pointer on a Quest (the controller ray must stay free for the system UI)
+addEventListener('blur', () => { try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} });
 // Camera distance (Dave): desktop mouse-wheel zoom still persists. On a phone, hold the ZOOM button beside the backpack to ease in; release returns to the default. Default = PR6 wider cam (7.6 landscape / 4.2 portrait).
 const ZOOM_KEY = 'galacticarcade.zoom';
 const DIST_PORTRAIT = 4.2, DIST_WIDE = 7.6, DIST_MIN = 2.0, DIST_MAX = DIST_WIDE * 2;   // max ~2× the wider default

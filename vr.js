@@ -211,11 +211,11 @@ export function setupVR(A) {
     const cur = { trig: b(0), grip: b(1), a: leg ? b(3) : b(4), b: leg ? b(4) : b(5), stick: b(3), x: Math.abs(sx) > 0.08 ? sx : 0, y: Math.abs(sy) > 0.08 ? sy : 0, src };
     for (const k of ['trig', 'grip', 'a', 'b']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
     return cur; }
-  function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null;
+  function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null; if (S.blurred) { S.blurPolls = (S.blurPolls || 0) + 1; return; }   // vrtest-v5: system overlay up: no input
     const ss = session && session.inputSources; if (!ss) return;
     for (const src of ss) { if (!src.gamepad || (src.handedness !== 'left' && src.handedness !== 'right')) continue; IN[src.handedness] = readPad(src, src.handedness === 'left' ? L : R); } }
   function ctrlFor(hand) { for (const c of ctrls) if (c.userData.hand === hand) return c; return null; }
-  function pulse(src, k = 0.5, ms = 30) { try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.pulse) h.pulse(k, ms); } catch (e) {} }
+  function pulse(src, k = 0.5, ms = 30) { if (S.blurred) return; try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.pulse) h.pulse(k, ms); } catch (e) {} }
   function rayOf(c) { c.updateMatrixWorld(true); _o.setFromMatrixPosition(c.matrixWorld); if (GF.on && c === GF.ctrl) _o.copy(GF.o); c.getWorldQuaternion(_q); _d.set(0, 0, -1).applyQuaternion(_q).normalize(); _ray.set(_o, _d); return _ray; }
 
   // ---------- rig: the player's place in the arcade = an offset reference space ----------
@@ -876,9 +876,25 @@ export function setupVR(A) {
     S.warmReq = PW.done ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
+    S.blurred = false; S.vis = session.visibilityState || 'visible';
+    try { session.addEventListener('visibilitychange', onXRVis); session.addEventListener('end', onXREnd); } catch (e) {}
   });
+  // vrtest-v5 (Dave t461u: "the right Meta button shows a way to close the game but the controllers are not working"): when the Quest
+  // system overlay is up the session is 'visible-blurred' (or 'hidden'): the input sources belong to the system. We stop reading them,
+  // let go of everything held in a cabinet game (no stuck button / pointer), stop haptics, stop pumping game pages and suspend our audio,
+  // then pick it all up again on 'visible'. The 'end' event (Quit from the overlay) releases the same things even if three's sessionend is late.
+  function setBlur(on, why) { on = !!on; if (S.blurred === on) return; S.blurred = on; S.blurN = (S.blurN || 0) + (on ? 1 : 0); S.blurWhy = why;
+    if (on) { try { releaseAll(); } catch (e) {} IN.left = IN.right = null; for (const k in A.keys) A.keys[k] = false; st.vrMove = null; S.vrFly = false; S.vrFire = false;
+      try { if (st.fly) st.fly.hold = false; } catch (e) {} try { const rf = window.__roomFire; if (rf && rf.setHeld) rf.setHeld(false); } catch (e) {}
+      try { for (const src of (session && session.inputSources) || []) { const h = src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.reset) h.reset(); } } catch (e) {}
+      try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred ? Promise.resolve() : r0()); ac.__gaHold = r0; }   // music / cabinet loops / PA call resume() every frame: hold them while blurred
+          if (ac.state === 'running') { ac.suspend(); S.acSuspended = true; } } } catch (e) {} }
+    else { try { const ac = window.__unlockAC; if (ac && S.acSuspended) { (ac.__gaHold || ac.resume.bind(ac))(); } } catch (e) {} S.acSuspended = false; } }
+  function onXRVis() { const v = session ? session.visibilityState : 'hidden'; S.vis = v; setBlur(v !== 'visible', v); }
+  function onXREnd() { setBlur(true, 'end'); try { releaseAll(); } catch (e) {} S.xrEnded = (S.xrEnded || 0) + 1; }
+  S.setBlurForTest = (on) => setBlur(on, 'test');
   renderer.xr.addEventListener('sessionend', () => {
-    renderer.setAnimationLoop(null); releaseAll();
+    renderer.setAnimationLoop(null); releaseAll(); S.blurred = false; try { const ac = window.__unlockAC; if (ac && S.acSuspended) ac.resume(); } catch (e) {} S.acSuspended = false;
     S.presenting = false; S.ends++; st.vr = false; st.vrMove = null; session = null;
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
@@ -889,7 +905,7 @@ export function setupVR(A) {
     A.resumeFlat();
   });
 
-  function pump() { const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
+  function pump() { if (S.blurred) return; const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
     try { const w = f.contentWindow; if (w && w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} } }
 
   // ---------- t355u: equipped gear in the arcade world (not in a cabinet): JETPACK -> hold A to fly, LASER PISTOL -> B shoots ----------
@@ -989,6 +1005,7 @@ export function setupVR(A) {
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
+    if (S.blurred) { st.vrMove = null; S.walkStart = null; S.turnRate = 0; S.blurFrames = (S.blurFrames || 0) + 1; return; }   // vrtest-v5: overlay up: no movement / game input
     unpinLights(); if (xf) warmCheck();
     const ref = renderer.xr.getReferenceSpace(), vp = xf && ref ? xf.getViewerPose(ref) : null;
     if (vp) { const p = vp.transform.position, o = vp.transform.orientation; _e.setFromQuaternion(_q.set(o.x, o.y, o.z, o.w), 'YXZ'); S.head = { x: p.x, y: p.y, z: p.z, yaw: _e.y, pitch: _e.x }; S.posed = true; }
