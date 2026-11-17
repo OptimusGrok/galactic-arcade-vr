@@ -4,6 +4,11 @@
 // built-in knowledge base below (fully offline, no API, no keys): fuzzy keyword / synonym matching, plus small skills (time, date,
 // maths, your tickets, what Grok is doing right now) and friendly fallbacks. Nothing typed here is sent anywhere.
 
+// v19 (Dave): TALK. The 🎤 button (and, automatically, whenever your voice-chat mic is on) listens and turns what you say into text
+// (stt.js: the browser's Web Speech API, or on-device Whisper where that isn't available, e.g. Quest Browser); the words show as your
+// chat line and Grok answers exactly as if you'd typed them.
+import STT from './stt.js';
+
 // ---------------- knowledge ----------------
 const T = (n) => { try { return Math.max(0, parseInt(localStorage.getItem(n), 10) || 0); } catch (e) { return 0; } };
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
@@ -228,7 +233,7 @@ function reply(raw) {
 }
 
 // ---------------- UI ----------------
-const G = { open: false, near: {}, hooks: {}, ctx: null, opens: 0, closes: 0, log: [], last: null, reply };
+const G = { open: false, near: {}, hooks: {}, ctx: null, opens: 0, closes: 0, log: [], last: null, reply, seq: 0, lastQ: '', lastA: '', lastVia: '', voiceAsks: 0, stt: STT };
 window.__grokChat = G;
 const css = document.createElement('style');
 css.textContent =
@@ -242,14 +247,17 @@ css.textContent =
   '.gcM{max-width:86%;padding:8px 11px;border-radius:12px;font:600 15px/1.35 system-ui,sans-serif;white-space:pre-wrap;word-wrap:break-word}.gcM.g{align-self:flex-start;background:#0d2a40;border:1px solid #00e5ff66}.gcM.u{align-self:flex-end;background:#3a0f44;border:1px solid #ff3cf066}' +
   '.gcM.g:before{content:"GROK  ";font:900 11px "Courier New",monospace;color:#7fe8ff;letter-spacing:.1em}' +
   '#gcF{display:flex;gap:8px;padding:8px;border-top:1px solid #00e5ff55;flex:none}#gcIn{flex:1;min-width:0;font:600 16px system-ui,sans-serif;color:#fff;background:#020812;border:2px solid #00e5ff88;border-radius:10px;padding:10px 12px;outline:none;-webkit-user-select:text;user-select:text}#gcIn:focus{border-color:#ff3cf0}' +
+  '#gcMic{flex:none;width:48px;border-radius:10px;border:2px solid #ff3cf0aa;background:#22062a;color:#fff;font:20px/1 sans-serif;cursor:pointer;padding:0}#gcMic.on{background:#ff3cf0;border-color:#fff;box-shadow:0 0 12px #ff3cf0}#gcMic.busy{background:#5a2a70}#gcMic[hidden]{display:none}' +
+  '#gcSt{flex:none;padding:4px 12px;font:700 13px/1.3 system-ui,sans-serif;color:#ffb8f6;min-height:0}#gcSt:empty{display:none}' +
   '#gcSend{flex:none;padding:0 16px;border-radius:10px;border:2px solid #00e5ff;background:#06283a;color:#dffbff;font:900 15px "Courier New",monospace;letter-spacing:.1em;cursor:pointer}';
 document.head.appendChild(css);
 const btn = document.createElement('button'); btn.id = 'gcBtn'; btn.type = 'button'; btn.textContent = '💬 CHAT'; document.body.appendChild(btn);
 const ov = document.createElement('div'); ov.id = 'gcOv';
 ov.innerHTML = '<div id="gcP" role="dialog" aria-label="Chat with Grok"><div id="gcHd"><b>CHAT WITH GROK</b><button id="gcX" type="button" aria-label="Close chat">✕</button></div><div id="gcLog" aria-live="polite"></div>'
-  + '<form id="gcF" autocomplete="off"><input id="gcIn" maxlength="200" placeholder="Ask Grok anything..." enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true"><button id="gcSend" type="submit">SEND</button></form></div>';
+  + '<div id="gcSt" aria-live="polite"></div><form id="gcF" autocomplete="off"><input id="gcIn" maxlength="200" placeholder="Ask Grok anything..." enterkeyhint="send" autocomplete="off" autocapitalize="sentences" spellcheck="true"><button id="gcMic" type="button" aria-label="Talk to Grok" title="Talk to Grok">🎤</button><button id="gcSend" type="submit">SEND</button></form></div>';
 document.body.appendChild(ov);
-const logEl = ov.querySelector('#gcLog'), inEl = ov.querySelector('#gcIn'), panel = ov.querySelector('#gcP');
+const logEl = ov.querySelector('#gcLog'), inEl = ov.querySelector('#gcIn'), panel = ov.querySelector('#gcP'), micEl = ov.querySelector('#gcMic'), stEl = ov.querySelector('#gcSt');
+if (!STT.supported) micEl.hidden = true;
 // keep touches / keys out of the walk controls and the game while chatting
 for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'touchstart', 'touchmove', 'touchend', 'mousedown', 'wheel']) panel.addEventListener(ev, e => e.stopPropagation(), { passive: true });
 for (const ev of ['pointerdown', 'pointerup', 'touchstart', 'touchend']) btn.addEventListener(ev, e => e.stopPropagation(), { passive: true });
@@ -263,15 +271,31 @@ function add(who, text) {
   while (logEl.children.length > 60) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop = logEl.scrollHeight;
 }
-function ask(text) {
+function ask(text, via) {
   const q = String(text || '').trim().slice(0, 200); if (!q) return '';
-  add('u', q);
+  add('u', q); G.seq++; G.lastQ = q; G.lastVia = via || 'type'; if (via === 'voice') G.voiceAsks++;
   let a; try { a = reply(q); } catch (e) { a = 'Oops, my circuits hiccupped. Ask me again?'; }
-  add('g', a);
+  add('g', a); G.lastA = a;
   try { const h = G.ctx && G.hooks[G.ctx.source]; if (h && h.talk) h.talk(a); } catch (e) {}
   return a;
 }
 ov.querySelector('#gcF').addEventListener('submit', e => { e.preventDefault(); const v = inEl.value; inEl.value = ''; ask(v); try { inEl.focus({ preventScroll: true }); } catch (e2) {} });
+// ---- TALK (speech to text) ----
+const micOn = () => { const v = window.__voice; return !!(v && v.state === 'on' && !v.muted); };
+function sttText() { const st = STT.state;
+  return st === 'loading' ? 'Loading speech (first time only, ~40 MB)… ' + (STT.progress | 0) + '%' : st === 'listening' ? 'Listening… speak now' + (STT.continuous ? ' (your mic is on)' : '')
+    : st === 'hearing' ? (STT.partial ? '“' + STT.partial + '…”' : 'Hearing you…') : st === 'thinking' ? 'Writing what you said…' : st === 'error' ? (STT.err || 'Speech error') : ''; }
+function sttUI() { const st = STT.state, on = STT.active; micEl.classList.toggle('on', on && (st === 'listening' || st === 'hearing')); micEl.classList.toggle('busy', on && (st === 'loading' || st === 'thinking'));
+  micEl.textContent = on ? '⏹' : '🎤'; micEl.setAttribute('aria-label', on ? 'Stop listening' : 'Talk to Grok'); stEl.textContent = G.open ? sttText() : ''; G.sttLine = sttText(); }
+function listen(continuous) { if (!G.open || !STT.supported) return false;
+  return STT.start({ continuous: !!continuous, onChange: sttUI, onText: t => { if (!G.open) return; ask(t, 'voice'); sttUI(); } }) && (sttUI(), true); }
+function stopListen() { STT.stop(); sttUI(); }
+// 🎤 / TALK: tap to talk once (or stop); while the voice-chat mic is on it listens the whole time the chat is open
+function talk() { if (STT.active) { stopListen(); G.talkOff = true; return false; } G.talkOff = false; return listen(micOn()); }
+micEl.addEventListener('click', e => { e.stopPropagation(); talk(); });
+setInterval(() => { if (!G.open) return; const m = micOn();
+  if (m && !STT.active && !G.talkOff && STT.state !== 'error' && STT.supported) listen(true);
+  else if (!m && STT.active && STT.continuous) stopListen(); }, 700);
 ov.querySelector('#gcX').addEventListener('click', e => { e.stopPropagation(); close('x'); });
 
 // keyboard-safe on phones: fit the overlay to the visual viewport (the part above the on-screen keyboard)
@@ -294,12 +318,13 @@ function open(source) {
   ov.classList.add('on'); fitVV();
   if (!logEl.children.length) add('g', (myName() ? 'Hi ' + myName() + '! ' : 'Hi! ') + 'I\'m Grok. Ask me anything: how to play a game, tickets, prizes, the wardrobe... or ask for a joke!');
   else add('g', pick(['Welcome back! What else can I help with?', 'Hi again! Ask away.']));
+  G.talkOff = false; if (STT.state === 'error') STT.state = 'idle'; if (micOn() && STT.supported) listen(true); else sttUI();
   if (!matchMedia('(pointer:coarse)').matches) setTimeout(() => { try { inEl.focus({ preventScroll: true }); } catch (e) {} }, 30);
   return true;
 }
 function close(why) {
   if (!G.open) return false;
-  G.open = false; G.closes++; G.closeWhy = why || '';
+  G.open = false; G.closes++; G.closeWhy = why || ''; stopListen();
   try { inEl.blur(); } catch (e) {}
   ov.classList.remove('on');
   const c = G.ctx; G.ctx = null;
@@ -316,6 +341,6 @@ function setNear(source, on) {
 btn.addEventListener('click', e => { e.stopPropagation(); const s = btn.dataset.src; if (s) open(s); });
 addEventListener('keydown', e => { if (!G.open && btn.classList.contains('on') && e.code === 'KeyC' && !(e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) { open(btn.dataset.src); e.preventDefault(); } });
 
-Object.assign(G, { open_: open, openChat: open, close, ask, setNear, register(source, hooks) { G.hooks[source] = hooks; }, btn, ov, input: inEl, logEl, KB });
+Object.assign(G, { talk, listen, stopListen, micEl, open_: open, openChat: open, close, ask, setNear, register(source, hooks) { G.hooks[source] = hooks; }, btn, ov, input: inEl, logEl, KB });
 Object.defineProperty(G, 'isOpen', { get: () => G.open });
 export default G;
