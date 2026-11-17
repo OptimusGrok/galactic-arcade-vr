@@ -190,7 +190,8 @@ export function setupVR(A) {
   function readPad(src, prev) {
     const gp = src.gamepad, b = i => !!(gp && gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.75)), ax = gp ? gp.axes : [];
     const sx = ax.length >= 4 ? ax[2] : (ax[0] || 0), sy = ax.length >= 4 ? ax[3] : (ax[1] || 0);
-    const cur = { trig: b(0), grip: b(1), a: b(4), b: b(5), stick: b(3), x: Math.abs(sx) > 0.08 ? sx : 0, y: Math.abs(sy) > 0.08 ? sy : 0, src };
+    const leg = !!(gp && gp.mapping !== 'xr-standard' && gp.buttons.length < 6);   // v24: a non xr-standard pad (old Oculus layout: 3 = A / X, 4 = B / Y)
+    const cur = { trig: b(0), grip: b(1), a: leg ? b(3) : b(4), b: leg ? b(4) : b(5), stick: b(3), x: Math.abs(sx) > 0.08 ? sx : 0, y: Math.abs(sy) > 0.08 ? sy : 0, src };
     for (const k of ['trig', 'grip', 'a', 'b']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
     return cur; }
   function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null;
@@ -1162,8 +1163,12 @@ export function setupVR(A) {
     const any = k => !!((L && L[k]) || (R && R[k])), anyAB = map.handAB === 'right' ? (k => !!(R && R[k])) : any;
     if (play.sub === 'demo') {   // attract screen: A / X / trigger = insert the ticket price, then start
       if (any('aDown') || any('trigDown')) { const before = m.credits; if (m.credits < 1) play.insertTicket(); else play.tryPlay(); if (m.credits !== before || play.sub === 'play') pulse(((R && (R.aDown || R.trigDown)) ? R : L).src, 0.5, 40); }
-      if (Object.keys(S.held).length) releaseAll(); return; }
+      if (Object.keys(S.held).length) releaseAll(); S.aLatch = true; return; }
     if (play.sub !== 'play') return;
+    // v24 (Dave t435u, A did not slow Strike's enemies): the A press that STARTS a game used to stay held into play, so Strike got a C keydown at
+    // the very start and burned its one HYPER SPEED (8 s, then a 60 s recharge) during the stage intro; every A after that hit the recharge.
+    // A now has to be let go after the start before it counts in the game.
+    if (S.aLatch && !any('a')) S.aLatch = false;
     // sticks -> arrow keys (whichever stick is pushed further)
     const sx = map.moveStick === 'left' ? (L || { x: 0, y: 0 }) : [L, R].reduce((a, P) => P && Math.hypot(P.x, P.y) > Math.hypot(a.x, a.y) ? P : a, { x: 0, y: 0 });
     if (map.pan) camPan(w, map, R, dt);
@@ -1180,7 +1185,7 @@ export function setupVR(A) {
       if (aim && tr) { if (!G.ptrDown) { sendPtr(w, 'pointerdown', aim.u, aim.v); G.ptrDown = true; } else sendPtr(w, 'pointermove', aim.u, aim.v); }
       else if (G.ptrDown) { sendPtr(w, 'pointerup', aim ? aim.u : G.pu, aim ? aim.v : G.pv); G.ptrDown = false; }
       if (!aim) trigAsA = true; }
-    const prim = anyAB('a') || (trigAsA && !S.trigOnPw && any('trig'));
+    const prim = (!S.aLatch && anyAB('a')) || (trigAsA && !S.trigOnPw && any('trig'));
     for (const k of map.a) hold(k, prim, w);
     if (map.btnAt) { const tD = (R && R.trigDown) || (L && L.trigDown), tr = (R && R.trig) || (L && L.trig);
       if (tD && aim && G.rect && typeof w[map.btnAt] === 'function') { const x = G.rect.left + aim.u * G.rect.width, y = G.rect.top + (1 - aim.v) * G.rect.height; let id = null; try { id = w[map.btnAt](x, y); } catch (e) {}

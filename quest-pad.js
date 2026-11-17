@@ -503,7 +503,8 @@
       } else {
         if (pressed(gp, 0) || pressed(gp, 2) || pressed(gp, 6) || pressed(gp, 7)) fire = true;
         if (pressed(gp, 1) || pressed(gp, 5)) fly = true;
-        if (pressed(gp, 3) || pressed(gp, 4)) zoom = true;
+        if (pressed(gp, 3) && strikeWin()) slow = true;   // v24: non xr-standard pads (old Oculus layout, 3 = A / X) = HYPER SPEED in Strike too
+        else if (pressed(gp, 3) || pressed(gp, 4)) zoom = true;
       }
     }
     for (j = 0; j < unhanded.length; j++) {
