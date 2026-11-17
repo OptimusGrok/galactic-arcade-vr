@@ -551,7 +551,7 @@ export function setupVR(A) {
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
   // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
   // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
-  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm') }; } return window.__gaDbg; }
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q) }; } return window.__gaDbg; }
   S.dbg = dbg;
   function mirrorFrame() { if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
     const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
@@ -1036,15 +1036,27 @@ export function setupVR(A) {
   const effVis = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
   function adopt(l) { if (PIN.lights.has(l) || !l.parent) return; if (!PIN.holder) { PIN.holder = new THREE.Group(); PIN.holder.name = 'vrPinnedLights'; scene.add(PIN.holder); }
     const home = l.parent; l.userData.vrHome = { parent: home, pos: l.position.clone(), quat: l.quaternion.clone(), scale: l.scale.clone() }; PIN.holder.attach(l); PIN.lights.add(l); }
+  // vrtest-v7 (t464u, real-Quest freezes at Grok's counter and the top of the golf stairs): the mini golf's 14 point lights (basement 9 +
+  // stair lamps 5) went in and out of the shop's light list (basement shown from 8 m, lamps on from 3 m), so the shop flipped between
+  // three light sets (10 / 19 / 24 point lights) = three full program sets switched in one frame each. In the shop they now ride the pinned
+  // holder all the time (drawn at intensity 0 while off / the basement is hidden): ONE fixed light count, one program set, warmed once.
+  // ?golflights=old restores the old switching (for comparing on the headset).
+  function golfPin(on) { const g = scene.getObjectByName('golfStairs'); if (!g || dbg().golfold) return; const ls = []; g.traverse(o => { if (o.isLight && !o.isAmbientLight && !o.isHemisphereLight) ls.push(o); });
+    for (const l of [...PIN.lights]) if (l.userData.vrGolf && !on) { const h = l.userData.vrHome; if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; }
+      if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; PIN.lights.delete(l); }
+    if (on) for (const l of ls) if (!PIN.lights.has(l)) { adopt(l); l.userData.vrGolf = true; }
+    PIN.golf = on; }
+  S.golfPin = golfPin;
   function pinScan() { if (!PIN.seeded) { PIN.seeded = true; const ds = []; scene.traverse(o => { if (o.isLight && o.name === 'dsSpot') ds.push(o); }); ds.forEach(adopt); }   // known blinker: Dead Signal station spot (its group is culled by distance)
-    const area = A.tp ? A.tp.where : 0; if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
+    const area = A.tp ? A.tp.where : 0; if (!PIN.staging && (area === 2) !== !!PIN.golf) golfPin(area === 2);
+    if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
     if (S.frames % 15 !== 0 && PIN.seen.size) return; const flips = [];
     scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight || PIN.lights.has(o)) return; const v = effVis(o), was = PIN.seen.get(o); if (was !== undefined && was !== v) flips.push(o); PIN.seen.set(o, v); });
     if (S.frames - PIN.areaT > 60 && flips.length && flips.length < 3) for (const l of flips) adopt(l); }   // a light blinking on its own (not a whole room being culled)
   function pinLights() { for (const l of PIN.lights) { const h = l.userData.vrHome; if (!h || !h.parent) continue; h.parent.updateMatrixWorld(); _v.copy(h.pos).applyMatrix4(h.parent.matrixWorld); l.position.copy(_v);
       const on = l.visible && effVis(h.parent); if (!on) { l.userData.vrPinI = l.intensity; l.userData.vrPinV = l.visible; l.intensity = 0; l.visible = true; PIN.pins++; } } }
   function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; } }
-  function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); }
+  function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); PIN.golf = false; }
   S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
   function warmCheck() {
     if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
@@ -1200,8 +1212,8 @@ export function setupVR(A) {
     const fr = new THREE.Frustum(); camera.position.copy(pos); camera.updateMatrixWorld(true);
     fr.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const wasAdopted = PIN.lights.size;
-    try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); pinLights(); return fn(); }
-    finally { unpinLights(); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
+    try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); PIN.staging = true; golfPin(area === 2); pinLights(); return fn(); }
+    finally { unpinLights(); PIN.staging = false; golfPin(!!(S.presenting && A.tp && A.tp.where === 2)); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
       fill.visible = fv; if (nkRoot) nkRoot.visible = nkv; monkey.visible = mv; camera.position.copy(cp); camera.quaternion.copy(cq); camera.updateMatrixWorld(true);
       const f2 = new THREE.Frustum(); f2.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); window.__cullFor(S.presenting && S.head ? new THREE.Vector3(S.head.x, S.head.y, S.head.z) : camera.position.clone(), f2); } }
   // after the compile: draw the staged area once into a 2x2 corner of the default framebuffer (the headset's program variants), looking

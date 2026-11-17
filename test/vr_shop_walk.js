@@ -35,11 +35,11 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
       if (!s.has(k)) { s.add(k); const C = window.__gtc; C.new_progFB = (C.new_progFB || 0) + 1; let nm = '?'; for (const q of (window.__arcade.renderer.info.programs || [])) if (q.program === pr) nm = q.name; C['@progFB'] = (C['@progFB'] || '') + nm + '@fb' + k + ' '; } } return up.apply(gl, arguments); };
     hook('useProgram', 'prog', 0); hook('bindTexture', 'tex', 1); hook('bindVertexArray', 'vao', 0);
   });
-  await until(() => { const S = window.__gaVR; return !S.prewarm || S.prewarm.done; });
+  if (!process.env.EARLY) await until(() => { const S = window.__gaVR; return !S.prewarm || S.prewarm.done; });   // EARLY=1: enter VR straight away (pre-warm still running)
   await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 60000);
   await E(() => { const A = window.__arcade, r = A.renderer, o = r.render.bind(r), R = window.__walk = { f: [], last: 0, t0: performance.now(), on: false };
     r.render = function (s, c) { const out = o(s, c); if (r.xr.isPresenting && s === A.scene && R.on) { const n = performance.now(), i = r.info;
-        if (R.last) R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls, ((window.__gaVR && window.__gaVR.warms) || []).length, (window.__gaStream && window.__gaStream.ups) || 0]); R.last = n;
+        if (R.last) (R.sigs = R.sigs || new Set()).add(window.__gaVR.lightSig()); R.f.push([Math.round(n - R.t0), Math.round(n - R.last), i.programs ? i.programs.length : 0, i.memory.textures, i.memory.geometries, i.render.calls, ((window.__gaVR && window.__gaVR.warms) || []).length, (window.__gaStream && window.__gaStream.ups) || 0]); R.last = n;
         const np = i.programs ? i.programs.length : 0; if (R.pn != null && np !== R.pn) { const ids = new Set(i.programs.map(q => q.id)), prev = R.pids || new Set(), add = i.programs.filter(q => !prev.has(q.id)), gone = [...prev].filter(id => !ids.has(id));
           const names = {}; for (const q of add) { const k = q.name + (q.cacheKey && /,true,|clipping/i.test(q.cacheKey) ? '' : ''); names[k] = (names[k] || 0) + 1; }
           (R.pl = R.pl || []).push({ t: Math.round(n - R.t0), add: add.length, gone: gone.length, names: Object.entries(names).sort((a, b) => b[1] - a[1]).slice(0, 12), key0: add[0] && add[0].cacheKey && add[0].cacheKey.slice(0, 400) }); }
@@ -66,7 +66,9 @@ async function profStop(c, name) { if (!c) return; const { profile } = await c.s
     await E(() => { const R = window.__walk; R.f = []; R.last = 0; R.on = true; window.__gtc = {}; if (R.gt) R.gt.cur = {}; }); const pc = await profStart(page);
     for (let i = 1; i < pts.length; i++) { const [ax, az] = pts[i - 1], [bx, bz] = pts[i]; for (let k = 1; k <= 8; k++) { await place(ax + (bx - ax) * k / 8, az + (bz - az) * k / 8, yaw); await page.waitForTimeout(150); } }
     await page.waitForTimeout(2500);
-    const f = await E(() => { window.__walk.on = false; return window.__walk.f; }); await profStop(pc, name);
+    const f = await E(() => { window.__walk.on = false; return window.__walk.f; });
+    const sigs = await E(() => { const R = window.__walk, a = [...(R.sigs || [])]; R.sigs = new Set(); return a; }); console.log('  lightsets ' + name + ' ' + JSON.stringify(sigs));
+    if (process.env.CHECK && !process.env.QS) { const c = sigs.length === 1; console.log((c ? 'PASS ' : 'FAIL ') + name + ' walk: one fixed light set in the shop ' + JSON.stringify(sigs)); if (!c) ok = false; } await profStop(pc, name);
     if (process.env.DIAG) console.log('WARMS ' + name + ' ' + JSON.stringify(await E(() => (window.__gaVR.warms || []).slice(-6))));
     if (process.env.DIAG) console.log('PROGS ' + name + ' ' + JSON.stringify(await E(() => { const R = window.__walk, pl = R.pl || []; R.pl = []; return pl; })));
     const iv = f.map(x => x[1]), med = iv.slice().sort((a, b) => a - b)[Math.floor(iv.length / 2)];
