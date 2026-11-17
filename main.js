@@ -1968,7 +1968,7 @@ function frame(now, xrFrame) {
   const gap = Math.max(0, Math.min(100, now - last)); last = now;   // rAF time can be a hair before a resume timestamp
   if (paused && !XRP) { rafOn = false; return; }   // full-screen game running: arcade render loop stopped (VR keeps drawing the room around the game screen)
   if (document.hidden && !XRP) { PS.hiddenSkips++; schedule(); return; }   // pause GPU work while the tab is in the background
-  if (XRP) { if (zoomHold.on || zoomHold.lock) zoomRelease(); } else { syncZoomBtn(); tickZoom(gap / 1000); }   // VR: no hold-to-zoom (camera distance is unused and never changes in XR)
+  if (XRP) { syncZoomBtn(); if (zoomHold.on || zoomHold.lock) zoomRelease(); } else { syncZoomBtn(); tickZoom(gap / 1000); }   // v25: keep #bZoom's 'on' in sync in VR too: roomfire.js only shows (and fires) the pistol while it is on; entering VR straight from PLAY (v18) left it off, so B never fired   // VR: no hold-to-zoom (camera distance is unused and never changes in XR)
   if (nb) nb.restoreCam(camera);
   const t0 = performance.now();
   if (XRP && VRH) VRH.pre(Math.min(gap / 1000, 0.05), xrFrame);

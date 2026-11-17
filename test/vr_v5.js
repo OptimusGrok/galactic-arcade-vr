@@ -18,8 +18,8 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await place(2, 4, 0);
     // ---- backpack: one Grok Shop candy (hand), one teddy (hug), two claw bears (hand) ----
     await page.evaluate(() => { localStorage.setItem('neonarcade.prizes', JSON.stringify({ cotton: 1, teddy: 1 })); localStorage.setItem('arcade_clawMachine.collection', JSON.stringify({ bear: 2 })); localStorage.removeItem('neonarcade.held'); });
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
-    chk((await st()).panel === 'menu' && (await ids()).includes('pack'), 'B opens the menu and it has MONKEY BACKPACK (' + (await page.evaluate(() => (window.__gaVR.ui.btns.find(b => b.id === 'pack') || {}).label)) + ')');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3);   // v25: Y = menu (B = gun fire only)
+    chk((await st()).panel === 'menu' && (await ids()).includes('pack'), 'Y opens the menu and it has MONKEY BACKPACK (' + (await page.evaluate(() => (window.__gaVR.ui.btns.find(b => b.id === 'pack') || {}).label)) + ')');
     await tap('pack'); chk((await st()).panel === 'pack', 'pointing at MONKEY BACKPACK + trigger opens the backpack');
     await page.waitForFunction(() => window.__gaVR.ui.btns.some(b => b.id === 'p_cotton'), null, { timeout: 60000 });
     await page.waitForFunction(() => window.__shop && window.__shop.registerHoldable && JSON.stringify(window.__shop.held) && true, null, { timeout: 10000 });
@@ -35,7 +35,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await tap('p_teddy'); h = await held(); chk(h.R === null && h.L === null, 'tap the held teddy again puts it away ' + JSON.stringify(h));
     await tap('p_claw:bear'); await tap('p_cotton'); await tap('away'); h = await held(); chk(h.R === null && h.L === null, 'PUT BOTH AWAY empties both hands ' + JSON.stringify(h));
     const c = await page.evaluate(() => ({ e: window.__gaVR.packEquips, u: window.__gaVR.packUnequips })); chk(c.e === 5 && c.u === 3, 'equips ' + c.e + ', put-aways ' + c.u);
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk(!(await st()).panel, 'B closes the backpack');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); chk(!(await st()).panel, 'Y closes the backpack');   // v25: Y = menu
     // ---- t355u: money + tickets in the menu ----
     await H.press(page, 'left', 'y-button'); await H.frames(page, 3);
     const subOf = () => page.evaluate(() => { const c = window.__gaVR.ui; return c.kind === 'menu' ? window.__gaVR.uiSub() : null; });
@@ -56,7 +56,8 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     const fy2 = await page.evaluate(() => ({ m: window.__arcade.monkey.position.y, hold: window.__arcade.st.fly.hold }));
     chk(!fy2.hold && fy2.m < fy1.m - 0.3, 'let go of A and you come back down (' + fy2.m.toFixed(2) + ' m)');
     await page.waitForFunction(() => !window.__arcade.st.fly.air, null, { timeout: 30000 }); await H.frames(page, 6);
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: B still opens the menu');
+    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk(!(await st()).panel, 'v25 jetpack only: B does nothing (no menu)');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'jetpack only: Y opens the menu');
     // ---- t355u: LASER PISTOL on -> B shoots, menu on Y only ----
     await tap('pack'); await tap('ward'); await tap('cat_hand'); await tap('w_hand_pistol'); gr = await page.evaluate(() => window.__gaVR.gear()); chk(gr.laser, 'LASER PISTOL bought + held from ACCESSORIES in VR'); await tap('close');
     await H.frames(page, 6); const rs = await page.evaluate(() => window.__roomFire.shown); chk(rs, 'the pistol is live in VR');
@@ -70,8 +71,10 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     const bothF = await page.evaluate(() => window.__gaVR.vrLaser().held); await H.btn(page, 'right', 'b-button', 0); await H.btn(page, 'right', 'a-button', 0); await page.waitForTimeout(1500);
     chk(both && bothF, 'fly (A) and shoot (B) together');
     await H.press(page, 'left', 'y-button'); await tap('pack'); await tap('ward'); await tap('cat_hand'); await tap('remove'); await tap('close');
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3); chk((await st()).panel === 'menu' && !(await page.evaluate(() => window.__gaVR.gear().laser)), 'pistol off: B opens the menu again');
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
+    { const s0 = await page.evaluate(() => window.__roomFire.shots); await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
+      chk(!(await st()).panel && !(await page.evaluate(() => window.__gaVR.gear().laser)) && (await page.evaluate(() => window.__roomFire.shots)) === s0, 'v25 pistol off: B does nothing (no menu, no shot)'); }
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3); chk((await st()).panel === 'menu', 'pistol off: Y opens the menu');
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3);
     // ---- Sky Tower ----
     await page.evaluate(() => { window.__arcade.play.addTickets(20); const m = window.__arcade.play.machines.skytower; window.__gaVR.startCab(m.cab, m.cab.userData.centre); });
     await page.waitForFunction(() => window.__arcade.play.mode === 'game' && window.__arcade.play.sub === 'demo', null, { timeout: 90000 });

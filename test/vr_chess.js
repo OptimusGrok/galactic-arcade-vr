@@ -125,7 +125,7 @@ const { openVR, H } = require('./vrlib');
     const vb = await grokAt(page), dHome = v => Math.hypot(v.x - home.x, v.z - home.z);
     chk((vb.gs === 'home' && dHome(vb) < 0.1) || (vb.gs === 'back' && dHome(vb) < dHome(vb0) - 1), 'headset: Grok walks back to the counter (home, or still walking there and closer: ' + dHome(vb0).toFixed(1) + ' -> ' + dHome(vb).toFixed(1) + ' m; the flat run checks the arrival) ' + JSON.stringify(vb) + ' home ' + JSON.stringify(home));
     // t382u: GRIP = back for the headset menu / panels too
-    await H.press(page, 'right', 'b-button'); await H.frames(page, 3);
+    await H.press(page, 'left', 'y-button'); await H.frames(page, 3);
     const m1 = await page.evaluate(() => window.__gaVR.state().panel);
     await H.press(page, 'right', 'squeeze'); await H.frames(page, 3);
     const m2 = await page.evaluate(() => ({ p: window.__gaVR.state().panel, backs: window.__gaVR.backs }));

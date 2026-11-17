@@ -22,7 +22,7 @@ async function flat() {
     const fr = page.frames().find(f => /strike-play/.test(f.url()));
     await fr.waitForFunction(() => window.STRIKE.G.scene === 'play' && !window.STRIKE.pl.entering, null, { timeout: 30000 }); await fr.evaluate(() => { window.STRIKE.G.god = true; });
     const pos = await fr.evaluate(() => ({ s: window.__strikeBtnXY('slow'), b: window.__strikeBtnXY('bomb'), W: innerWidth, H: innerHeight }));
-    chk(Math.abs(pos.s[1] - pos.b[1]) < 1 && pos.s[0] < pos.b[0] && pos.b[0] - pos.s[0] < 60 && pos.b[1] > pos.H * 0.7, 'A HYPER SPEED + B BOMB side by side at the bottom right (A left of B)', pos);
+    chk(Math.abs(pos.s[1] - pos.b[1]) < 1 && pos.s[0] < pos.b[0] && pos.b[0] - pos.s[0] < 60 && pos.b[1] < pos.H * 0.3 && pos.b[0] > pos.W * 0.6, 'A HYPER SPEED + B BOMB side by side (A left of B), top right since v24', pos);
     if (process.env.SHOT) { await page.waitForTimeout(1500); await page.screenshot({ path: process.env.SHOT }); }
     await page.waitForTimeout(4000); const n = await rate(fr);
     const shots0 = await fr.evaluate(() => window.STRIKE.pools.pshots.items.filter(s => s.alive).length);
