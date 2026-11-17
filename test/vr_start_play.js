@@ -11,7 +11,7 @@ const supa = r => r.fulfill({ status: 200, contentType: 'application/json', body
     try {
       await page.evaluate(() => { localStorage.removeItem('galacticarcade.player'); window.__noPrewarm = 1; }); await page.reload();
       await page.waitForFunction(() => window.__arcade && window.__arcade.stats.frames > 3, null, { timeout: 90000 }); await page.waitForTimeout(1500);
-      await page.waitForSelector('#gaIn'); if (opts.phone) await page.tap('#gaIn'); else await page.click('#gaIn'); await page.keyboard.type('Astro' + label.length);
+      await page.waitForSelector('#gaIn'); if (opts.phone) { const b = await page.locator('#gaIn').boundingBox(); await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); } else await page.click('#gaIn'); await page.keyboard.type('Astro' + label.length);
       await page.waitForSelector('#gaGo:not([hidden])', { timeout: 20000 }); await page.waitForTimeout(500);
       const s = await page.evaluate(() => { const g = document.getElementById('gaGo').getBoundingClientRect(), f = document.getElementById('gaGoFlat'), fr = f && f.getBoundingClientRect(), shown = !!f && getComputedStyle(f).display !== 'none';
         return { quest: document.body.classList.contains('gaQuestVR'), flat: shown, flatLabel: f && f.textContent, go: document.getElementById('gaGo').textContent, overlap: shown && !(fr.right <= g.left || fr.left >= g.right || fr.bottom <= g.top || fr.top >= g.bottom), inView: shown && fr.bottom <= innerHeight && fr.top >= 0 }; });
@@ -39,6 +39,6 @@ const supa = r => r.fulfill({ status: 200, contentType: 'application/json', body
     chk(ok1 && !(await page.evaluate(() => !!(window.__gaVR && window.__gaVR.presenting))), 'computer PLAY: flat game as before'); });
   await run('phone', { phone: true, w: 412, h: 860 }, async (page, s) => {
     chk(!s.quest && !s.flat, 'phone: only PLAY ' + JSON.stringify(s));
-    await page.tap('#gaGo'); chk(await started(page), 'phone PLAY: flat game as before'); });
+    { const b = await page.locator('#gaGo').boundingBox(); await page.touchscreen.tap(b.x + b.width / 2, b.y + b.height / 2); } chk(await started(page), 'phone PLAY: flat game as before'); });
   console.log(ok ? 'ALL PASS' : 'SOME FAILED'); process.exit(ok ? 0 : 1);
 })();
