@@ -49,6 +49,10 @@
     ['AudioContext', 'webkitAudioContext'].forEach(function (k) { var AC = window[k]; if (typeof AC !== 'function' || typeof Proxy !== 'function') return;
       try { window[k] = new Proxy(AC, { construct: function (t, a, n) { var c = Reflect.construct(t, a, n); acs.push(c); return c; } }); } catch (e) {} });
     window.__gaRes = function () { return { gl: gls.length, glLost: gls.filter(function (g) { try { return g.isContextLost(); } catch (e) { return true; } }).length, ac: acs.length, acOpen: acs.filter(function (a) { return a.state !== 'closed'; }).length }; };
+    // v22: a game still mid-frame when its context is released got null info logs and three.js threw on .trim() (seen in WATCH close)
+    [window.WebGLRenderingContext, window.WebGL2RenderingContext].forEach(function (C) { var Q = C && C.prototype; if (!Q) return;
+      ['getShaderInfoLog', 'getProgramInfoLog'].forEach(function (k) { var f = Q[k]; if (typeof f !== 'function') return;
+        Q[k] = function () { var r = f.apply(this, arguments); return r == null ? '' : r; }; }); });
     window.__gaRelease = function () {
       window.__gaReleased = (window.__gaReleased || 0) + 1;
       acs.forEach(function (a) { try { if (a.state !== 'closed') { var p = a.close(); if (p && p.catch) p.catch(function () {}); } } catch (e) {} });
