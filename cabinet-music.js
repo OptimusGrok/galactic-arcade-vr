@@ -4,7 +4,7 @@
 //   * cabinet DEMO view (play.mode 'game', sub 'demo'): that cabinet's loop plays (the game copies' demos are silent)
 //   * playing a game, zooming, start screen, tab hidden, MUSIC off (window.__music.on === false): silent
 // Crossfade: WebAudio linear ramps of FADE s. Only one cabinet source exists at a time (the old one fades out and is stopped
-// before the next fades in). Tracks are fetched + decoded on first need (lazy) and kept in a small cache (MAX_CACHE).
+// before the next fades in). Tracks are fetched + decoded on first need (lazy); at most one decoded buffer is kept (MAX_CACHE = 1, t911u).
 // Room music hook: music.js multiplies its target by (1 - window.__cabMusic.duck)  (see INTEGRATION.md).
 (function () {
   var VOL = 0.38, FADE = 0.6, RADIUS = 2.8, HYST = 0.5, MAX_CACHE = 1,   // TEST v1 (VR memory): only the current loop stays decoded (was 3)
@@ -67,9 +67,15 @@
     if (P.mode !== 'walk' || !positions(A)) return null;
     var m = A.monkey.position, k = C.nearest(m.x, m.z); lastNear = k; return k;
   }
+  // vrtest-v4 (t911u port): one song at a time. Besides the drop when a loop fades out (above), anything still cached is freed once no
+  // cabinet has wanted music for 1 s (a decode that finished after you walked on), so at most one cabinet AudioBuffer stays decoded.
+  var idleSince = 0;
+  function evictIdle() { Object.keys(cache).forEach(function (key) { if (key !== curKey && key !== C.want) { delete cache[key]; order = order.filter(function (o) { return o !== key; }); } }); }
   function tick() {
     var k = null; try { k = wanted(); } catch (e) { C.err = String(e); }
     C.want = k; apply(k);
+    C.bufCount = Object.keys(cache).length; C.cached = Object.keys(cache);
+    if (!k && !curKey) { idleSince = idleSince || performance.now(); if (performance.now() - idleSince > 1000) evictIdle(); } else idleSince = 0;
     // duck the room track while a cabinet loop is (or is about to be) playing in walk mode; in game mode music.js is already at 0
     var target = k ? 1 : 0; C.duck += (target - C.duck) * 0.5; if (C.duck < 0.01) C.duck = 0; if (C.duck > 0.99) C.duck = 1;
   }

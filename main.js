@@ -5,6 +5,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { initTexLoader, loadPicture } from './texload.js';   // vrtest-v4 (t911u port): KTX2/Basis pictures, image fallback
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildStrikeCabinet, startStrikeDemo, tickStrikeDemo } from './strikecab.js';
 import { buildGhostCabinet, startGhostDemo, tickGhostDemo } from './ghostcab.js';
@@ -65,7 +66,7 @@ const PS = window.__powerSave = { on: readPowerSave(), key: PS_KEY, fps: TIER.na
 let Q = qualityFor(PS.on); TIER.quality = Q;
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: !MOBILE && TIER.name === 'high' && !PS.on, powerPreference: (PS.on || TIER.name === 'low') ? 'low-power' : 'high-performance' }); renderer.localClippingEnabled = true; if (!/[?&]glcheck/.test(location.search)) renderer.debug.checkShaderErrors = false;   // t295u: no sync getProgramInfoLog per shader (~3.9 s of the start-screen freeze at 4x CPU); ?glcheck turns it back on   // teleporter dissolve
+const renderer = new THREE.WebGLRenderer({ antialias: !MOBILE && TIER.name === 'high' && !PS.on, powerPreference: (PS.on || TIER.name === 'low') ? 'low-power' : 'high-performance' }); renderer.localClippingEnabled = true; try { window.__texload = { ok: initTexLoader(renderer, THREE) }; } catch (e) { window.__texload = { ok: false, err: String(e) }; } if (!/[?&]glcheck/.test(location.search)) renderer.debug.checkShaderErrors = false;   // t295u: no sync getProgramInfoLog per shader (~3.9 s of the start-screen freeze at 4x CPU); ?glcheck turns it back on   // teleporter dissolve
 let dpr = Math.min(devicePixelRatio || 1, Q.dpr);
 renderer.setPixelRatio(dpr);
 renderer.setSize(innerWidth, innerHeight, false);   // CSS (100vw x 100dvh) owns the on-screen size; resize() matches the buffer to it
@@ -196,7 +197,7 @@ function setWalls(mode) {
   if (r2Ready) { const hw0 = hall.getObjectByName('hallWallW'), hm = hw0.userData.mat0 || hw0.material; if (!hm.userData.map0) hm.userData.map0 = hm.map;
     if (md && !hm.userData.stone) { hm.userData.stone = stoneTex.clone(); hm.userData.stone.repeat.set(+(HALL_L / 6).toFixed(3), +(DOOR_H / 6).toFixed(3)); hm.userData.stone.needsUpdate = true; }
     hm.map = md ? hm.userData.stone : hm.userData.map0; hm.emissiveMap = md ? hm.userData.stone : null; hm.color.setHex(md ? 0x8a8078 : 0x2a1840); hm.emissive.setHex(md ? 0xffffff : 0); hm.emissiveIntensity = md ? 0.55 : 1; hm.roughness = md ? 0.95 : 0.85; hm.needsUpdate = true; }
-  if (v && !vikTex) { vikTex = new THREE.TextureLoader().load('tex/viking_walls.jpg', t => { capLoadedTexture(t, THREE); if (spaceWin) spaceWin.dirty(); }); vikTex.colorSpace = THREE.SRGBColorSpace; vikTex.wrapS = THREE.RepeatWrapping; vikTex.wrapT = THREE.ClampToEdgeWrapping;
+  if (v && !vikTex) { vikTex = loadPicture(THREE, 'tex/viking_walls.jpg', { onLoad: t => { if (spaceWin) spaceWin.dirty(); }, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
     vikTex.repeat.set(+(2 * HALF / (H * 928 / 576)).toFixed(3), 1); flagTex(vikTex, THREE); }   // one repeat = wall height
   wallMat.map = v ? vikTex : md ? stoneTex : wallTex; wallMat.color.setHex(v ? 0x8a7a70 : md ? 0x8a8078 : 0x2a1840); wallMat.roughness = v || md ? 0.95 : 0.85; wallMat.emissiveMap = v ? vikTex : md ? stoneTex : null; wallMat.emissive.setHex(v || md ? 0xffffff : 0x000000); wallMat.emissiveIntensity = v ? 1.6 : md ? 0.55 : 1; wallBands.forEach(m => { m.visible = !v && !po && !md }); wallMat.needsUpdate = true;   // a little dark so the neon pops
   if (!v && vikTex && TIER.name === 'low') { try { vikTex.dispose(); } catch (e) {} vikTex = null; }
@@ -581,7 +582,7 @@ let carpetTex = null;
 function currentCarpetTex() { return carpetTex || carpetStub; }
 function ensureCarpetTex() {
   if (carpetTex) return carpetTex;
-  carpetTex = new THREE.TextureLoader().load('tex/carpet.webp', t => { capLoadedTexture(t, THREE); if (spaceWin && floorMode === 'carpet') spaceWin.dirty(); });
+  carpetTex = loadPicture(THREE, 'tex/carpet.webp', { onLoad: t => { if (spaceWin && floorMode === 'carpet') spaceWin.dirty(); }, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping });
   carpetTex.colorSpace = THREE.SRGBColorSpace; carpetTex.wrapS = carpetTex.wrapT = THREE.RepeatWrapping;   // seamless tile (edge-cut figures removed): plain repeat, never mirrored (mirroring put copies head to head)
   carpetTex.repeat.set(3, 3); flagTex(carpetTex, THREE);
   if (floorMats.carpet) { floorMats.carpet.map = floorMats.carpet.emissiveMap = carpetTex; floorMats.carpet.needsUpdate = true; }

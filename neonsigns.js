@@ -10,6 +10,7 @@
 // so lettering reads left-to-right from both sides; the claw prongs open/close on a cheap baked-frame loop.
 // Orc Attack’s icon is a detailed neon orc (tusks, horned helmet, axe) in the same dim-glow style as the Viking / Strike icons.
 import { NEON_ATLAS } from './neon_atlas.js';
+import { loadPicture } from './texload.js';
 
 function neonStroke(g, draw, col, w, glow) {
   g.save();
@@ -715,18 +716,12 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
     for (let k = 0; k < iuv.count; k++) iuv.setXY(k, iuv.getX(k) ? iu1 : iu0, iuv.getY(k) ? iv1 : iv0);
     ig.rotateY(Math.atan2(n.x, n.z)); ig.translate(ip.x, ip.y, ip.z); iconQuads.push(ig);
   }
-  const tex = new THREE.TextureLoader().load(opt.src || 'tex/neon_signs.webp', t => { try {
-    if (opt.atlasMax && t.image && t.image.width > opt.atlasMax) {
-      const c = document.createElement('canvas');
-      const r = opt.atlasMax / t.image.width;
-      c.width = opt.atlasMax; c.height = Math.max(1, Math.round(t.image.height * r));
-      c.getContext('2d').drawImage(t.image, 0, 0, c.width, c.height);
-      t.image = c; t.needsUpdate = true;
-    }
-    if (opt.lowMips === false || opt.atlasMax) t.generateMipmaps = false;
-    if (opt.renderer) opt.renderer.initTexture(t);
-  } catch (err) {} if (opt.onLoad) opt.onLoad(t); });
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = opt.aniso || 4;
+  // vrtest-v4 (t911u port): KTX2/Basis when the GPU can take it (about 1/4 of the RGBA size on the Quest), else the webp as before
+  const tex = loadPicture(THREE, opt.src || 'tex/neon_signs.webp', { mips: false, max: opt.atlasMax || 0, onLoad: t => {
+    try { if (opt.lowMips === false || opt.atlasMax) { t.generateMipmaps = false; if (THREE.LinearFilter) t.minFilter = THREE.LinearFilter; } if (opt.renderer) opt.renderer.initTexture(t); } catch (err) {}
+    if (opt.onLoad) opt.onLoad(t);
+  }});
+  tex.anisotropy = opt.aniso || 4;
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1).multiplyScalar(opt.k || 0.55) });   // t782u: 0.55 (t775u: 0.85, v188: 1.3), dimmer + the atlas itself is sharper / thinner
   mat.name = 'neonSigns';
   const mesh = new THREE.Mesh(mergeGeometries(quads), mat); mesh.name = 'neonSigns'; mesh.renderOrder = 3; mesh.matrixAutoUpdate = false; mesh.updateMatrix();

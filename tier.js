@@ -150,6 +150,9 @@ function placeholderFor(t, T) {
   p = new T.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); p.colorSpace = t.colorSpace; p.flipY = t.flipY; p.channel = t.channel || 0; p.needsUpdate = true; p.name = 'streamPlaceholder';
   _ph.set(key, p); return p;
 }
+const _streamApis = [];
+// vrtest-v4: texload.js swaps a KTX2 stub for its image fallback; evicted stream slots must restore the fallback, not the empty stub
+export function streamRetarget(from, to) { for (const a of _streamApis) for (const it of a.items) if (it.tex === from) { it.tex = to; it.bmp = null; } }
 export function bindStreamGpu(root, opt = {}) {
   const minEdge = opt.minEdge == null ? 512 : opt.minEdge;
   const names = opt.names ? new Set(opt.names) : null;
@@ -215,7 +218,7 @@ export function bindStreamGpu(root, opt = {}) {
       return ms;
     } catch (e) { return 0; }
   };
-  for (const it of items) { it.onGpu = true; toBitmap(it); }
+  for (const it of items) { it.onGpu = true; toBitmap(it); }   // KTX2 (CompressedTexture) items are skipped by toBitmap (no <img>)
   const api = {
     on: true,
     items,
@@ -253,6 +256,7 @@ export function bindStreamGpu(root, opt = {}) {
       return api;
     }
   };
+  _streamApis.push(api);
   return api;
 }
 

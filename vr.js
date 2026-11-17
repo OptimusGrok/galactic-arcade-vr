@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { createVRChess } from './vrchess.js';   // v17 immersive VR chess
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { loadPicture } from './texload.js';   // vrtest-v4: prebuilt icon sheet (KTX2 / webp)
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
 const SIGN_MAX = 30, TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
@@ -667,7 +668,18 @@ export function setupVR(A) {
   // t869u / v11: this swap was restored (it had been removed in v10) so VR matches Dave's request for Arcade's painted art.
   const ICON_KEYS = ['strike', 'ghost', 'cyber', 'orc', 'pip', 'berserker', 'monkey', 'nova', 'blaster', 'bb', 'rockfall', 'skytower', 'roadster', 'claw'];
   const IC = { done: false, loaded: [], failed: [], cell: 0, claw: false, k: 0 };
+  // vrtest-v4 (t911u port): one prebuilt sheet (tex/icons_atlas.ktx2 / .webp, same 4x4 x 256 px layout) instead of 13 pictures drawn
+  // into a canvas; the canvas path below stays as the fallback if the sheet does not load in 8 s.
   function iconArt() { const icons = window.__neonIcons; if (!icons || !icons.material || !icons.material.map || IC.started) return; IC.started = true;
+    const old0 = icons.material.map; let settled = false;
+    const sheet = t => { if (settled) return; settled = true; t.anisotropy = old0.anisotropy || 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+      try { renderer.initTexture(t); } catch (e) {}
+      icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8)); icons.material.needsUpdate = false;
+      try { old0.dispose(); } catch (e) {} IC.sheet = t.isCompressedTexture ? 'ktx2' : 'webp'; IC.cell = 256; IC.loaded = ICON_KEYS.filter(k => k !== 'claw'); IC.done = true; };
+    try { loadPicture(THREE, 'tex/icons_atlas.webp', { mips: false, onLoad: t => { if (t && (t.isCompressedTexture || (t.image && (t.image.width || 0) >= 512))) sheet(t); } }); } catch (e) {}
+    setTimeout(() => { if (!settled) { settled = true; iconCanvas(icons); } }, 8000);
+    clawFix(); }
+  function iconCanvas(icons) {
     const old = icons.material.map, oc = old.image, low = (A.TIER && A.TIER.name === 'low') || !oc || oc.width <= 512, S0 = oc ? oc.width / 4 : 256;
     const C = IC.cell = 256, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
     if (oc) g.drawImage(oc, 0, 0, cv.width, cv.height);   // start from the old icons (fallback for any picture that fails)
