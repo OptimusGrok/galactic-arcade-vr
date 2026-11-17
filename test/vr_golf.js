@@ -38,7 +38,7 @@ const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
       const ex = h1.cup[0] - b[0], ez = h1.cup[1] - b[2], el = Math.hypot(ex, ez), aimD = Math.min(3, el * 0.9 + 0.3), tgt = [b[0] + ex / el * aimD, b[1], b[2] + ez / el * aimD];
       await H.aim(page, 'right', [0.15, 1.2, -0.25], tgt); await H.frames(page, 3);
       await H.btn(page, 'right', 'trigger', 1); await H.frames(page, 6);
-      const a = await E(() => ({ g: window.__gaVR.golfVR(), pow: window.__minigolf.power, line: window.__arcade.scene.getObjectByName('golfPutter').visible }));
+      const a = await E(() => ({ g: window.__gaVR.golfVR(), pow: window.__minigolf.power, line: (() => { const p = window.__arcade.scene.getObjectByName('golfPutterVR'); return !!(p && p.parent && p.visible); })() }));   // vrtest-v2: the putter is held on the controller (the world putter at the ball is gone)
       if (k === 0) chk(a.g.aiming && a.g.vr && a.pow > 0.05 && a.line, 'holding the trigger aims (putter + power ' + Math.round(a.pow * 100) + '%) ' + JSON.stringify(a)); maxPow = Math.max(maxPow, a.pow);
       await H.btn(page, 'right', 'trigger', 0); await H.frames(page, 3);
       if (k === 0) { s = await G(); chk(s.putts === 1 && (s.rolling || (await distCup()).strokes === 1), 'letting go putts ' + JSON.stringify(s)); }

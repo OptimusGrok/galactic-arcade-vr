@@ -507,6 +507,7 @@ export function setupVR(A) {
     fp.forEach((o, i) => { o.visible = was[i]; }); monkey.visible = vis; }
   const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
   S.fpNames = () => fpList().map(o => o.name || o.type);
+  S.ctrlFor = ctrlFor;   // vrtest-v2: golf.js puts the held putter on the right controller
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
   // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
   // when the hand is close to the body, the hand takes the grip's rotation, and a small controller model sits in each avatar hand.

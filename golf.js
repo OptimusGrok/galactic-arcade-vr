@@ -149,8 +149,8 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     }
     prev.copy(p);
   }
-  function enterVisit() { S.below = true; S.entries++; arm(); S.paid = {}; S.visit = (S.visit || 0) + 1; holes.forEach(resetHole); }
-  function leaveVisit() { S.below = false; stopAim(); setLights(false); }
+  function enterVisit() { S.below = true; S.entries++; arm(); S.paid = {}; S.visit = (S.visit || 0) + 1; holes.forEach(resetHole); gearOn(); }
+  function leaveVisit() { S.below = false; stopAim(); setLights(false); gearOff(); }
   // walkable boxes below: the stairs, the walkway along the south wall, and each hole's green (the monkey walks onto the green to putt)
   const AREAS = [{ x0: X0 - 0.3, x1: XS + 0.3, z0: Z0, z1: Z1 }, { x0: XS - 0.4, x1: BX1 - 0.3, z0: Z0, z1: WZ1 }, ...holes.map(h => h.area)];
   function collideBelow(p, R) {
@@ -187,7 +187,44 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const aimLine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 1), new THREE.MeshBasicMaterial({ color: 0x2de8ff, toneMapped: false, transparent: true, opacity: 0.85 })); aimLine.visible = false; room.add(aimLine);
   const putter = new THREE.Group(); { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.95, 6), new THREE.MeshStandardMaterial({ color: 0xc0c8d8, metalness: 0.8, roughness: 0.3 }));
     shaft.position.y = -0.475; putter.add(shaft); const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0xff2bd6, emissive: 0x80104c })); head.position.set(0, -0.95, 0); putter.add(head); }
-  putter.visible = false; putter.name = 'golfPutter'; room.add(putter);
+  putter.visible = false; putter.name = 'golfPutter'; room.add(putter);   // vrtest-v2: never shown any more (it was placed at the ball every frame, so it rode along with the rolling ball)
+  // ---- vrtest-v2 (Dave t449u): in the mini golf room you HOLD a putter in your right hand; gun, jetpack and held prizes are put away and come back
+  // when you leave. Flat: the putter sits in the avatar's 'handR' (it swings with the putt animation). Headset: one on the right controller
+  // (first person; hidden from the mirror like the controllers) and one in the avatar's 'handR' (what the mirror shows). The ball rolls on its own.
+  function makePutter(name) { const g = new THREE.Group(); g.name = name;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.86, 6), new THREE.MeshStandardMaterial({ color: 0xc0c8d8, metalness: 0.8, roughness: 0.3 })); shaft.position.y = -0.47; g.add(shaft);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.017, 0.16, 8), new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.8 })); grip.position.y = -0.04; g.add(grip);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.045, 0.05), new THREE.MeshStandardMaterial({ color: 0xff2bd6, emissive: 0x80104c })); head.position.set(0.05, -0.92, 0); g.add(head);
+    g.userData.L = 0.945; return g; }
+  const GG = S.gear = { on: false, stash: null, avatar: null, vrHand: null, ons: 0, offs: 0 };
+  const STASH = 'ga.golfStash';
+  function gearOn() { if (GG.on) return; GG.on = true; GG.ons++;
+    const PL = window.__gaPlayer, p = PL && PL.p, sh = window.__shop, held = sh && sh.held;
+    GG.stash = { hand: p ? p.hand : 'none', back: p ? p.back : 'none', held: held ? { R: held.R || null, L: held.L || null } : { R: null, L: null } };
+    try { sessionStorage.setItem(STASH, JSON.stringify(GG.stash)); } catch (e) {}
+    try { if (p && (p.hand !== 'none' || p.back !== 'none')) { p.hand = 'none'; p.back = 'none'; PL.apply(); } } catch (e) {}   // not saved: the save keeps your gear
+    try { if (sh && (GG.stash.held.R || GG.stash.held.L)) sh.unhold(); } catch (e) {}
+    attachPutter(); }
+  function gearOff() { if (!GG.on) return; GG.on = false; GG.offs++; detachPutter();
+    const PL = window.__gaPlayer, p = PL && PL.p, sh = window.__shop, s = GG.stash; GG.stash = null;
+    try { if (p && s && p.hand === 'none' && p.back === 'none' && (s.hand !== 'none' || s.back !== 'none')) { p.hand = s.hand; p.back = s.back; PL.apply(); } } catch (e) {}
+    try { if (sh && s && (s.held.R || s.held.L)) { const h = sh.held; if (!h.R && !h.L) sh.hold({ R: s.held.R, L: s.held.L }); } } catch (e) {}
+    try { sessionStorage.removeItem(STASH); } catch (e) {} }
+  // a reload while down in the golf room: give the prizes back (your hand / back gear was never saved as off)
+  try { const s = JSON.parse(sessionStorage.getItem(STASH) || 'null'); if (s && s.held && (s.held.R || s.held.L)) setTimeout(() => { try { const sh = window.__shop; if (sh && !sh.held.R && !sh.held.L) sh.hold(s.held); } catch (e) {} sessionStorage.removeItem(STASH); }, 4000); } catch (e) {}
+  function attachPutter() { const hand = monkey.getObjectByName('handR'); if (hand) { if (!GG.avatar) GG.avatar = makePutter('golfPutterHeld'); hand.add(GG.avatar); GG.avatar.position.set(0, -0.02, 0); GG.avatar.rotation.set(0, 0, 0); GG.avatar.visible = true; } }
+  function detachPutter() { if (GG.avatar && GG.avatar.parent) GG.avatar.parent.remove(GG.avatar); if (GG.vrHand && GG.vrHand.parent) GG.vrHand.parent.remove(GG.vrHand); }
+  const _hp = new THREE.Vector3(), _hs = new THREE.Vector3();
+  function gearFrame(swing) { if (!GG.on) return;
+    let hand = monkey.getObjectByName('handR');
+    if (hand && GG.avatar && GG.avatar.parent !== hand) { hand.add(GG.avatar); GG.avatar.position.set(0, -0.02, 0); }   // character swap rebuilt the hands
+    if (hand && GG.avatar) { hand.updateWorldMatrix(true, false); hand.getWorldPosition(_hp); hand.getWorldScale(_hs);   // head just above the floor whatever the avatar's size
+      const want = Math.max(0.3, _hp.y - FY - 0.03); GG.avatar.scale.set(1 / (_hs.x || 1), want / GG.avatar.userData.L / (_hs.y || 1), 1 / (_hs.z || 1));
+      GG.avatar.rotation.set(swing || 0, 0, 0); }
+    const V = window.__gaVR, c = V && V.presenting && V.ctrlFor ? V.ctrlFor('right') : null;
+    if (c) { if (!GG.vrHand) { GG.vrHand = makePutter('golfPutterVR'); GG.vrHand.rotation.x = Math.PI / 2 - 0.35; GG.vrHand.position.set(0, -0.01, 0.02); }   // shaft along the pointing ray, a bit downward
+      if (GG.vrHand.parent !== c) c.add(GG.vrHand); }
+    else if (GG.vrHand && GG.vrHand.parent) GG.vrHand.parent.remove(GG.vrHand); }
   const ballW = h => h.mesh.position;
   function nearBall() { if (!S.below || S.aiming) return null; const p = monkey.position; let best = null, bd = 1.25;
     for (const h of holes) { if (h.ball.sunk) continue; const b = ballW(h), d = Math.hypot(b.x - p.x, b.z - p.z); if (d < bd) { bd = d; best = h; } } return best; }
@@ -248,9 +285,10 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     if (S.aiming) { const h = holes[S.cur], b = ballW(h); powI.style.height = (S.power * 100) + '%'; tip.style.display = S.rolling ? 'none' : 'block';
       aimLine.visible = !S.rolling && !h.ball.sunk; const len = 0.4 + S.power * 2.2; aimLine.scale.z = len; aimLine.rotation.y = S.aim;
       aimLine.position.set(b.x + Math.sin(S.aim) * len / 2, FY + 0.1, b.z + Math.cos(S.aim) * len / 2); aimLine.material.color.setHSL(0.52 - S.power * 0.38, 1, 0.55);
-      putter.visible = true; const f = S.aim, px = b.x - Math.sin(f) * 0.12 - Math.cos(f) * 0.0, pz = b.z - Math.cos(f) * 0.12;
-      let sw = -S.power * 0.6; if (swingT >= 0) { swingT += dt; sw = swingT < 0.12 ? -0.6 + swingT * 8 : 0.35 * Math.max(0, 1 - (swingT - 0.12) * 3); if (swingT > 0.6) swingT = -1; }
-      putter.position.set(px - Math.cos(f) * 0.32, FY + 1.02, pz + Math.sin(f) * 0.32); putter.rotation.set(0, f, 0); putter.rotateZ(0.3); putter.rotateX(-sw); }
+      putter.visible = false;   // vrtest-v2: the putter is in your hand (gearFrame), it no longer sits at / follows the ball
+      let sw = S.vr ? 0 : -S.power * 0.6; if (swingT >= 0) { swingT += dt; sw = swingT < 0.12 ? -0.6 + swingT * 8 : 0.35 * Math.max(0, 1 - (swingT - 0.12) * 3); if (swingT > 0.6) swingT = -1; } S.swing = sw; }
+    else S.swing = 0;
+    gearFrame(S.vr ? 0 : -(S.swing || 0));
   }
   // aiming camera: behind the ball looking down the aim view (⟲ ⟳ rotate it); called from main.js frame() after its own camera
   const cT = new THREE.Vector3(), cP = new THREE.Vector3();
