@@ -810,7 +810,7 @@ export function setupVR(A) {
     try { renderer.xr.setFoveation(1); } catch (e) {}
     document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
-    S.warmReq = 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop;
+    S.warmReq = PW.done ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
   });
@@ -1057,6 +1057,48 @@ export function setupVR(A) {
     let p = 0, sp = 0, d = 0, h = 0, ra = 0, sh = 0; for (const l of LS.list) { if (!effVis(l)) continue; if (l.isPointLight) p++; else if (l.isSpotLight) sp++; else if (l.isDirectionalLight) d++; else if (l.isHemisphereLight) h++; else if (l.isRectAreaLight) ra++; if (l.castShadow) sh++; }
     return p + 'p' + sp + 's' + d + 'd' + h + 'h' + ra + 'r' + sh + 'x'; }
   S.lightSig = () => lightSig();
+  // ---------- v18 (t405u / t407u): PRE-WARM before you enter VR and before you beam ----------
+  // Entering VR froze (the whole arcade compiled again for the headset in one frame) and every beam froze at the cut (the shop / studio
+  // compiled for the first time, ~130-160 programs) = the Quest shows a black void. On a headset browser, in the background soon after load,
+  // each area (room 1, the shop, the Neon Knockout studio) is staged as if you stood on its pad - its own room culling, the VR fill light,
+  // the pinned lights - and compiled for the headset's target (three keys an XR frame like the default framebuffer: sRGB + tone mapping),
+  // async (KHR_parallel_shader_compile), plus the shop mirror's own pass; then every texture is uploaded a few per frame. Each area's light set
+  // is marked done, so the cut, the arrival and the session start find everything ready. Phones / computers (no immersive-vr) skip all of it.
+  const PW = S.prewarm = { done: false, busy: false, areas: [], ms: 0, programs: 0, textures: 0, err: null, startedAt: 0 };
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
+  function stageArea(area, fn) { const T = A.tp, nkRoot = scene.getObjectByName('nkStudio'), P = area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : T.PAD1;
+    const pos = new THREE.Vector3(P.x, 1.6, P.z), fv = fill.visible, nkv = nkRoot ? nkRoot.visible : false, mv = monkey.visible, cp = camera.position.clone(), cq = camera.quaternion.clone();
+    const fr = new THREE.Frustum(); camera.position.copy(pos); camera.updateMatrixWorld(true);
+    fr.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    const wasAdopted = PIN.lights.size;
+    try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); pinLights(); return fn(); }
+    finally { unpinLights(); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
+      fill.visible = fv; if (nkRoot) nkRoot.visible = nkv; monkey.visible = mv; camera.position.copy(cp); camera.quaternion.copy(cq); camera.updateMatrixWorld(true);
+      const f2 = new THREE.Frustum(); f2.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); window.__cullFor(S.presenting && S.head ? new THREE.Vector3(S.head.x, S.head.y, S.head.z) : camera.position.clone(), f2); } }
+  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
+    try {
+      try { if (window.__arcade && window.__arcade.loadShop) await window.__arcade.loadShop(); } catch (e) {}
+      try { if (window.__loadNK) await window.__loadNK(); } catch (e) {}   // the studio's code + scene now, not during the first beam
+      await nextFrame();
+      for (const area of [1, 2, 3]) { if (area === 3 && !scene.getObjectByName('nkStudio')) continue;
+        const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '';
+        stageArea(area, () => { LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
+          try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
+          if (area === 2) { const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } } });
+        if (job) await job; await nextFrame();
+        PW.areas.push({ area, sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
+      // link + read uniforms a handful of programs per frame (the first draw would otherwise do it)
+      const progs = (renderer.info.programs || []).slice(); for (let i = 0; i < progs.length; i++) { try { progs[i].getUniforms(); } catch (e) {} if (i % 12 === 11) await nextFrame(); }
+      // upload every texture (hidden rooms too), a few per frame
+      const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
+        for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap', 'bumpMap']) { const x = m[k]; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); }
+        if (o.material && o.material.uniforms) for (const u of Object.values(o.material.uniforms)) { const x = u && u.value; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); } });
+      let n = 0; for (const x of seen) { try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (++n % 6 === 0) await nextFrame(); }
+      PW.programs = PW.areas.reduce((a, b) => a + b.programs, 0); PW.done = true;
+    } catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
+    PW.busy = false; PW.ms = Math.round(performance.now() - t0); }
+  S.prewarmRun = prewarm;
+  { const kick = setInterval(() => { if (PW.done || PW.busy) { if (PW.done) clearInterval(kick); return; } if (window.__noPrewarm) return; const ST = window.__arcade && window.__arcade.stats; if (S.supported && ST && ST.frames > 5 && A.tp) prewarm(); }, 500); }
   function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
   { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
     scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) prerender(); };
