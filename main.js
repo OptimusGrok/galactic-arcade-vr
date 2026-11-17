@@ -1843,7 +1843,12 @@ function idlePose(dt, u, sw) {
 }
 
 // ---------- loop + adaptive quality ----------
-const demo = startStrikeDemo(strikeCab), ghostDemo = startGhostDemo(ghostCab), _v = new THREE.Vector3();
+// v22 (Dave t426u/t429u): to save Quest memory the IDLE cabinet screens in the room are still painted images: no Strike / Ghost attract-demo
+// iframes (never created or loaded) and no per-frame attract redraws. Pressing PLAY at a cabinet is unchanged. ?liveScreens=1 brings the old live screens back.
+const LIVE_SCREENS = /[?&]liveScreens=1/.test(location.search);
+const stillDemo = cab => ({ ready: false, frames: 0, running: false, err: null, still: true, texture: cab.userData.viewTex, view: cab.userData.view, attach() {}, detach() {} });
+const demo = LIVE_SCREENS ? startStrikeDemo(strikeCab) : stillDemo(strikeCab), ghostDemo = LIVE_SCREENS ? startGhostDemo(ghostCab) : stillDemo(ghostCab), _v = new THREE.Vector3();
+window.__stillScreens = !LIVE_SCREENS;
 try { applyLowBudget(); } catch (e) {}
 // t295u start-screen freeze: the two attract-demo iframes (strike-demo ~1.8 s pix + ~1.2 s cityDecor at 4x CPU, ghost-demo) booted on the main
 // thread during the start screen's first frames. Load them only once the start screen is gone (or skipped), one per idle slot.
@@ -1934,10 +1939,11 @@ function frame(now, xrFrame) {
     const nearMs = PS.on ? PS.cabNearMs : 120;
     if (now - (frame.attT || 0) > nearMs) { frame.attT = now; for (const c of [berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, roadsterCab, clawCab, bbCab, rockfallCab, skyTowerCab]) {
       if (!(vis(c) && !(c.userData.visit && c.userData.visit.on))) continue;
+      if (!LIVE_SCREENS && stillScreen(c)) continue;   // v22: idle screens stay the still painted at build
       if (PS.on && camera.position.distanceTo(c.userData.centre) > PS.cabNear && (now - (c.userData._psTick || 0) < PS.cabFarMs)) continue;
       c.userData._psTick = now; c.userData.tick(now / 1000); liveBadge(c); } }
-    strikeCab.userData.glow.intensity = demo.running ? 1.2 + Math.sin(now * 0.013) * 0.08 + Math.sin(now * 0.031) * 0.06 : 0.6;
-    ghostCab.userData.glow.intensity = ghostDemo.running ? 1.1 + Math.sin(now * 0.017) * 0.08 : 0.5;
+    if (LIVE_SCREENS) { strikeCab.userData.glow.intensity = demo.running ? 1.2 + Math.sin(now * 0.013) * 0.08 + Math.sin(now * 0.031) * 0.06 : 0.6;
+    ghostCab.userData.glow.intensity = ghostDemo.running ? 1.1 + Math.sin(now * 0.017) * 0.08 : 0.5; }
     }
   }
   if (spaceWin) spaceWin.update(now);
@@ -1962,6 +1968,17 @@ function frame(now, xrFrame) {
 function stepClock(dt) { st.t += dt; }
 // t754u: someone else is playing this machine. Sky Tower draws their climb live (skytowercab.js); the other cabinets'
 // games cannot stream their screens yet, so their attract gets a LIVE strip naming who is playing it.
+// v22 still screens: a cabinet's screen is redrawn only when something on it changes: the claw machine's moving claw (3D, no screen redraw),
+// Sky Tower's live view of someone climbing (cheap 2D, only while a climb is live, plus one repaint when it ends), and the LIVE · X PLAYING badge.
+function stillScreen(c) {
+  const u = c.userData;
+  if (c === clawCab) return false;
+  if (c === skyTowerCab) { let feed = null; try { const M = window.__mp; feed = M && M.sky && M.sky.feed ? M.sky.feed('skytower') : null; } catch (e) {}
+    const on = !!(feed && feed.length); if (on) { u._wasLive = true; return false; } if (u._wasLive) { u._wasLive = false; u.tick(0); } return true; }
+  let key = ''; try { const M = window.__mp; if (M && M.cabLive && typeof play !== 'undefined' && play.machines) { if (u._mkey === undefined) { const m = Object.values(play.machines).find(q => q.cab === c); u._mkey = m ? m.key : null; } key = u._mkey ? M.cabLive(u._mkey).join('+') : ''; } } catch (e) {}
+  if (key === (u._stillKey || '')) return true;
+  u._stillKey = key; u.tick(0); liveBadge(c); return true;
+}
 function liveBadge(c) {
   const u = c.userData; if (c === skyTowerCab) return;
   const M = window.__mp; if (!M || !M.cabLive || typeof play === 'undefined' || !play.machines) { u.liveBadge = null; return; }
