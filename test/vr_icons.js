@@ -41,8 +41,8 @@ function inspect() {
   await page.waitForFunction(() => window.__gaVR && window.__gaVR.icons && window.__gaVR.icons().done && window.__gaVR.icons().claw, null, { timeout: 20000 }).catch(() => {});
   const flat = await page.evaluate(inspect);
   chk(flat.name === 'neonIcons' && WANT.every(k => flat.keys.includes(k)), 'one icon mesh with all 13 wall pictures', { keys: flat.keys, name: flat.name });
-  chk(flat.r.done && flat.r.loaded && flat.r.loaded.length === 13 && !(flat.r.failed && flat.r.failed.length) && flat.atlas === 2048 && flat.r.cell === 512,
-    'painted tex/icons webps loaded into a 2048 px atlas', { loaded: flat.r.loaded, failed: flat.r.failed, atlas: flat.atlas, cell: flat.r.cell });
+  chk(flat.r.done && flat.r.loaded && flat.r.loaded.length === 13 && !(flat.r.failed && flat.r.failed.length) && flat.atlas === 1024 && flat.r.cell === 256,
+    'painted tex/icons webps loaded into a 1024 px atlas (test-v1: 256 px cells, no mips)', { loaded: flat.r.loaded, failed: flat.r.failed, atlas: flat.atlas, cell: flat.r.cell });
   chk(flat.k >= 0.8, 'painted art is a bit brighter than the dim neon (x' + flat.k + ')', { k: flat.k });
   chk(flat.webpHits === 13, 'all 13 tex/icons/*.webp were requested', { webpHits: flat.webpHits });
   chk(flat.opaque.length === 13 && flat.opaque.every(v => v > 0.12), 'every picture cell has solid art in it (min ' + (flat.opaque.length ? Math.min(...flat.opaque).toFixed(2) : '-') + ')', flat.opaque);

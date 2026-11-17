@@ -27,6 +27,9 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
         const nf = S.frames - P.p0.f; return { frames: nf, calls: +m(a).toFixed(1), tris: Math.round(m(P.tris)), uploadsPerFrame: +((S.texUploads + (S.vrChess ? S.vrChess.V.draws + S.vrChess.V.bdraws : 0) - P.p0.up) / nf).toFixed(2), pumpsPerFrame: +((S.pumps - P.p0.pumps) / nf).toFixed(2), pagePaints: pd - P.p0.pd, msPerFrame: +((performance.now() - P.p0.t) / nf).toFixed(1), imm: !!window.__chessImmersive, vc: S.vrChess ? S.vrChess.V.draws : null }; });
       console.log('PROFILE ' + label + ' ' + JSON.stringify(r)); return r; };
     const shop = await profile('shop (standing, before chess)');
+    const m0 = await page.evaluate(() => window.__gaVR.chessMem ? window.__gaVR.chessMem() : null);
+    const pg0 = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
+    if (m0) chk(m0.panel === 1 && m0.board === 1, 'test-v1: before you sit, the VR chess panel + board canvases are 1x1 (not allocated) ' + JSON.stringify(m0));
     const tbl = await page.evaluate(() => [window.__chessTable.CX - 0.3, 0.6, window.__chessTable.CZ]);
     await H.aim(page, 'right', LOCAL, tbl); await H.frames(page, 3); await H.press(page, 'right', 'trigger');
     await page.waitForFunction(() => window.__chessTable.state !== 'idle', null, { timeout: 5000 }).catch(() => {});
@@ -35,6 +38,8 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     await H.frames(page, 10);
     const game = await profile('chess game up', 8);
     if (PROFILE_ONLY) { console.log('PROFILE_ONLY done'); return; }
+    const m1 = await page.evaluate(() => window.__gaVR.chessMem ? window.__gaVR.chessMem() : null), pg1 = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
+    if (m1) chk(m1.on && m1.panel === 1180 && m1.board === 1024 && pg1 <= pg0 + 0, 'test-v1: seated: canvases allocated (panel ' + m1.panel + ', board ' + m1.board + '), no new shader programs (' + pg0 + ' -> ' + pg1 + ')');
     // ---- immersive scene ----
     const im = await page.evaluate(() => { const S = window.__gaVR, V = S.vrChess, T = window.__arcade.THREE, h = S.head, w = window.__chessTable.frame.contentWindow, b = V.board.getWorldPosition(new T.Vector3()), tp = window.__tp;
       return { on: S.chessImmOn(), flag: !!window.__chessImmersive, G: V.G.visible, panel: S.chessM.visible, white: tp ? tp.whiteRoom.visible : null, d: Math.hypot(b.x - h.x, b.z - h.z), dy: h.y - b.y, robot: w.chessApp.prefs.robot, battle: w.chessApp.prefs.battle, draws: V.V.draws, err: V.V.lastErr }; });
@@ -90,6 +95,8 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     await H.press(page, 'left', 'x-button');
     await page.waitForFunction(() => window.__chessTable.state === 'idle', null, { timeout: 5000 }).catch(() => {});
     await H.frames(page, 4);
+    const m2 = await page.evaluate(() => window.__gaVR.chessMem ? window.__gaVR.chessMem() : null);
+    if (m2) chk(!m2.on && m2.panel === 1 && m2.board === 1 && m2.vc.offs >= 1, 'test-v1: after leaving chess the canvases are freed again ' + JSON.stringify(m2));
     const ex = await page.evaluate(() => { const S = window.__gaVR, tp = window.__tp, C = window.__chessTable; let pr = null; try { pr = JSON.parse(localStorage.getItem('arcade_chess.prefs.v1') || 'null'); } catch (e) {} return { s: C.state, on: S.chessImmOn(), flag: !!window.__chessImmersive, G: S.vrChess.G.visible, white: tp ? tp.whiteRoom.visible : null, backs: S.backs.chess, pr }; });
     chk(ex.s === 'idle' && !ex.on && !ex.flag && !ex.G && ex.white === true && ex.backs === 1, 'X = back to the shop: chess room gone, shop drawn again ' + JSON.stringify(ex));
     chk(!ex.pr || (ex.pr.robot !== false && ex.pr.battle !== false), 'robot / battle prefs were not saved as off ' + JSON.stringify(ex.pr));

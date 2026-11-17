@@ -4,7 +4,8 @@
 // node test/vr_mem.js [scene ...]   (WHISPER needs /workspace/.stt-fixtures/speech_q1.wav)
 const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
 const WAV = '/workspace/.stt-fixtures/speech_q1.wav';
-const ALL = ['room1', 'shop', 'nk', 'chess', 'play', 'talk'];
+const ALL = ['room1', 'shop', 'nk', 'chess', 'play'];   // v23 removed TALK (still runnable by name on old builds)
+const SETTLE = +(process.env.SETTLE || 9000);   // test-v1: let room streaming reach steady state (8 s hold) before measuring; same wait on old builds
 const want = process.argv.slice(2).length ? process.argv.slice(2) : ALL;
 async function measure(page, scene) {
   try { const cdp = await page.context().newCDPSession(page); await cdp.send('HeapProfiler.enable'); for (let i = 0; i < 3; i++) await cdp.send('HeapProfiler.collectGarbage'); } catch (e) {}
@@ -20,7 +21,9 @@ async function measure(page, scene) {
     list.sort((a, b) => b.mb - a.mb);
     const ifr = [...document.querySelectorAll('iframe')].map(f => (f.getAttribute('src') || '').split('?')[0]).filter(Boolean);
     return { jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(1) : null, uasmMB: uasm, textures: info.memory.textures, geometries: info.memory.geometries, programs: (info.programs || []).length,
-      texMB: m.texMB, rtMB: m.rtMB, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8) };
+      texMB: m.texMB, rtMB: m.rtMB, geoMB: m.geoMB, canvasMB: m.canvasMB, drawCalls: info.render.calls, iframes: ifr, top: list.slice(0, 8),
+      musicMB: window.__music ? (window.__music.decodedMB != null ? window.__music.decodedMB : (window.__music.loaded ? 'loaded' : 0)) : null, stream: window.__gaStream ? { shop: window.__gaStream.shop, room2: window.__gaStream.room2 } : null,
+      compRT: (() => { try { const c = A.renderer.xr.isPresenting; return c; } catch (e) { return null; } })() };
   });
   // whole-browser resident memory by Chromium process type (Whisper's worker, iframes and the GPU process are not in the page's JS heap)
   try { const out = require('child_process').execSync('ps -eo rss=,args= | grep -E "[c]hrom(e|ium).*--type=(renderer|gpu-process)"', { encoding: 'utf8' }); const rss = { renderer: 0, gpu: 0 };
@@ -59,6 +62,7 @@ async function measure(page, scene) {
         const w = await E(() => window.__gaVR.ui.btnWorld('talk')); await H.aim(page, 'right', [0.2, 1.3, -0.2], w); await H.frames(page, 3); await H.press(page, 'right', 'trigger');
         const t0 = Date.now(); while (Date.now() - t0 < 300000) { if (await E(() => window.__grokChat.voiceAsks >= 1)) break; await H.frames(page, 4); }
         console.log('  talk: voiceAsks=' + (await E(() => window.__grokChat.voiceAsks)) + ' mode=' + (await E(() => window.__gaSTT.mode))); }
+      await page.waitForTimeout(SETTLE);
       await measure(page, scene);
     } catch (e) { console.log('MEM ' + scene + ' ERROR ' + e.message.split('\n')[0]); }
     await close();

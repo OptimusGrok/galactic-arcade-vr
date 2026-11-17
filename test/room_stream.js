@@ -1,5 +1,5 @@
-// t893u: room-2 / shop heavy textures stream in on approach and evict after leaving;
-// Strike and Ghost demo iframes detach when far and reattach when near.
+// t893u (ported to the VR test build): room-2 / shop heavy textures stream in on approach and evict after leaving.
+// VR test build: evicted maps are a shared 1x1 'streamPlaceholder' (never null, so no shader recompiles); Strike/Ghost screens are stills (no demo iframes).
 const { open } = require('./lib');
 
 (async () => {
@@ -16,7 +16,7 @@ const { open } = require('./lib');
     const tex = name => {
       const m = find(name), map = m && m.material && m.material.map;
       const img = map && (map.image || (map.source && map.source.data));
-      return { hasMap: !!map, w: (img && (img.width || img.videoWidth)) || 0, h: (img && (img.height || img.videoHeight)) || 0 };
+      return { hasMap: !!map && map.name !== 'streamPlaceholder', ph: !!map && map.name === 'streamPlaceholder', w: (img && (img.width || img.videoWidth)) || 0, h: (img && (img.height || img.videoHeight)) || 0 };
     };
     const ds = A.dsCab && A.dsCab.getObjectByName('screen');
     const dsMap = ds && ds.material && ds.material.map;
@@ -29,7 +29,7 @@ const { open } = require('./lib');
       shopGpu: !!(shop && shop.gpu && shop.gpu.on),
       r2Gpu: !!(A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu && A.dsCab.userData.gpu.on),
       mural: tex('muralLeft'), shelf: tex('shelfBoxes'), labels: tex('priceLabels'), title: tex('muralTitle'),
-      ds: { hasMap: !!dsMap, w: (dsImg && dsImg.width) || 0, gpu: !!(A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu && A.dsCab.userData.gpu.on) },
+      ds: { hasMap: !!dsMap && dsMap.name !== 'streamPlaceholder', w: (dsImg && dsImg.width) || 0, gpu: !!(A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu && A.dsCab.userData.gpu.on) },
       mirror2: rt ? { w: rt.width, h: rt.height } : null,
       strike: iframe(A.demo), ghost: iframe(A.ghostDemo),
       pos: { x: +A.monkey.position.x.toFixed(2), z: +A.monkey.position.z.toFixed(2) }
@@ -46,8 +46,8 @@ const { open } = require('./lib');
   console.log('spawn', JSON.stringify(r));
   chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap && !r.title.hasMap, 'at spawn, shop heavy textures are evicted (placeholder colours)', { shop: r.stream.shop, mural: r.mural, shelf: r.shelf, title: r.title });
   chk(!r.r2Gpu && r.stream.room2 === 'off' && !r.ds.hasMap && r.mirror2 && r.mirror2.w <= 1, 'at spawn, room 2 / Dead Signal GPU is evicted', { room2: r.stream.room2, ds: r.ds, mirror2: r.mirror2 });
-  chk(!r.strike.ready && !r.strike.connected, 'Strike demo iframe is detached at spawn', r.strike);
-  chk(!r.ghost.ready && !r.ghost.connected, 'Ghost demo iframe is detached at spawn', r.ghost);
+  chk(!r.strike.connected && !r.ghost.connected, 'Strike / Ghost screens are stills (no demo iframes)', { strike: r.strike, ghost: r.ghost });
+  chk(r.mural.ph && r.shelf.ph, 'evicted maps are the 1x1 placeholder (material keeps its map slot: no shader change)', { mural: r.mural, shelf: r.shelf });
 
   // approach the hallway / north door: room 2 should load early
   await put(0, -10, 800);
@@ -73,20 +73,18 @@ const { open } = require('./lib');
   console.log('far-se', JSON.stringify(r));
   chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap, 'after leaving the shop pad and waiting, shop textures evict to placeholders', { stream: r.stream, mural: r.mural, shelf: r.shelf });
 
-  // walk up to Strike: demo iframe reattaches
-  await put(-8, -8, 2000);
-  r = await snap();
-  console.log('near-strike', JSON.stringify(r));
-  chk(r.stream.strikeDemo === 'on' && (r.strike.ready || r.strike.connected || /strike-demo/.test(r.strike.src)), 'Strike demo iframe reattaches when the player is near', { stream: r.stream, strike: r.strike });
-
-  // go to room 2 centre: demos detach after the hold
+  // room 2 centre: Dead Signal art on the GPU; no programs compiled by any stream in/out
   const z2 = await page.evaluate(() => window.__arcade.Z2);
-  await put(0, z2, 2000);
+  await put(0, z2, 1500);
   r = await snap();
   console.log('room2', JSON.stringify(r));
   chk(r.r2Gpu && r.ds.hasMap, 'in room 2, Dead Signal art is on the GPU', r.ds);
-  chk(r.stream.strikeDemo === 'off' && !r.strike.ready && !/strike-demo/.test(r.strike.src || ''), 'in room 2, the Strike demo iframe has detached', r.strike);
-  chk(r.stream.ghostDemo === 'off' && !r.ghost.ready, 'in room 2, the Ghost demo iframe has detached', r.ghost);
+  const pr = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
+  await put(0, 8, 1400); await put(-9, -9, 800); await put(0, 5, 2000); await put(0, -10, 800); await put(0, 8, 1400);
+  const pr2 = await page.evaluate(() => window.__arcade.renderer.info.programs.length);
+  const st = await page.evaluate(() => window.__gaStream);
+  chk(pr2 <= pr, 'a full evict / reload cycle of shop + room 2 compiled no new shader programs (' + pr + ' -> ' + pr2 + ')', st);
+  chk(st.ups >= 3 && st.evicts >= 3, 'streaming actually cycled (ups ' + st.ups + ', evicts ' + st.evicts + ')');
 
   chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors', errors);
   await close();
