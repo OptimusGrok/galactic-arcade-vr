@@ -3106,6 +3106,7 @@ G.slowT = 0; G.slowCD = 0;
 function slowOn() { return G.slowT > 0; }
 function trySlow() { if (G.scene !== 'play' || !pl.alive || G.slowCD > 0 || G.phase === 'clear') return false; G.slowT = SLOW.DUR; G.slowCD = SLOW.CD; SLOW.acc = 0; SLOW.trail.length = 0; Snd.sfx && Snd.sfx('bombitem'); UI.toast('HYPER SPEED', '#80d0ff'); return true; }
 const _hit4 = UI.hitButton; UI.hitButton = function (x, y) { if (G.scene === 'play' && dist2(x, y, SLOW_BTN.x, SLOW_BTN.y) < SLOW_BTN.r * SLOW_BTN.r * 1.3) { UI.slowReq = true; return true; } return _hit4.call(this, x, y); };
+window.__strikeBtnXY = id => { const b = id === 'bomb' ? BOMB_BTN : SLOW_BTN; return [VIEW.l + b.x * VIEW.sc, VIEW.t + b.y * VIEW.sc]; };   // tests
 window.__strikeBtnAt = (cx, cy) => { if (G.scene !== 'play') return null; const p = toLogical(cx, cy), r2 = b => dist2(p.x, p.y, b.x, b.y) < b.r * b.r * 1.3; return r2(SLOW_BTN) ? 'slow' : r2(BOMB_BTN) ? 'bomb' : null; };   // v21: vr.js asks before a trigger tap
 const _ng4 = newGame; newGame = function (s) { _ng4(s); G.slowT = 0; G.slowCD = 0; SLOW.trail.length = 0; };
 // gate enemy-side systems on the dilation tick (player, shots, collisions, particles, scroll and day/night run at full speed)
