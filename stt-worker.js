@@ -24,7 +24,7 @@ onmessage = async e => {
   const m = e.data || {};
   if (m.t === 'load') { load().catch(() => {}); return; }
   if (m.t === 'run') {
-    try { await load(); const t0 = performance.now(); const r = await asr(m.audio, { language: undefined });
+    try { await load(); const t0 = performance.now(); const r = await asr(m.audio);
       postMessage({ t: 'text', id: m.id, text: (r && r.text) || '', ms: performance.now() - t0 }); }
     catch (err) { postMessage({ t: 'error', id: m.id, e: String(err && err.message || err) }); }
   }
