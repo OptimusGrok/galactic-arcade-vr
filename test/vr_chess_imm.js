@@ -95,7 +95,7 @@ const PROFILE_ONLY = !!process.env.PROFILE_ONLY;
     chk(!ex.pr || (ex.pr.robot !== false && ex.pr.battle !== false), 'robot / battle prefs were not saved as off ' + JSON.stringify(ex.pr));
     // sit again -> grip exits; prefs restored on the live page
     await page.waitForFunction(() => window.__chessTable.gstate === 'home', null, { timeout: 1000 }).catch(() => {});
-    for (let i = 0; i < 80 && !(await page.evaluate(() => window.__chessTable.gstate === 'home')); i++) await H.frames(page, 3);
+    for (let i = 0; i < 400 && !(await page.evaluate(() => window.__chessTable.gstate === 'home' && window.__chessTable.state === 'idle')); i++) await H.frames(page, 3);   // Grok walks back to the counter first
     await page.evaluate(() => { const S = window.__gaVR, C = window.__chessTable, x = C.CX - 2.4, z = C.CZ - 0.6; S.rig = { x, y: 0, z, yaw: 0.4 }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); });
     await H.frames(page, 4);
     await H.aim(page, 'right', LOCAL, tbl); await H.frames(page, 3);
