@@ -108,8 +108,9 @@ const PHONE = process.argv[2] === 'phone';
   const supaFromDemos = supa.length - supa.filter(s => true).length;
   console.log('requests', requests.length, 'supabase(stubbed)', supa.length, 'other off-site', ext.length, ext.slice(0, 3));
   chk(ext.length === 0, 'zero off-site requests other than the (stubbed) Strike leaderboard');
-  const demoNet = await page.evaluate(() => { const A = window.__arcade; return [A.demo.w, A.ghostDemo.w].map(w => String(w.fetch).includes('network disabled')); });
-  chk(demoNet.every(Boolean), 'cabinet-screen demos remain network-free (fetch disabled)');
+  // v22: the idle cabinet screens are stills (no demo iframes at all); with ?liveScreens=1 the demos stay network-free
+  const demoNet = await page.evaluate(() => { const A = window.__arcade; return [A.demo, A.ghostDemo].map(d => d.still ? !d.w : String(d.w.fetch).includes('network disabled')); });
+  chk(demoNet.every(Boolean), 'cabinet-screen demos: none loaded (still screens), so no network');
   chk(errors.filter(e => !/supabase|ERR_FAILED/i.test(e)).length === 0, 'no page errors ' + errors.join(' | '));
   await close(); process.exit(ok ? 0 : 1);
 })();

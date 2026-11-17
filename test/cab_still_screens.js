@@ -4,7 +4,7 @@ const VR = !!process.env.VR;
 const { open } = require('./lib');
 const { openVR, H } = require('./vrlib');
 (async () => {
-  const o = VR ? await openVR() : await open({ w: 844, h: 390 }); const { page, errors, close } = o;
+  const o = VR ? await openVR() : await open({ w: 844, h: 390, init: () => { localStorage.setItem('neonarcade.tickets', '40'); } }); const { page, errors, close } = o;
   let ok = true; const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m + (x !== undefined ? ' ' + JSON.stringify(x).slice(0, 500) : '')); if (!c) ok = false; };
   const tag = VR ? 'VR: ' : 'flat: ';
   try {
@@ -35,6 +35,18 @@ const { openVR, H } = require('./vrlib');
     chk(moved.length === 0, tag + 'no idle cabinet screen is redrawn over 3 s near the cabinets', moved);
     const blank = Object.keys(b).filter(k => /Cab$/.test(k) && !(b[k].frac > 0.05));
     chk(blank.length === 0, tag + 'every cabinet screen shows a painted still (not blank)', Object.fromEntries(Object.keys(b).filter(k => /Cab$/.test(k)).map(k => [k, b[k].frac])));
+    if (!VR) {   // Dave t429u: pressing PLAY at a cabinet still loads + plays its game exactly as before
+      for (const key of ['ghost'])   // Strike's play flow: play.js + vr_strike_v21.js
+      {
+        await page.evaluate(k => { window.__forceDemo = 0; const p = window.__arcade.play; p.start(p.machines[k]); }, key);
+        await page.waitForFunction(() => window.__arcade.play.mode === 'game' && window.__arcade.play.sub === 'demo', null, { timeout: 40000 });
+        await page.waitForTimeout(1500); await page.evaluate(() => { const p = window.__arcade.play; p.insertTicket(); p.tryPlay(); });
+        const ok2 = await page.waitForFunction(() => window.__arcade.play.sub === 'play', null, { timeout: 20000 }).then(() => true, () => false);
+        const src = await page.evaluate(() => { const g = document.getElementById('game'); return g && g.getAttribute('src'); });
+        chk(ok2 && new RegExp(key).test(src || ''), tag + 'PLAY at ' + key.toUpperCase() + ' loads and starts the real game', { sub: await page.evaluate(() => window.__arcade.play.sub), src });
+        await page.keyboard.press('Escape'); await page.waitForFunction(() => window.__arcade.play.mode !== 'game', null, { timeout: 20000 }).catch(() => {}); await page.waitForTimeout(1500);
+      }
+    }
   } catch (e) { chk(false, 'threw: ' + e.message); }
   const errs = errors.filter(e => !/supabase|Failed to load resource|net::ERR/i.test(e)); chk(!errs.length, tag + 'no page errors', errs.slice(0, 3));
   await close(); console.log(ok ? 'ALL PASS' : 'SOME FAILED'); process.exit(ok ? 0 : 1);
