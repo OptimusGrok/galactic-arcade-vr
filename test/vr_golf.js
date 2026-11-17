@@ -1,6 +1,5 @@
-// v19 (t411u, Dave: "can't play mini golf in VR"): in the headset, a MINI GOLF · PAY 5 TICKETS sign over the stairwell shield (refused
-// with under 5 tickets, nothing taken; with 5+ it takes exactly 5 and the shield drops), walking down the stairs with the left stick,
-// then putting with a controller: point at the green, hold the trigger (aim line + putter), let go = putt; the ball rolls toward the spot.
+// v19 (t411u) / v23 (Dave t432u): mini golf in the headset: free and open (no PAY sign, no energy shield), walking down the stairs with the
+// left stick, then putting with a controller: point at the green, hold the trigger (aim line + putter), let go = putt; the ball rolls toward the spot.
 const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
 (async () => {
   let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
@@ -16,18 +15,16 @@ const { openVR, H, IWER_SRC, SETUP } = require('./vrlib');
     await E(() => { window.__tpTimeScale = 3; window.__tp.go(); }); await until(() => window.__tp.where === 2 && window.__tp.state === 'idle', 90000);
     const g0 = await E(() => { const g = window.__minigolf; return { X0: g.X0, Z: (g.Z0 + g.Z1) / 2 }; });
     await place(g0.X0 - 2.2, 0, g0.Z, -Math.PI / 2); await H.frames(page, 6);
-    const sign = await E(() => { const s = window.__gaVR.signs().find(q => q.id === 'golfPay'); return s && s.at; });
-    chk(!!sign, 'MINI GOLF · PAY 5 TICKETS sign over the shield ' + JSON.stringify(sign));
-    await setT(3); await H.aim(page, 'right', [0.2, 1.3, -0.2], sign); await H.frames(page, 3);
-    const hov = await E(() => window.__gaVR.hover && window.__gaVR.hover.target); await H.press(page, 'right', 'trigger');
-    let s = await G(); chk(hov === 'golfPay' && !s.open && s.t === 3 && /NEED 5 TICKETS/.test(s.msg), 'with 3 tickets: refused, nothing taken, shield stays ' + JSON.stringify({ hov, s }));
-    await setT(20); await H.aim(page, 'right', [0.2, 1.3, -0.2], sign); await H.frames(page, 3); await H.press(page, 'right', 'trigger');
-    s = await G(); chk(s.open && s.t === 15, 'with 20 tickets: PAY takes 5, the shield drops ' + JSON.stringify(s));
+    // v23 (Dave t432u): mini golf is free and open: no PAY sign, no shield, no tickets taken
+    const sign = await E(() => !!window.__gaVR.signs().find(q => q.id === 'golfPay'));
+    const sh = await E(() => { const o = window.__arcade.scene.getObjectByName('golfShield'); return !!(o && o.parent && o.visible); });
+    await setT(0); let s = await G();
+    chk(!sign && !sh && s.open, 'no PAY sign, no energy shield, the stairs are open ' + JSON.stringify({ sign, sh, open: s.open }));
     // walk down the stairs with the left stick (facing +x)
     await H.axes(page, 'left', 0, -1);
     for (let i = 0; i < 200 && !(await E(() => window.__minigolf.below && window.__arcade.monkey.position.y < -2)); i++) await H.frames(page, 3);
     await H.axes(page, 'left', 0, 0); s = await G();
-    chk(s.below && s.y < -2, 'left stick walks through the open shield and down the stairs ' + JSON.stringify(s));
+    chk(s.below && s.y < -2 && s.t === 0, 'with 0 tickets the left stick walks straight down the stairs (free) ' + JSON.stringify(s));
     // putt hole 1
     const h1 = await E(() => { const g = window.__minigolf, h = g.holes[0], b = g.ballAt(h); return { b: [b.x, b.y, b.z], cup: [h.cx + h.H.cup.x, h.cz + h.H.cup.z], fy: g.FY }; });
     const dx = h1.cup[0] - h1.b[0], dz = h1.cup[1] - h1.b[2], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;

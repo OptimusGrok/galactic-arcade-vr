@@ -57,9 +57,13 @@ async function run(phone) {
   chk(opened.tickets === opened.tk0, tag + ': no tickets tick while chatting (1.5 s of frames)', { atOpen: opened.tk0, after: opened.tickets });
   chk(opened.panel[0] >= 0 && opened.panel[1] >= 0 && opened.panel[2] <= opened.vw && opened.panel[3] <= opened.vh && opened.btnHidden && opened.greet >= 1, tag + ': chat panel on screen with Grok\'s greeting', opened);
   // type a question with Enter
-  await page.click('#gcIn'); await page.keyboard.type('how do I play ghost 256'); await page.keyboard.press('Enter'); await page.waitForTimeout(150);
-  const typed = await page.evaluate(() => { const C = window.__grokChat, A = window.__arcade, l = C.log; return { last: l[l.length - 1], q: l[l.length - 2], input: C.input.value, keys: Object.keys(A.keys || {}).filter(k => A.keys[k]) }; });
-  chk(typed.q && typed.q.who === 'u' && /ghost 256/i.test(typed.q.text) && typed.last.who === 'g' && /maze/i.test(typed.last.text) && typed.input === '' && !typed.keys.length, tag + ': typing + Enter sends; Grok replies in text; keys never reach the game', typed);
+  // v23 (Dave t432u): preset question buttons only: no text box, no 🎤
+  const ui = await page.evaluate(() => ({ input: !!document.getElementById('gcIn'), mic: !!document.getElementById('gcMic'), qs: [...document.querySelectorAll('#gcQ .gcQb')].map(b => b.textContent) }));
+  chk(!ui.input && !ui.mic && ui.qs.length >= 20 && !ui.qs.some(q => /DAVE/.test(q)), tag + ': preset questions only (no text box, no mic, no WHO IS DAVE)', ui);
+  await page.evaluate(() => [...document.querySelectorAll('#gcQ .gcQb')].find(b => /SKY TOWER/.test(b.textContent)).scrollIntoView());
+  await page.click('#gcQ .gcQb >> text=HOW DO I PLAY SKY TOWER?'); await page.waitForTimeout(150);
+  const typed = await page.evaluate(() => { const C = window.__grokChat, A = window.__arcade, l = C.log; return { last: l[l.length - 1], q: l[l.length - 2], keys: Object.keys(A.keys || {}).filter(k => A.keys[k]) }; });
+  chk(typed.q && typed.q.who === 'u' && /SKY TOWER/.test(typed.q.text) && typed.last.who === 'g' && typed.last.text.length > 15 && !typed.keys.length, tag + ': tapping a question asks it; Grok replies in text', typed);
   const ans = await page.evaluate((QS) => QS.map(([q]) => window.__grokChat.ask(q)), QS);
   const bad = QS.map(([q, re], i) => ({ q, a: ans[i] })).filter((x, i) => !x.a || x.a.length < 8 || !QS[i][1].test(x.a));
   chk(!bad.length, tag + ': ' + QS.length + ' sample questions all get non-empty, relevant replies', bad);
@@ -90,7 +94,7 @@ async function run(phone) {
   chk(!resumed.open && !resumed.chatting && resumed.state === before.state && resumed.resumed >= 1 && resumed.palms === before.palms && (resumed.tk1 > resumed.tk0 || resumed.state1 !== 'play'), tag + ': closing resumes exactly what he was doing (hands back, tickets keep coming)', { before, resumed });
   // Esc closes on desktop; walking away closes too
   if (!phone) {
-    const esc = await page.evaluate(async () => { const C = window.__grokChat; C.openChat('visitor'); await new Promise(r => setTimeout(r, 50)); document.getElementById('gcIn').focus(); return C.open; });
+    const esc = await page.evaluate(async () => { const C = window.__grokChat; C.openChat('visitor'); await new Promise(r => setTimeout(r, 50)); return C.open; });
     await page.keyboard.press('Escape'); await page.waitForTimeout(100);
     const esc2 = await page.evaluate(() => { const S = window.__shop; for (let i = 0; i < 20; i++) S.update(1 / 30); return { open: window.__grokChat.open, chatting: window.__grokVisit.chatting }; });
     chk(esc && !esc2.open && !esc2.chatting, tag + ': Esc closes the chat', esc2);
