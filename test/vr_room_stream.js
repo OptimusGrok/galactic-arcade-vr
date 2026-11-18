@@ -24,8 +24,9 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await until(() => window.__shop && window.__tp, 90000);
     const place = async (x, z, yaw = 0) => { await E(([x, z, yaw]) => { const S = window.__gaVR; S.rig = { x, y: 0, z, yaw }; S.applyRig(); window.__arcade.monkey.position.set(x, 0, z); }, [x, z, yaw]); await H.frames(page, 4); };
     await place(0, 6, 0);
-    await until(() => window.__gaStream.shop === 'off' && window.__gaStream.room2 === 'off', 60000);
-    chk(true, 'at spawn in the headset, shop + room 2 textures are evicted', await E(() => window.__gaStream));
+    // vrtest-v8: in a headset nothing is evicted; whatever was streamed out comes back in right after entry (before any beam)
+    await until(() => window.__gaStream.shop === 'on' && window.__gaStream.room2 === 'on', 60000);
+    chk(true, 'v8: shortly after entering the headset, shop + room 2 textures are resident', await E(() => window.__gaStream));
     const win = () => E(() => { const P = window.__xp, c = P.cutAt[P.cutAt.length - 1], w = P.iv.slice(Math.max(P.mark, c - 2), c + 30), all = P.iv.slice(P.mark);
       return { maxAtCut: Math.max(...w), maxWhole: Math.max(...all), progsAfterCut: P.prog.slice(c - 1, c + 30).reduce((a, b) => a + b, 0), progsWhole: P.prog.slice(P.mark).reduce((a, b) => a + b, 0),
         lit: P.lit.filter(x => x[0] === P.cutAt.length).map(x => x[1]), snap: P.cutSnap[P.cutSnap.length - 1] }; });
@@ -34,7 +35,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
       window.__xp.mark = window.__xp.iv.length; window.__tpTimeScale = 3; window.__tp.go(); });
     await until(() => window.__tp.where === 2 && window.__tp.state === 'idle', 120000); await H.frames(page, 30);
     let b = await win(); console.log('BEAM shop ' + JSON.stringify(b));
-    chk(b.snap && b.snap.shop === 'on' && b.snap.mural && b.snap.shelf && b.snap.title, 'beam to shop from an evicted state: real murals / shelves are on the GPU at the cut (pre-warmed before arrival)', b.snap);
+    chk(b.snap && b.snap.shop === 'on' && b.snap.mural && b.snap.shelf && b.snap.title, 'beam to shop: real murals / shelves are on the GPU at the cut (pre-warmed before arrival)', b.snap);
     chk(b.progsWhole === 0, 'beam to shop: no shaders compiled during the whole beam', b.progsWhole);
     chk(b.lit.length >= 3 && b.lit.every(l => l > 5), 'beam to shop: headset shows the room on every frame after the cut (no black frames)', b.lit);
     chk(b.maxAtCut < 600, 'beam to shop: no freeze at the cut (longest ' + b.maxAtCut + ' ms)');
