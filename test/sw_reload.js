@@ -20,7 +20,7 @@ const { open } = require('./lib');
       window.__gaSwSoon = 1;   // register the delayed SW immediately after first frames
       if (n !== 1) return;
       const put = k => caches.open(k).then(c => c.put(new Request('/__ga_stale__'), new Response('old', { headers: { 'content-type': 'text/plain' } })));
-      return Promise.all(['galactic-arcade_vrtest-v0', 'galactic-arcade_vrtest-v1', 'galactic-arcade_vrtest-v2', 'galactic-arcade_vrtest-v3', 'galactic-arcade_vrtest-v4', 'galactic-arcade_vrtest-v9', 'galactic-arcade_vrtest-v10', 'galactic-arcade_vrtest-v9', 'galactic-arcade_vrtest-v9', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9', 'galactic-arcade_vr-v23'].map(put));
+      return Promise.all(['galactic-arcade_vrtest-v0', 'galactic-arcade_vrtest-v1', 'galactic-arcade_vrtest-v2', 'galactic-arcade_vrtest-v3', 'galactic-arcade_vrtest-v4', 'galactic-arcade_vrtest-v8', 'galactic-arcade_vrtest-v10', 'galactic-arcade_vrtest-v9', 'galactic-arcade_vrtest-v9', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9', 'galactic-arcade_vr-v23'].map(put));
     },
   });
 
