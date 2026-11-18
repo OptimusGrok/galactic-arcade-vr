@@ -273,7 +273,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const basic = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
-  const ledM = basic(0x3d7bff), ledM2 = basic(0xa64dff), ledC = basic(0x40e8ff), litM = basic(0xffffff);
+  // t484u: dim the white around the space window, prize (price) shelves and Grok's counter to 80%,
+  // and the counter's glow on the neon floor to 50%. Colours / intensities only — the shop's fixed 24-light set is unchanged.
+  const WHITE_K = 0.8, FLOOR_GLOW_K = 0.5, dimC = (hex, k = WHITE_K) => new THREE.Color().setRGB(((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k, THREE.SRGBColorSpace);
+  const ledM = basic(0x3d7bff), ledM2 = basic(0xa64dff), ledC = basic(0x40e8ff), litM = basic(dimC(0xffffff));
   const ledB = [], ledP = [], ledCy = [], lit = [];
   const setUV = (g, u0, u1, v0, v1) => { const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * (u1 - u0), v0 + uv.getY(k) * (v1 - v0)); return g; };
   const mg = geos => mergeGeometries(geos.some(g => !g.index) ? geos.map(g => g.index ? g.toNonIndexed() : g) : geos);
@@ -289,7 +292,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     ledCy.push(new THREE.BoxGeometry(0.03, 0.03, ZF - ZW).translate(sd * (SXW - 0.6), CH - 0.02, (ZW + ZF) / 2)); ledP.push(new THREE.BoxGeometry(0.04, 0.04, ZF - ZW).translate(sd * (SXW - 0.03), 0.06, (ZW + ZF) / 2)); }
   for (const zz of [ZW + 0.3, ZF - 0.3]) { part(cor, BOX, 0xf4f6fa, 0, CH - 0.18, zz, 2 * SXW, 0.36, 0.6); ledCy.push(new THREE.BoxGeometry(2 * SXW, 0.03, 0.03).translate(0, CH - 0.02, zz + (zz < 0 ? 0.3 : -0.3))); }
   for (let i = 0; i < 9; i++) { const xx = -SXW + 2 + i * (2 * SXW - 4) / 8; lit.push(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12).translate(xx, CH - 0.37, ZW + 0.3), new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12).translate(xx, CH - 0.37, ZF - 0.3)); }
-  mesh(cor, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopCornice');
+  mesh(cor, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopCornice');
   // ---------- CURVED GLASS ROOF: half-circle barrel vault (radius = half the room width) springing from the side-wall tops, front to back.
   // Clear glass onto deep space: dense twinkling stars + soft purple / blue / teal nebula, thin silver curved ribs and straight purlins. Half-disc glass ends close it.
   const VR = SXW, VL = ZF - ZW, VZ = (ZW + ZF) / 2;
@@ -314,7 +317,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
         if (uCap < .5) { rib = line(vU.y * 6., .018); pur = line(vU.x * 12., .012); }
         else { vec2 p = vec2(vU.x * 2. - 1., vU.y); float r = length(p), a = atan(p.y, p.x); rib = line(r * 3., .01) * step(r, 1.) * step(.1, r) + step(.985, r); pur = 0.; }
         col += vec3(.55,.75,1.) * .045 * smoothstep(.5, 0., abs(fract(vU.x * 3. + vU.y * .7) - .5));                     // faint glass sheen
-        col = mix(col, vec3(.86,.89,.94), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
+        col = mix(col, vec3(.688,.712,.752), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
   { const vg = new THREE.CylinderGeometry(VR, VR, VL, 72, 1, true, -Math.PI / 2, Math.PI).rotateX(-Math.PI / 2).translate(0, CH, VZ);
     const sk = new THREE.Mesh(vg, skyMat); sk.name = 'shopSkylight'; sk.frustumCulled = false; G.add(sk); api_sky = skyMat;
     const capM = skyMat.clone(); capM.uniforms = { uT: skyMat.uniforms.uT, uCap: { value: 1 } };
@@ -323,7 +326,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     // silver arch at each end + the spring-line rails
     const rim = [new THREE.TorusGeometry(VR - 0.04, 0.07, 6, 72, Math.PI).translate(0, CH, ZW + 0.06), new THREE.TorusGeometry(VR - 0.04, 0.07, 6, 72, Math.PI).translate(0, CH, ZF - 0.06)];
     for (const sd of [-1, 1]) rim.push(new THREE.BoxGeometry(0.14, 0.1, VL).translate(sd * (VR - 0.07), CH + 0.02, VZ));
-    add(rim, new THREE.MeshBasicMaterial({ color: 0xdfe4ec }), 'shopRoofRim'); }
+    add(rim, new THREE.MeshBasicMaterial({ color: dimC(0xdfe4ec) }), 'shopRoofRim'); }
   // ---------- MURALS: painted straight onto the walls, edge to edge, floor to ceiling ----------
   const loadT = f => loadPicture(THREE, 'tex/' + f, { max: 1024, mips: false });
   const SW = 9.2, MB = 0.0, MT = CH - 0.06, MHh = MT - MB, xE = SW / 2 + 0.15, TB = 5.08, zm = ZW + 0.012;
@@ -339,9 +342,9 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const SD = 0.55, Z0 = ZW + SD / 2 + 0.02, SY = [0.42, 1.2, 1.98, 2.76, 3.54], TOP = 5.0, BAYS = 4, BW = SW / BAYS;
   const frame = [], plushes = [], gp = [], toys = [], cards = [], pools = [];
   const back = canvasTex(64, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, '#eef2ff'); r.addColorStop(0.5, '#ffffff'); r.addColorStop(1, '#f4f0ff'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  { const bp = new THREE.Mesh(new THREE.PlaneGeometry(SW, TOP), new THREE.MeshBasicMaterial({ map: back.t, toneMapped: false })); bp.position.set(0, TOP / 2, ZW + 0.02); G.add(bp);
+  { const bp = new THREE.Mesh(new THREE.PlaneGeometry(SW, TOP), new THREE.MeshBasicMaterial({ map: back.t, color: dimC(0xffffff), toneMapped: false })); bp.name = 'shelfBack'; bp.position.set(0, TOP / 2, ZW + 0.02); G.add(bp);
     const blu = canvasTex(64, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, '#9fd8ff'); r.addColorStop(0.6, '#d8f0ff'); r.addColorStop(1, '#eef6ff'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-    const gb = new THREE.Mesh(new THREE.PlaneGeometry(SW / BAYS - 0.08, TOP - SY[4]), new THREE.MeshBasicMaterial({ map: blu.t, toneMapped: false })); gb.name = 'grokBayGlow'; gb.position.set(-SW / 2 + SW / BAYS * 1.5, (TOP + SY[4]) / 2, ZW + 0.024); G.add(gb); }
+    const gb = new THREE.Mesh(new THREE.PlaneGeometry(SW / BAYS - 0.08, TOP - SY[4]), new THREE.MeshBasicMaterial({ map: blu.t, color: dimC(0xffffff), toneMapped: false })); gb.name = 'grokBayGlow'; gb.position.set(-SW / 2 + SW / BAYS * 1.5, (TOP + SY[4]) / 2, ZW + 0.024); G.add(gb); }
   const UX = Array.from({ length: BAYS + 1 }, (_, i) => -SW / 2 + i * BW);
   for (const ux of UX) { part(frame, BOX, 0xffffff, ux, TOP / 2, Z0, 0.08, TOP, SD); part(frame, BOX, 0xd8dde6, ux, TOP / 2, Z0 + SD / 2 + 0.004, 0.09, TOP, 0.01); ledB.push(new THREE.BoxGeometry(0.03, TOP, 0.02).translate(ux, TOP / 2, Z0 + SD / 2 + 0.014)); }
   part(frame, BOX, 0xffffff, 0, TOP + 0.05, Z0, SW + 0.1, 0.1, SD + 0.04); part(frame, BOX, 0xffffff, 0, SY[0] / 2, Z0, SW, SY[0], SD);
@@ -355,8 +358,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const poolT = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 40, 4, 64, 64, 64); r.addColorStop(0, 'rgba(255,246,225,.75)'); r.addColorStop(1, 'rgba(255,246,225,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
   for (let b = 0; b < BAYS; b++) { const x = (UX[b] + UX[b + 1]) / 2; pools.push(new THREE.PlaneGeometry(BW * 0.95, 1.4).translate(x, SY[4] + 0.75, ZW + 0.03));
     for (let s = 0; s < 4; s++) pools.push(new THREE.PlaneGeometry(BW * 0.9, 0.7).translate(x, SY[s] + 0.42, ZW + 0.03)); }
-  add(pools, new THREE.MeshBasicMaterial({ map: poolT.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'shelfLightPools', 1);
-  mesh(frame, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopShelfFrame');
+  add(pools, new THREE.MeshBasicMaterial({ map: poolT.t, transparent: true, opacity: WHITE_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'shelfLightPools', 1);
+  mesh(frame, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopShelfFrame');
   const LZ = Z0 + SD / 2 + 0.016, LBW = BW - 0.16;
   // top shelf: big seated monkey plushes + 2 Grok plushes (the silver clerk from Dave's video) in bay 2
   const MON = { monkeyBrown: [0x6e4120, 0xe2b98a], monkeyGold: [0xb87a2a, 0xf4d8a8], monkeySpace: [0x5e50a0, 0xdcd0f6] };
@@ -466,7 +469,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     return new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false, curveSegments: 28 }).rotateX(-Math.PI / 2); };
   const counterMat = new THREE.MeshStandardMaterial({ color: 0x0e1638, roughness: 0.35, emissive: 0x060a20 });   // shared with the wardrobe island
   add([ring(RO, RI, 1.0).translate(QX, 0.04, QZ)], counterMat, 'checkoutCounter');
-  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, emissive: 0xb0b4bc }), 'checkoutTop');
+  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: dimC(0xffffff), roughness: 0.2, emissive: dimC(0xb0b4bc) }), 'checkoutTop');
   { const AL = A1 - A0, ss = Math.max(0.5, tierQuality().shopLab || 1), CW = Math.round(2048 * ss), CHh = Math.round(256 * ss);
     const ft = canvasTex(CW, CHh, (g, w, h) => { g.setTransform(w / 2048, 0, 0, h / 256, 0, 0); g.fillStyle = '#0e1638'; g.fillRect(0, 0, 2048, 256);
       const neon = (c, blur, lw, fn) => { g.save(); g.strokeStyle = c; g.shadowColor = c; g.shadowBlur = blur; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); fn(); g.stroke(); g.restore(); };
@@ -478,10 +481,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     const fg = new THREE.CylinderGeometry(RO + 0.006, RO + 0.006, 0.98, 48, 1, true, A0 + Math.PI / 2, AL).translate(QX, 0.53, QZ);
     add([fg], new THREE.MeshBasicMaterial({ map: ft.t, toneMapped: false }), 'grokShopSign');
     const mg2 = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 34, 64, 64, 64); r.addColorStop(0, 'rgba(190,70,255,0)'); r.addColorStop(0.6, 'rgba(190,70,255,.7)'); r.addColorStop(1, 'rgba(190,70,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
-    add([new THREE.PlaneGeometry(2 * RO + 2.0, 2 * RO + 2.0).rotateX(-Math.PI / 2).translate(QX, 0.006, QZ)], new THREE.MeshBasicMaterial({ map: mg2.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'magentaGlow', 1); }
+    add([new THREE.PlaneGeometry(2 * RO + 2.0, 2 * RO + 2.0).rotateX(-Math.PI / 2).translate(QX, 0.006, QZ)], new THREE.MeshBasicMaterial({ map: mg2.t, transparent: true, opacity: FLOOR_GLOW_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'magentaGlow', 1); }
   ledCy.push(ring(RO + 0.03, RO - 0.01, 0.04).translate(QX, 0.02, QZ), ring(RO + 0.1, RO + 0.06, 0.025).translate(QX, 1.04, QZ));
   const glowT = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 30, 64, 64, 64); r.addColorStop(0, 'rgba(40,220,255,0)'); r.addColorStop(0.55, 'rgba(40,220,255,.9)'); r.addColorStop(1, 'rgba(40,220,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
-  const glowM = new THREE.MeshBasicMaterial({ map: glowT.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const glowM = new THREE.MeshBasicMaterial({ map: glowT.t, transparent: true, opacity: FLOOR_GLOW_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
   { const gl = []; gl.push(new THREE.PlaneGeometry(2 * RO + 1.0, 2 * RO + 1.0).rotateX(-Math.PI / 2).translate(QX, 0.007, QZ)); add(gl, glowM, 'cyanGlow', 1); }   // t568: the 3.6 m halo that sat under the old centre pad (0,0) is gone (pad moved to the corner in t563)
   const cnt = [], at = (a, r) => [QX + Math.cos(a) * r, QZ - Math.sin(a) * r];
   const [tx, tz] = at(Math.PI * 1.02, 1.85), [rx, rz] = at(Math.PI * 1.5, 1.85);
