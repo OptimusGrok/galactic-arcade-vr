@@ -1458,7 +1458,7 @@ export function setupVR(A) {
   function buildJobs(first) { const J = []; const areas = [first, ...[1, 2, 4, 3].filter(a => a !== first)];
     for (const a of areas) J.push({ area: a, kind: 'vis', gate: a === first });
     J.push({ area: first, kind: 'rest' }); for (const a of areas) if (a !== first && a !== 4) J.push({ area: a, kind: 'rest' });
-    J.push({ kind: 'tex' }, { kind: 'geo' }, { kind: 'trip' }); return J; }
+    J.push({ kind: 'icons' }, { kind: 'tex' }, { kind: 'geo' }, { kind: 'trip' }); return J; }
   async function runJob(job) { const a = job.area, t0 = performance.now(), p0 = renderer.info.programs ? renderer.info.programs.length : 0;
     if (a === 2) { const q = performance.now(); try { if (A.loadShop) await A.loadShop(); } catch (e) {} try { mirrorTwin(); } catch (e) {} PW.loadShopMs = Math.round(performance.now() - q); _sl = performance.now(); }
     if (a === 3) { const q = performance.now(); try { if (window.__loadNK) await window.__loadNK(); } catch (e) {} PW.loadNKMs = Math.round(performance.now() - q); _sl = performance.now(); if (!scene.getObjectByName('nkStudio')) return; }
@@ -1477,6 +1477,15 @@ export function setupVR(A) {
       if (job.kind === 'vis') { LISTS[a] = list; PW.prog = { a, kind: job.kind, ph: 'draw', i: 0, n: list.length }; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); logW('drawn ' + a + ' at ' + Math.round(performance.now() - PW.startedAt) + ' ms'); }   // in VR (card gone) the one draw waits for the beam's cut
       PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
       if (job.kind === 'vis') PW.warm.add(a); }
+    else if (job.kind === 'icons') {   // vrtest-v15 (t491u): slice the prize/accessory atlas under the card / start screen, never at a beam
+      const sh = window.__shop || A.shop; try { if (sh && sh.queueIcons) sh.queueIcons(); } catch (e) {}
+      let t = performance.now(); const n0 = sh && sh.iconsPending ? sh.iconsPending() : 0; PW.prog = { a: 2, kind: 'icons', ph: 'bake', i: 0, n: n0 };
+      while (sh && sh.iconsPending && sh.iconsPending()) {
+        if (S.presenting && !VEIL.on) break;   // card already down: don't hitch live VR; leftovers wait for the start screen / a later veil
+        const ib = Math.max(40, budget());
+        if (!(sh.bakeIcons(ib).did) && sh.iconsPending()) { await frame(); t = performance.now(); continue; }
+        PW.prog.i = n0 - sh.iconsPending(); if (performance.now() - t > budget()) { await frame(); t = performance.now(); } }
+      PW.icons = { n: n0, ms: Math.round(performance.now() - t0), left: sh && sh.iconsPending ? sh.iconsPending() : 0 }; }
     else if (job.kind === 'tex') { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
         for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap', 'bumpMap']) { const x = m[k]; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); }
         if (o.material && o.material.uniforms) for (const u of Object.values(o.material.uniforms)) { const x = u && u.value; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); } });

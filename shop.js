@@ -1093,20 +1093,34 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     '.pzU{display:block;width:100%;min-height:52px;margin-top:10px;padding:0 14px;border-radius:26px;border:2px solid #ff6b8b;background:#3a0614cc;color:#ffe1e8;font:900 16px Arial,sans-serif;letter-spacing:.06em;cursor:pointer;touch-action:manipulation}';
   document.head.appendChild(css2);
   // t555-557 + t486u: bake prize + accessory pictures ONCE into a shared atlas canvas (no per-frame renders, no shop lights).
-  // Cells are also exposed as dataURLs for the flat price list / inventory chips.
-  const ICON = {}; let iconR = null, iconQ = [], iconT = 0;
-  const ATLAS = { cv: document.createElement('canvas'), cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false };
+  // vrtest-v15 (t491u): v13 baked all ~108 icons in one setTimeout on the MAIN renderer (readPixels + toDataURL) — ~2 s on
+  // desktop, worse on the Quest — which could land on the first shop beam. Now: slice a few ms a frame, never during a
+  // beam, prefer the start screen / PREPARING VR card, and encode dataURLs lazily when a 2D list actually needs them.
+  const ICON = {}; let iconR = null, iconQ = [], iconKick = 0;
+  const ATLAS = { cv: document.createElement('canvas'), cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false, pending: 0, bakeMs: 0, bakeN: 0, bakeMax: 0 };
   ATLAS.cv.width = ATLAS.cols * ATLAS.cell; ATLAS.cv.height = ATLAS.cols * ATLAS.cell; ATLAS.g = ATLAS.cv.getContext('2d');
   ATLAS.g.fillStyle = '#0000'; ATLAS.g.clearRect(0, 0, ATLAS.cv.width, ATLAS.cv.height);
   function atlasCell(id) { if (ATLAS.cells[id]) return ATLAS.cells[id]; const i = ATLAS.n++, col = i % ATLAS.cols, row = Math.floor(i / ATLAS.cols);
     if ((row + 1) * ATLAS.cell > ATLAS.cv.height) { const nxt = document.createElement('canvas'); nxt.width = ATLAS.cv.width; nxt.height = (row + 4) * ATLAS.cell; nxt.getContext('2d').drawImage(ATLAS.cv, 0, 0); ATLAS.cv = nxt; ATLAS.g = nxt.getContext('2d'); }
     return ATLAS.cells[id] = { x: col * ATLAS.cell, y: row * ATLAS.cell, w: ATLAS.cell, h: ATLAS.cell }; }
-  function atlasStamp(id, src) { const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true;
-    try { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); ICON[id] = c.toDataURL('image/png'); } catch (e) {} }
+  function atlasStamp(id, src) { const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true; }
+  function encodeIcon(id) { if (ICON[id]) return ICON[id]; const r = ATLAS.cells[id]; if (!r) return '';
+    try { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); return ICON[id] = c.toDataURL('image/png'); } catch (e) { return ''; } }
   function iconBlit(g, id, x, y, w, h) { const r = ATLAS.cells[id]; if (!r) return false; g.drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, x, y, w, h); return true; }
-  function enqueue(id) { if (!id || ICON[id] || ATLAS.cells[id] || iconQ.includes(id)) return; iconQ.push(id); }
-  function scheduleDraw() { clearTimeout(iconT); iconT = setTimeout(drawIcons, 30); }
-  function iconFor(id) { if (ICON[id]) return ICON[id]; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
+  function enqueue(id) { if (!id || ICON[id] || ATLAS.cells[id] || iconQ.includes(id)) return; iconQ.push(id); ATLAS.pending = iconQ.length; }
+  function iconTp() { return window.__tp || (window.__arcade && window.__arcade.tp) || null; }
+  function iconBeaming() { const tp = iconTp(); return !!(tp && tp.state && tp.state !== 'idle'); }
+  function iconVeil() { const V = window.__gaVR; return !!(V && V.veil && V.veil.on); }
+  function iconPresenting() { const V = window.__gaVR; return !!(V && V.presenting); }
+  function iconOnStart() { const S = window.__start; return !iconPresenting() && !!document.getElementById('start') && !(S && S.dismissed) && !window.__skipStart; }
+  function iconBudget() { if (iconOnStart()) return 200; if (iconVeil()) return 40; if (iconPresenting()) return 4; return 40; }
+  // Don't steal the XR frame at a beam cut. Under the card / on the start screen we can use a bigger slice.
+  function iconShouldWait() { return iconBeaming() || (iconPresenting() && !iconVeil()); }   // never hitch a live VR frame (beam or walk)
+  function scheduleDraw() { if (iconKick) return; iconKick = requestAnimationFrame(function tick() {
+    iconKick = 0; if (!iconQ.length) return;
+    if (iconShouldWait()) { iconKick = requestAnimationFrame(tick); return; }
+    bakeIcons(iconBudget()); if (iconQ.length) iconKick = requestAnimationFrame(tick); }); }
+  function iconFor(id) { const u = ICON[id] || encodeIcon(id); if (u) return u; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
   function swatchCanvas(cols) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'), n = cols.length;
     if (n === 1) { g.fillStyle = '#' + ('00000' + cols[0].toString(16)).slice(-6); g.fillRect(0, 0, c.width, c.height); }
     else { const grd = g.createLinearGradient(0, 0, c.width, c.height); cols.forEach((h, i) => grd.addColorStop(i / Math.max(1, n - 1), '#' + ('00000' + h.toString(16)).slice(-6))); g.fillStyle = grd; g.fillRect(0, 0, c.width, c.height); }
@@ -1130,7 +1144,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     c.getContext('2d').putImageData(img, 0, 0); return c; }
   function renderIcon(sc, cam) {
     const size = ATLAS.cell, A = window.__arcade, main = A && A.renderer;
-    if (main && main.setRenderTarget) {
+    // Prefer the game's renderer only when it isn't in the middle of an XR beam (setRenderTarget + readPixels syncs the GPU).
+    if (main && main.setRenderTarget && !(iconPresenting() && iconBeaming())) {
       const rt = renderIcon.rt || (renderIcon.rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, stencilBuffer: false }));
       if (rt.width !== size) rt.setSize(size, size);
       const prevRT = main.getRenderTarget(), prevCS = main.outputColorSpace, prevC = new THREE.Color(), prevA = main.getClearAlpha();
@@ -1144,31 +1159,52 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     if (!iconR) { iconR = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' }); iconR.setSize(size, size, false); iconR.setPixelRatio(1); iconR.outputColorSpace = THREE.SRGBColorSpace; iconR.setClearColor(0x000000, 0); }
     iconR.render(sc, cam); return iconR.domElement;
   }
-  function drawIcons() { const q = iconQ.splice(0); if (!q.length) return;
-    try {
-      const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 3); sc.add(dl);
-      const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 20), box = new THREE.Box3(), c = new THREE.Vector3(), sz = new THREE.Vector3();
-      const bakeObj = (id, g, yaw) => { if (!g) return false; g.rotation.y = yaw == null ? -0.5 : yaw; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
+  let bakeSC = null, bakeCam = null, bakeBox = null, bakeC = null, bakeSz = null;
+  function iconScene() {
+    if (bakeSC) return { sc: bakeSC, cam: bakeCam, box: bakeBox, c: bakeC, sz: bakeSz };
+    bakeSC = new THREE.Scene(); bakeSC.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 3); bakeSC.add(dl);
+    bakeCam = new THREE.PerspectiveCamera(30, 1, 0.01, 20); bakeBox = new THREE.Box3(); bakeC = new THREE.Vector3(); bakeSz = new THREE.Vector3();
+    return { sc: bakeSC, cam: bakeCam, box: bakeBox, c: bakeC, sz: bakeSz }; }
+  function releaseBakeObj(g, shared) { if (!g) return; if (g.parent) g.parent.remove(g);
+    if (shared) return;   // previewItem clones share the live accessory geometries / materials
+    g.traverse(o => { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); }); }
+  function bakeOne(id, sc, cam, box, c, sz) {
+    if (ATLAS.cells[id]) return;
+    if (id.indexOf('nk_') === 0) { try { const cv = gloveIcon(id.slice(3), ATLAS.cell); if (cv) { atlasStamp(id, cv); return; } } catch (e) {} placeholder(id); return; }
+    const col = id.indexOf(':'), accKeys = { hat:1, glasses:1, back:1, hand:1, hoodie:1, suit:1, fur:1, shoes:1 };
+    if (col > 0 && accKeys[id.slice(0, col)]) {
+      if (!window.__gaPlayer) { iconQ.push(id); return 'retry'; }   // player not ready yet — retry on a later slice
+      const k = id.slice(0, col), v = id.slice(col + 1), gp = window.__gaPlayer, opt = (gp.allOpts[k] || []).find(o => o[0] === v);
+      if (opt && typeof opt[1] === 'number') { atlasStamp(id, swatchCanvas(opt.slice(1, 3))); return; }
+      try { const g = gp.previewItem && gp.previewItem(k, v); if (g) { const yaw = k === 'back' ? 0.8 : -0.45;
+        g.rotation.y = yaw; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
         const r = Math.max(sz.x, sz.y, sz.z) * 0.62 || 0.3; cam.position.set(c.x, c.y + r * 0.35, c.z + r / Math.tan(15 * Math.PI / 180)); cam.lookAt(c);
-        const src = renderIcon(sc, cam); atlasStamp(id, src); sc.remove(g); return true; };
-      for (const id of q) {
-        if (ATLAS.cells[id]) continue;
-        if (id.indexOf('nk_') === 0) { try { const cv = gloveIcon(id.slice(3), ATLAS.cell); if (cv) { atlasStamp(id, cv); continue; } } catch (e) {} placeholder(id); continue; }
-        const col = id.indexOf(':'), accKeys = { hat:1, glasses:1, back:1, hand:1, hoodie:1, suit:1, fur:1, shoes:1 };
-        if (col > 0 && accKeys[id.slice(0, col)]) {
-          if (!window.__gaPlayer) { enqueue(id); continue; }   // player not ready yet — retry later
-          const k = id.slice(0, col), v = id.slice(col + 1), gp = window.__gaPlayer, opt = (gp.allOpts[k] || []).find(o => o[0] === v);
-          if (opt && typeof opt[1] === 'number') { atlasStamp(id, swatchCanvas(opt.slice(1, 3))); continue; }
-          try { const g = gp.previewItem && gp.previewItem(k, v); if (g) { bakeObj(id, g, k === 'back' ? 0.8 : -0.45); continue; } } catch (e) {}
-          placeholder(id); continue;
-        }
-        let g; try { g = buildHeld(id); } catch (e) { g = null; } if (g) { bakeObj(id, g, -0.5); continue; }
-        placeholder(id);
-      }
-      if (iconQ.length) scheduleDraw();
+        const src = renderIcon(sc, cam); atlasStamp(id, src); releaseBakeObj(g, true); return; } } catch (e) {}
+      placeholder(id); return;
+    }
+    let g; try { g = buildHeld(id); } catch (e) { g = null; }
+    if (g) { g.rotation.y = -0.5; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
+      const r = Math.max(sz.x, sz.y, sz.z) * 0.62 || 0.3; cam.position.set(c.x, c.y + r * 0.35, c.z + r / Math.tan(15 * Math.PI / 180)); cam.lookAt(c);
+      const src = renderIcon(sc, cam); atlasStamp(id, src); releaseBakeObj(g, false); return; }
+    placeholder(id);
+  }
+  function iconCheap(id) { if (!id) return true; if (id.indexOf('nk_') === 0) return true; const col = id.indexOf(':'); return col > 0 && { hoodie:1, suit:1, fur:1, shoes:1 }[id.slice(0, col)]; }
+  // Drain the queue for up to budgetMs (always at least one item). Safe to call from the VR pre-warm job.
+  function bakeIcons(budgetMs) {
+    if (!iconQ.length || iconShouldWait()) return { did: 0, left: iconQ.length, ms: 0 };
+    const t0 = performance.now(), budget = budgetMs == null ? 8 : budgetMs; let did = 0;
+    try {
+      // Stamp every canvas-only tile first so a slice isn't spent on a 3D render while swatches wait.
+      for (let i = 0; i < iconQ.length; ) { if (iconCheap(iconQ[i]) || (iconQ[i].indexOf('nk_') === 0)) { const id = iconQ.splice(i, 1)[0]; bakeOne(id); did++; } else i++; }
+      const { sc, cam, box, c, sz } = iconScene();
+      while (iconQ.length) { const id = iconQ.shift(); if (bakeOne(id, sc, cam, box, c, sz) === 'retry') break; did++; if (performance.now() - t0 >= budget && iconQ.length) break; }
     } catch (e) { console.warn('prize icons', e); }
-    try { if (iconR) { iconR.dispose(); iconR.forceContextLoss(); iconR = null; } } catch (e) {}   // free the extra GL context on phones
-    for (const im of document.querySelectorAll('img[data-ic]')) if (ICON[im.dataset.ic]) im.src = ICON[im.dataset.ic]; }
+    if (!iconQ.length) { try { if (iconR) { iconR.dispose(); iconR.forceContextLoss(); iconR = null; } } catch (e) {} }
+    const ms = performance.now() - t0; ATLAS.bakeMs += ms; ATLAS.bakeN += did; if (ms > ATLAS.bakeMax) ATLAS.bakeMax = ms; ATLAS.pending = iconQ.length;
+    for (const im of document.querySelectorAll('img[data-ic]')) if (!im.src || im.src.indexOf('data:image/gif') === 0) { const u = encodeIcon(im.dataset.ic); if (u) im.src = u; }
+    return { did, left: iconQ.length, ms };
+  }
+  function drawIcons() { bakeIcons(1e9); }   // tests / callers that still expect a full drain
   function slotOf(id) { const h = readHeld(); if (h.R === id) return 'R'; if (h.L === id) return 'L'; return null; }
   function renderChips() { const r = document.getElementById('invPz'); if (!r) return; const p = prizes(), h = readHeld(), ids = ITEMS.map(i => i.id).filter(id => p[id]);
     let away = '';
@@ -1276,8 +1312,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // t632u: lazy-load Grok's arcade visit (2nd look at the pad / random). Own file; no Arcade main.js edit.
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
-  api.iconAtlas = ATLAS; api.iconBlit = iconBlit; api.iconFor = iconFor; api.queueIcons = queueAllIcons; Object.defineProperty(api, 'iconRev', { get: () => ATLAS.rev }); window.__shop = api;
-  setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500);
+  api.iconAtlas = ATLAS; api.iconBlit = iconBlit; api.iconFor = iconFor; api.queueIcons = queueAllIcons; api.bakeIcons = bakeIcons; api.iconsPending = () => iconQ.length; Object.defineProperty(api, 'iconRev', { get: () => ATLAS.rev }); window.__shop = api;
+  queueAllIcons(); setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500);
   api.gpu = bindStreamGpu(G, { stagger: true, minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
   api.setGpu = on => api.gpu.set(!!on);
   return api;
