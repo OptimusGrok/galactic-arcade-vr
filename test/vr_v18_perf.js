@@ -6,12 +6,12 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
 const CHECK = !!process.env.CHECK;
 (async () => {
   let ok = true; const chk = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) ok = false; };
-  const { page, errors, close } = await openVR({ init: { content: IWER_SRC + SETUP + HEADSET_FB } });
+  const { page, errors, close } = await openVR({ cpu: +process.env.CPU || 0, init: { content: IWER_SRC + SETUP + HEADSET_FB } });   // vrtest-v8: CPU=4 like the Quest; EARLY=<ms> enters VR that long after ENTER VR shows (pre-warm may still be running, as when Dave taps PLAY)
   const E = (f, a) => page.evaluate(f, a);
   try {
     await page.waitForFunction(() => document.getElementById('vrBtn').classList.contains('on'), null, { timeout: 30000 });
     // v18 pre-warms in the background before you enter; old builds have nothing to wait for
-    const pw = await page.waitForFunction(() => { const S = window.__gaVR; return !S.prewarm || S.prewarm.done; }, null, { timeout: 180000 }).then(() => E(() => window.__gaVR.prewarm || null));
+    const pw = process.env.EARLY ? await page.waitForTimeout(+process.env.EARLY).then(() => E(() => Object.assign({}, window.__gaVR.prewarm || {}, { atEntry: true }))) : await page.waitForFunction(() => { const S = window.__gaVR; return !S.prewarm || S.prewarm.done; }, null, { timeout: 180000 }).then(() => E(() => window.__gaVR.prewarm || null));
     console.log('INFO prewarm ' + JSON.stringify(pw));
     await page.waitForTimeout(500);
     await E(() => { const r = window.__arcade.renderer, o = r.render.bind(r), A = window.__arcade;
@@ -23,6 +23,11 @@ const CHECK = !!process.env.CHECK;
         if (P.pend > 0) { P.pend--; try { const h = window.__hsRead(); P.lit.push([P.cutAt.length, h ? h.left.lit : -1]); } catch (e) {} } }; });
     await E(() => { window.__xp.t0 = performance.now(); document.getElementById('vrBtn').click(); });
     await page.waitForFunction(() => window.__gaVR.presenting && window.__xp.iv.length >= 120, null, { timeout: 180000 });
+    // v8: an early entry shows the PREPARING VR card until the pre-warm is done; measure the 120 frames after it lifts as well
+    const vl = await page.waitForFunction(() => { const V = window.__gaVR.veil; return !V || !V.on; }, null, { timeout: 240000 }).then(() => E(() => { const V = window.__gaVR.veil, P = window.__xp; return V ? { shows: V.shows, ms: V.ms, at: P.iv.length } : null; }));
+    if (vl && vl.shows) { await page.waitForFunction(n => window.__xp.iv.length >= n + 120, vl.at, { timeout: 240000 });
+      console.log('VEIL ' + JSON.stringify(await E(n => { const P = window.__xp, a = P.iv.slice(0, n), b = P.iv.slice(n, n + 120), s = b.slice().sort((x, y) => y - x);
+        return { cardMs: window.__gaVR.veil.ms, framesUnderCard: a.length, maxUnderCard: Math.max(...a), after: { maxIv: s[0], top5: s.slice(0, 5), progs: P.prog.slice(n, n + 121).reduce((x, y) => x + y, 0) }, warms: (window.__gaVR.warms || []).map(w => w.why + ':' + w.ms + 'ms/' + w.programs + 'p') }; }, vl.at))); }
     const en = await E(() => { const P = window.__xp, iv = P.iv.slice(0, 120), s = iv.slice().sort((a, b) => b - a); return { clickToFirst: +(P.first - P.t0).toFixed(1), maxIv: s[0], top5: s.slice(0, 5), progs: P.prog.slice(0, 121).reduce((a, b) => a + b, 0), med: iv.slice().sort((a, b) => a - b)[60], warms: (window.__gaVR.warms || []).map(w => w.why + ':' + w.ms + 'ms/' + w.programs + 'p') }; });
     console.log('ENTRY ' + JSON.stringify(en));
     // beams

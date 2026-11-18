@@ -270,7 +270,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   function goTee(i) { const h = holes[i], [x, z] = toW(h, h.H.tee.x, h.H.tee.z - 0.6); monkey.position.set(x, FY + 0.08, z); st.vel.set(0, 0, 0); prev.copy(monkey.position); }
   // vrtest-v6 (t464u) debug URL flags so the Quest can bisect the shop freezes: ?nogolfroom=1 keeps the basement hidden until you are down
   // there, ?nogolflamps=1 keeps the 5 stair lamps off until you are down there (vr.js reads ?nomirror=1 ?nogrok=1 ?nowarm=1 the same way).
-  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q) }; } return window.__gaDbg; }
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil') }; } return window.__gaDbg; }
   function update(dt) {
     U.uT.value += dt; if (performance.now() - lastCut > 1000) { lastCut = performance.now(); cutFloor(); }
     if (offT >= 0) { const k = (performance.now() - offT) / 900; U.uOff.value = Math.min(1, k); if (k >= 1) { shield.visible = false; offT = -1; } }

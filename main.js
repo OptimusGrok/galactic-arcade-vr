@@ -1876,6 +1876,11 @@ function streamWant() {
   const inShop = (tp && tp.where === 2) || m.x > WX - 14;
   const padD = pad ? Math.hypot(m.x - pad.x, m.z - pad.z) : 99;
   const locking = !!(tp && tp.locked);
+  // vrtest-v8 (Dave t466u/t467u: "the delay has returned when teleporting", the main VR link has none): in a headset the streamed-out
+  // shop / Dead Signal textures were re-uploaded around the beam (big murals + mipmaps on the Quest GPU) = the beam stall. Main VR never
+  // streams. Now, inside an XR session nothing is evicted: whatever is out streams back in a few per frame right after you enter, while you
+  // stand in the arcade, and stays resident until you leave VR (flat play keeps the memory-saving stream). ?vrstream=1 = old behaviour.
+  if (renderer.xr.isPresenting && !/[?&]vrstream=1\b/.test(location.search)) return { wantShop: true, evictShop: false, wantRoom2: true, evictRoom2: false, vrKeep: true };
   return { wantShop: inShop || padD < 8 || locking, evictShop: !inShop && padD > 14 && !locking,
     // v2: room 2 only from room 1's side (the shop sits at x > WX - 14 with its own z range: walking round Grok's counter used to stream
     // Dead Signal + its floor mirror in and out while you were in the shop)
@@ -1884,9 +1889,9 @@ function streamWant() {
 function setRoom2Gpu(on) {
   on = !!on;
   try { if (dsCab && dsCab.userData && dsCab.userData.gpu) dsCab.userData.gpu.set(on); } catch (e) {}
-  const mir = room2 && room2.userData && room2.userData.mirror;
+  const mir = room2 && room2.userData && room2.userData.mirror, big = on && !renderer.xr.isPresenting;   // v8: the floor mirror is never drawn in VR: its target stays 1x1 there (no reallocation at the door / a beam)
   if (mir && typeof mir.getRenderTarget === 'function') { const rt = mir.getRenderTarget();
-    if (rt) { if (!rt.__gaSz) rt.__gaSz = [rt.width, rt.height]; try { rt.setSize(on ? rt.__gaSz[0] : 1, on ? rt.__gaSz[1] : 1); } catch (e) {} } }
+    if (rt) { if (!rt.__gaSz) rt.__gaSz = [rt.width, rt.height]; const w = big ? rt.__gaSz[0] : 1, h = big ? rt.__gaSz[1] : 1; if (rt.width !== w || rt.height !== h) try { rt.setSize(w, h); } catch (e) {} } }
   if ((STREAM.room2 === 'on') !== on) { if (on) { STREAM.ups++; STREAM.ups2 = (STREAM.ups2 || 0) + 1; } else { STREAM.evicts++; STREAM.evicts2 = (STREAM.evicts2 || 0) + 1; } }
   STREAM.room2 = on ? 'on' : 'off';
 }

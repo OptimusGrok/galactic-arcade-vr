@@ -551,9 +551,9 @@ export function setupVR(A) {
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
   // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
   // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
-  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q) }; } return window.__gaDbg; }
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil') }; } return window.__gaDbg; }
   S.dbg = dbg;
-  function mirrorFrame() { if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
+  function mirrorFrame() { if (VEIL.on) return; if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
     const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
     t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
     const d = _mp.distanceTo(_mc); if (d > MIRROR_FAR || (_mn.x * (_mc.x - _mp.x) + _mn.y * (_mc.y - _mp.y) + _mn.z * (_mc.z - _mp.z)) <= 0) { MV.skips++; return; }
@@ -909,6 +909,19 @@ export function setupVR(A) {
   S.rt = { xr: 0, bad: 0, last: '' };
   function rtCheck(rt) { if (rt && rt.isXRRenderTarget) S.rt.xr++; else { S.rt.bad++; S.rt.last = rt ? 'other' : 'null'; } }
 
+  // ---------- vrtest-v8 (Dave t466u: "fix the delay when the player first enters the VR") ----------
+  // Tapping PLAY before the background pre-warm had finished started the session with nothing compiled: the first XR frame compiled the
+  // arcade synchronously (~150 programs = a multi-second freeze, more stalls on the first beam). Now, if the pre-warm is still running, the
+  // headset shows a dark 'PREPARING VR' card (nothing else is drawn, no input, no movement) while the pre-warm finishes in the background,
+  // compiles asynchronously and draws each area once; then the world appears already warm. Safety: the card lifts after 45 s regardless.
+  const VEIL = S.veil = { on: false, t0: 0, shows: 0, ms: 0, hidden: [] };
+  const veilM = panel(0.9, 0.3, 768, 256); veilM.name = 'vrVeil'; veilM.visible = false; veilM.renderOrder = 2000; veilM.material.depthTest = false; scene.add(veilM);
+  function veilFrame() { if (!VEIL.on) return; const pct = Math.min(99, Math.round(100 * ((PW.areas.length + (PW.textures ? 1 : 0)) / 5)));
+    if (PW.done || performance.now() - VEIL.t0 > 45000 || !S.presenting) { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig); return; }
+    camera.updateMatrixWorld(true); camera.getWorldQuaternion(veilM.quaternion); camera.getWorldPosition(veilM.position); veilM.position.add(_v.set(0, 0, -1.4).applyQuaternion(veilM.quaternion));
+    drawPanel(veilM, ['PREPARING VR', pct + '%']); }
+  function veilHide() { const H = VEIL.hidden; H.length = 0; for (const c of scene.children) if (c !== veilM && c.visible && !c.isLight) { H.push(c); c.visible = false; } veilM.visible = true; }
+  function veilShow() { for (const c of VEIL.hidden) c.visible = true; VEIL.hidden.length = 0; veilM.visible = false; }
   // ---------- session ----------
   renderer.xr.addEventListener('sessionstart', () => {
     session = renderer.xr.getSession(); renderer.xr.setReferenceSpace(null); baseRef = renderer.xr.getReferenceSpace();
@@ -919,7 +932,8 @@ export function setupVR(A) {
     try { renderer.xr.setFoveation(1); } catch (e) {}
     document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
-    S.warmReq = PW.done ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
+    if (!PW.done && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; }
+    S.warmReq = PW.done || VEIL.on ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
     S.blurred = false; S.vis = session.visibilityState || 'visible';
@@ -1066,6 +1080,7 @@ export function setupVR(A) {
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
+    veilFrame(); if (VEIL.on) { st.vrMove = null; S.walkStart = null; S.turnRate = 0; return; }
     if (S.blurred) { st.vrMove = null; S.walkStart = null; S.turnRate = 0; S.blurFrames = (S.blurFrames || 0) + 1; return; }   // vrtest-v5: overlay up: no movement / game input
     unpinLights(); if (xf) warmCheck();
     const ref = renderer.xr.getReferenceSpace(), vp = xf && ref ? xf.getViewerPose(ref) : null;
@@ -1222,7 +1237,8 @@ export function setupVR(A) {
   // four ways from the pad, so the GPU driver builds its draw state and the meshes' vertex buffers are uploaded before the first real frame.
   // Reflector passes are switched off for it (the headset doesn't draw them either); the next normal frame repaints those pixels.
   const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300);
-  function drawWarm(area, spot, restage) { if (S.presenting) return; stageArea(area, () => { const undoG = restage ? restage() : null; const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
+  function drawWarm(area, spot, restage) { if (S.presenting && !VEIL.on) return; const xe = renderer.xr.enabled; renderer.xr.enabled = false; try { drawWarm0(area, spot, restage); } finally { renderer.xr.enabled = xe; } }
+  function drawWarm0(area, spot, restage) { stageArea(area, () => { const undoG = restage ? restage() : null; const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
       const vp = new THREE.Vector4(), sc = new THREE.Vector4(), st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(vp); renderer.getScissor(sc);
       try { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true);
         _wc.position.copy(camera.position); if (spot) _wc.position.set(spot.x, 1.6, spot.z);
@@ -1254,8 +1270,9 @@ export function setupVR(A) {
         try { stageArea(2, () => { undo(); undo = G.warmStage(show, lit); LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
             try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
             const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } });
+          undo(); undo = () => {};   // v8: staged only inside the synchronous calls, never across an await (live frames saw the lit lamps = 28 lights)
           if (job) await job; await nextFrame();
-          undo(); undo = G.warmStage(show, lit); drawWarm(2, G.warmSpot(), () => G.warmStage(show, lit)); await nextFrame();
+          drawWarm(2, G.warmSpot(), () => G.warmStage(show, lit)); await nextFrame();
         } catch (e) { PW.err = 'golf ' + e; } finally { undo(); LS.t = -1e9; }
         PW.areas.push({ area: 'golf' + (lit ? 'Lit' : 'Room'), sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
       // link + read uniforms a handful of programs per frame (the first draw would otherwise do it)
@@ -1272,8 +1289,8 @@ export function setupVR(A) {
   { const kick = setInterval(() => { if (PW.done || PW.busy) { if (PW.done) clearInterval(kick); return; } if (window.__noPrewarm) return; const ST = window.__arcade && window.__arcade.stats; if (S.supported && ST && ST.frames > 5 && A.tp) prewarm(); }, 500); }
   function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
   { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
-    scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) prerender(); };
-    scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
+    scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) { if (VEIL.on) veilHide(); else prerender(); } };
+    scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (VEIL.hidden.length) veilShow(); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
   function contCan(w) { try { const C = w && w.__gaContinue, m = play.cur; return !!(play.sub === 'play' && m && m.cont && C && C.can && C.can()); } catch (e) { return false; } }
 
   function gameInput(w, aim, dt) {
