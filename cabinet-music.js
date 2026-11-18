@@ -74,7 +74,7 @@
     var r = RADIUS + (best && best === lastNear ? HYST : 0); return bd <= r ? best : null; };
   function wanted() {
     var A = window.__arcade, S = window.__start, M = window.__music;
-    if (!A || !A.play || document.hidden || (M && M.on === false) || (document.getElementById('start') && !(S && S.dismissed))) return null;
+    if (window.__gaHoldAV || !A || !A.play || document.hidden || (M && M.on === false) || (document.getElementById('start') && !(S && S.dismissed))) return null;
     var P = A.play;
     if (P.mode === 'game') return P.sub === 'demo' && P.cur && TRACKS[P.cur.key] ? P.cur.key : null;
     if (P.mode !== 'walk' || !positions(A)) return null;

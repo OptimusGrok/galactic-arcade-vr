@@ -20,6 +20,7 @@
     var S = window.__start; if (!S || !S.dismissed) return;
     if (!dueAt) { dueAt = (S.at || performance.now()) + DELAY; load(); }
     var A = window.__arcade; if (performance.now() < dueAt || !buf || document.hidden) return;
+    if (window.__gaHoldAV || performance.now() < (window.__gaRevealAt || 0) + 1500) return;   // vrtest-v10: never under the PREPARING VR card; 1.5 s after the reveal
     if (A && A.play && A.play.mode !== 'walk') return;   // wait until the monkey is walking in the room
     P.armed = 'done'; play(); }
   setInterval(tick, 150);

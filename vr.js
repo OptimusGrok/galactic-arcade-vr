@@ -551,7 +551,7 @@ export function setupVR(A) {
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
   // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
   // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
-  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil') }; } return window.__gaDbg; }
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') }; } return window.__gaDbg; }
   S.dbg = dbg;
   function mirrorFrame() { if (VEIL.on) return; if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
     const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
@@ -916,12 +916,29 @@ export function setupVR(A) {
   // compiles asynchronously and draws each area once; then the world appears already warm. Safety: the card lifts after 45 s regardless.
   const VEIL = S.veil = { on: false, t0: 0, shows: 0, ms: 0, hidden: [] };
   const veilM = panel(0.9, 0.3, 768, 256); veilM.name = 'vrVeil'; veilM.visible = false; veilM.renderOrder = 2000; veilM.material.depthTest = false; scene.add(veilM);
-  function veilFrame() { if (!VEIL.on) return; const where = (A.tp && A.tp.where) || 1, q = PW.cur && PW.cur.gate ? 0.5 : 0;
-    // v9: the card waits only for the area you are in (its visible set compiled, linked and drawn once); the rest warms in the background
-    const pct = Math.min(99, Math.round(100 * (S.areaWarm(where) ? 1 : (PW.pending.size ? 0.6 : q))));
-    if (S.areaWarm(where) || performance.now() - VEIL.t0 > 45000 || !S.presenting) { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; return; }
+  // v10 (Dave t475u: "it will freeze on 60% with black screen while I can hear the arcade running"): v9's number only ever showed 0 / 50 / 60 %
+  // (60 = 'some shader still linking'), and the wait for the driver's parallel link had no cap, so a link that never reported ready kept the card
+  // up until the 45 s safety. Now: the number follows the real step (compile i/n 0-50 %, link 50-80 %, first draw 80-99 %), the link wait is
+  // capped (see runJob), the card lifts after 20 s whatever happens, and ?warmlog=1 shows the step on the card.
+  const VEIL_MAX = 20000;
+  function veilPct(where) { const P = PW.prog, c = PW.cur; if (S.areaWarm(where)) return 100; if (!c || !P || c.area !== where || c.kind !== 'vis') return c && c.area === where ? 2 : 1;
+    const f = P.n ? Math.min(1, P.i / P.n) : 1; return Math.min(99, Math.round(P.ph === 'compile' ? 50 * f : P.ph === 'draw' ? 80 + 19 * f : 50 + 30 * f)); }
+  function veilFrame() { if (!VEIL.on) return; const where = (A.tp && A.tp.where) || 1, now = performance.now();
+    if (S.areaWarm(where) || now - VEIL.t0 > VEIL_MAX || !S.presenting) { if (!S.areaWarm(where) && S.presenting) { VEIL.timedOut = (VEIL.timedOut || 0) + 1; logW('card timeout after ' + VEIL_MAX + ' ms at ' + JSON.stringify(PW.prog || null)); } veilOff(); return; }
+    const pct = veilPct(where); VEIL.pct = pct;
     camera.updateMatrixWorld(true); camera.getWorldQuaternion(veilM.quaternion); camera.getWorldPosition(veilM.position); veilM.position.add(_v.set(0, 0, -1.4).applyQuaternion(veilM.quaternion));
-    drawPanel(veilM, ['PREPARING VR', pct + '%']); }
+    if (dbg().warmlog) { const P = PW.prog || {}, c = PW.cur || {}, sl = PW.slices[0];
+      drawPanel(veilM, ['PREPARING VR ' + pct + '%', (P.ph || c.kind || 'wait') + ' ' + (c.area || '-') + ':' + (c.kind || '-') + ' ' + (P.i || 0) + '/' + (P.n || 0), ((now - VEIL.t0) / 1000).toFixed(1) + 's cap ' + (PW.linkCapped || 0) + ' max ' + (sl ? sl[0] + 'ms ' + sl[1] : '-')]); }
+    else drawPanel(veilM, ['PREPARING VR', pct + '%']); }
+  // v10 (t475u/t476u "have the arcade play after the loading", "the greeting and grok entering too"): while the card is up, all arcade sound is held
+  // (the shared AudioContext is suspended, room music target 0) and the greeting, Grok's visit, the attract demos and the arcade's own clocks wait
+  // (window.__gaHoldAV). When the card lifts: sound resumes, the room music fades in, the greeting and Grok follow a moment after the reveal.
+  function holdAV(on) { if (!!window.__gaHoldAV === !!on) return; window.__gaHoldAV = !!on; VEIL.holds = (VEIL.holds || 0) + (on ? 1 : 0);
+    try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred || window.__gaHoldAV ? Promise.resolve() : r0()); ac.__gaHold = r0; }
+        if (on && ac.state === 'running') { ac.suspend(); S.acHeld = true; } else if (!on && S.acHeld) { S.acHeld = false; if (!S.blurred) ac.__gaHold(); } } } catch (e) {}
+    if (!on) { window.__gaRevealAt = performance.now(); logW('reveal: arcade audio + sim released'); } }
+  S.holdAV = holdAV;
+  function veilOff() { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; holdAV(false); }
   function veilHide() { const H = VEIL.hidden; H.length = 0; for (const c of scene.children) if (c !== veilM && c.visible && !c.isLight) { H.push(c); c.visible = false; } veilM.visible = true; }
   function veilShow() { for (const c of VEIL.hidden) c.visible = true; VEIL.hidden.length = 0; veilM.visible = false; }
   // ---------- session ----------
@@ -934,7 +951,7 @@ export function setupVR(A) {
     try { renderer.xr.setFoveation(1); } catch (e) {}
     document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
-    if (!S.areaWarm((A.tp && A.tp.where) || 1) && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; }
+    if (!S.areaWarm((A.tp && A.tp.where) || 1) && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; holdAV(true); logW('card up at VR entry'); }
     S.warmReq = PW.done || VEIL.on || PW.busy || S.areaWarm((A.tp && A.tp.where) || 1) ? null : 'start';   // v9: a running sliced pre-warm is never replaced by a one-frame compile S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
@@ -949,14 +966,14 @@ export function setupVR(A) {
     if (on) { try { releaseAll(); } catch (e) {} IN.left = IN.right = null; for (const k in A.keys) A.keys[k] = false; st.vrMove = null; S.vrFly = false; S.vrFire = false;
       try { if (st.fly) st.fly.hold = false; } catch (e) {} try { const rf = window.__roomFire; if (rf && rf.setHeld) rf.setHeld(false); } catch (e) {}
       try { for (const src of (session && session.inputSources) || []) { const h = src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.reset) h.reset(); } } catch (e) {}
-      try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred ? Promise.resolve() : r0()); ac.__gaHold = r0; }   // music / cabinet loops / PA call resume() every frame: hold them while blurred
+      try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred || window.__gaHoldAV ? Promise.resolve() : r0()); ac.__gaHold = r0; }   // music / cabinet loops / PA call resume() every frame: hold them while blurred
           if (ac.state === 'running') { ac.suspend(); S.acSuspended = true; } } } catch (e) {} }
-    else { try { const ac = window.__unlockAC; if (ac && S.acSuspended) { (ac.__gaHold || ac.resume.bind(ac))(); } } catch (e) {} S.acSuspended = false; } }
+    else { try { const ac = window.__unlockAC; if (ac && S.acSuspended && !window.__gaHoldAV) { (ac.__gaHold || ac.resume.bind(ac))(); } } catch (e) {} S.acSuspended = false; } }
   function onXRVis() { const v = session ? session.visibilityState : 'hidden'; S.vis = v; setBlur(v !== 'visible', v); }
   function onXREnd() { setBlur(true, 'end'); try { releaseAll(); } catch (e) {} S.xrEnded = (S.xrEnded || 0) + 1; }
   S.setBlurForTest = (on) => setBlur(on, 'test');
   renderer.xr.addEventListener('sessionend', () => {
-    renderer.setAnimationLoop(null); releaseAll(); S.blurred = false; try { const ac = window.__unlockAC; if (ac && S.acSuspended) ac.resume(); } catch (e) {} S.acSuspended = false;
+    renderer.setAnimationLoop(null); if (VEIL.on) veilOff(); else holdAV(false); releaseAll(); S.blurred = false; try { const ac = window.__unlockAC; if (ac && S.acSuspended) ac.resume(); } catch (e) {} S.acSuspended = false;
     S.presenting = false; S.ends++; st.vr = false; st.vrMove = null; session = null;
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
@@ -1270,7 +1287,7 @@ export function setupVR(A) {
     finally { renderer.xr.enabled = xe; }
     return i + n; }
   // draw a whole visible list in chunks (one chunk per frame), plus the mirror pass for the shop
-  async function drawList(area, list, mirror) { for (let i = 0; i < list.length;) { i = drawChunk(area, list, i, 24, false); await frame(); }
+  async function drawList(area, list, mirror) { for (let i = 0; i < list.length;) { i = drawChunk(area, list, i, 24, false); if (PW.prog && PW.prog.ph === 'draw') PW.prog.i = Math.min(i, list.length); await frame(); }
     if (mirror && MV.twin) { const ml = list.filter(o => !o.isReflector); for (let i = 0; i < ml.length;) { i = drawChunk(area, ml, i, 24, true); await frame(); } } }
   function drawAllNow(area) { const l = LISTS[area] || []; for (let i = 0; i < l.length;) i = drawChunk(area, l, i, 1e9, false); if (area === 2 && MV.twin) drawChunk(area, l, 0, 1e9, true); }
   // program inputs that matter for dedupe: the material(s), instancing / skinning / batching, vertex colours, morph targets
@@ -1289,8 +1306,11 @@ export function setupVR(A) {
       finally { renderer.setRenderTarget(prev); if (undoG) undoG(); } });
     return j; }
   // poll KHR_parallel_shader_compile completion (three's isReady) without blocking; true when everything issued so far is linked
-  function ready(budget) { const t0 = performance.now(); for (const m of PW.pending) { if (performance.now() - t0 > budget) return false; let r = true; try { const p = renderer.properties.get(m).currentProgram; r = !p || p.isReady(); } catch (e) {} if (r) PW.pending.delete(m); } return PW.pending.size === 0; }
+  function ready(budget) { const t0 = performance.now(); for (const m of PW.pending) { if (performance.now() - t0 > budget) return false; let r = true; try { const p = renderer.properties.get(m).currentProgram; r = !p || p.isReady() !== false; } catch (e) {} if (r) PW.pending.delete(m); } return PW.pending.size === 0; }   // v10: a null status (deleted / errored program) never turns true: count it as done
   const budget = () => PW.holdFor ? 20 : S.presenting ? (VEIL.on ? 14 : 4) : 5;
+  // v10: ?warmlog=1 prints each pre-warm step to the console and shows the current step + timings on the PREPARING VR card (S.warmLog() returns the log)
+  PW.log = []; function logW(m) { const t = Math.round(performance.now() - (PW.startedAt || 0)); PW.log.push(t + 'ms ' + m); if (PW.log.length > 80) PW.log.shift(); if (dbg().warmlog) console.log('[warm] ' + t + 'ms ' + m); }
+  S.warmLog = () => PW.log.slice();
   PW.slices = []; let _sl = 0;   // the longest pre-warm slices (ms, job) for the tests
   function frame() { const n = performance.now(); if (_sl) { const d = n - _sl, c = PW.cur ? PW.cur.area + ':' + PW.cur.kind : '?'; if (PW.slices.length < 8 || d > PW.slices[PW.slices.length - 1][0]) { PW.slices.push([Math.round(d), c]); PW.slices.sort((a, b) => b[0] - a[0]); PW.slices.length = Math.min(8, PW.slices.length); } }
     return new Promise(r => { const go = () => { _sl = performance.now(); r(); }; if (S.presenting && session) session.requestAnimationFrame(go); else requestAnimationFrame(go); }); }
@@ -1304,9 +1324,17 @@ export function setupVR(A) {
     if (a === 3) { const q = performance.now(); try { if (window.__loadNK) await window.__loadNK(); } catch (e) {} PW.loadNKMs = Math.round(performance.now() - q); _sl = performance.now(); if (!scene.getObjectByName('nkStudio')) return; }
     if (job.kind === 'vis' || job.kind === 'rest') {
       const { list, keys } = meshList(a, job.kind === 'vis', job.kind === 'rest' ? PW.seenKeys[a] : null); if (job.kind === 'vis') PW.seenKeys[a] = keys;
-      let i = 0; while (i < list.length) { i = compileSome(a, list, i, budget(), a === 2 && job.kind === 'vis'); await frame(); }
-      while (!ready(budget())) await frame();
-      if (job.kind === 'vis') { LISTS[a] = list; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); }   // in VR (card gone) the one draw waits for the beam's cut
+      let i = 0; PW.prog = { a, kind: job.kind, ph: 'compile', i: 0, n: list.length }; logW('start ' + a + ':' + job.kind + ' meshes ' + list.length);
+      while (i < list.length) { i = compileSome(a, list, i, budget(), a === 2 && job.kind === 'vis'); PW.prog.i = i; await frame(); }
+      // v10 (Dave t475u: the card sat at 60% on the Quest): wait for the driver's parallel link, but never forever. After LINK_CAP (3 s under the card,
+      // 8 s otherwise) the rest are linked ONE PER FRAME (a synchronous getUniforms), so the card keeps drawing and its number keeps moving.
+      { const tR = performance.now(), n0 = PW.pending.size; PW.prog = { a, kind: job.kind, ph: 'link', i: 0, n: n0 };
+        while (!ready(budget())) { PW.prog.i = n0 - PW.pending.size; if (performance.now() - tR > (VEIL.on ? 3000 : 8000)) break; await frame(); }
+        if (PW.pending.size) { const left = [...PW.pending]; PW.linkCapped = (PW.linkCapped || 0) + left.length; logW('link cap: ' + left.length + ' of ' + n0 + ' not reported ready after ' + Math.round(performance.now() - tR) + ' ms; linking one per frame');
+          PW.prog = { a, kind: job.kind, ph: 'link1', i: 0, n: left.length };
+          for (const m of left) { const t1 = performance.now(); try { const p = renderer.properties.get(m).currentProgram; if (p) p.getUniforms(); } catch (e) {} PW.pending.delete(m); PW.prog.i++; const d = performance.now() - t1; if (d > (PW.link1Max || 0)) PW.link1Max = Math.round(d); await frame(); } }
+        logW('linked ' + a + ':' + job.kind + ' ' + n0 + ' in ' + Math.round(performance.now() - tR) + ' ms'); }
+      if (job.kind === 'vis') { LISTS[a] = list; PW.prog = { a, kind: job.kind, ph: 'draw', i: 0, n: list.length }; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); logW('drawn ' + a + ' at ' + Math.round(performance.now() - PW.startedAt) + ' ms'); }   // in VR (card gone) the one draw waits for the beam's cut
       PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
       if (job.kind === 'vis') PW.warm.add(a); }
     else if (job.kind === 'tex') { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;

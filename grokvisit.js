@@ -949,6 +949,8 @@ export function setupGrokVisit({ scene, tp, play, monkey, camera, st } = {}) {
   api.chat = chat;
 
   function tick(dt) {
+    if (window.__gaHoldAV) return;   // vrtest-v10: Grok waits (no walk-in, no timers) while the PREPARING VR card is up
+    if (performance.now() < (window.__gaRevealAt || 0) + 2500 && api.state === 'idle') return;   // ...and enters only a moment after the reveal
     if (api.chatting || resumeT > 0) phaseT -= dt;   // frozen while chatting
     t += dt; api.sessT += dt; phaseT += dt;
     // stragglers only (begin already kicked the full queue); never decode during walk

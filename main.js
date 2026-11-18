@@ -1986,7 +1986,7 @@ function frame(now, xrFrame) {
     if (window.__camOverride && window.__camOverride.bloom != null) bloom.strength = window.__camOverride.bloom; } // screenshots / tests
   if (shop) { const gb = golf && golf.below, gx = monkey.position.x, gz = monkey.position.z; shop.update(Math.min(gap / 1000, 0.05)); if (gb) { monkey.position.x = gx; monkey.position.z = gz; } }   // golf basement: the shop's own prop push-out (east wall obstacles, x<=93.6) must not apply under its floor
   winds.update();
-  if (tp && !st.beamed && window.__start && window.__start.dismissed && !(window.__skipStart && !window.__beamTest)) { st.beamed = true; const b = beamSpot(); tp.beamIn(b.x, b.z); }   // t282u: once per session, first Play
+  if (tp && !st.beamed && !window.__gaHoldAV && window.__start && window.__start.dismissed && !(window.__skipStart && !window.__beamTest)) { st.beamed = true; const b = beamSpot(); tp.beamIn(b.x, b.z); }   // t282u: once per session, first Play
   if (tp) tp.update(Math.min(gap / 1000, 0.05), !!document.querySelector('#bPack.on') && !document.querySelector('#inv.on'));
   rrStep(gap / 1000);
   if (nb) { nb.update(Math.min(gap / 1000, 0.05)); nbHud(); nbFade(Math.min(gap / 1000, 0.05)); if (nb.camera(camera)) monkey.visible = false; }   // t779u: ZOOM = full-screen playfield
@@ -2004,9 +2004,10 @@ function frame(now, xrFrame) {
     try { tickRoomStream(now); } catch (e) {}
     const vis = c => { const sc = c.userData.centre, maxD = PS.on ? PS.cabFar : 18; return (_frus.intersectsSphere(_sph.set(_v.copy(sc).setY(1.2), 1.4)) && camera.position.distanceTo(sc) < maxD) || !!window.__forceDemo; };
     const dts = Math.min(gap / 1000, 0.1);
-    if (draw) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
+    const HOLD = !!window.__gaHoldAV;   // vrtest-v10: PREPARING VR card up: attract demos wait for the reveal
+    if (draw && !HOLD) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
     const nearMs = PS.on ? PS.cabNearMs : 120;
-    if (now - (frame.attT || 0) > nearMs) { frame.attT = now; for (const c of [berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, roadsterCab, clawCab, bbCab, rockfallCab, skyTowerCab]) {
+    if (!HOLD && now - (frame.attT || 0) > nearMs) { frame.attT = now; for (const c of [berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, roadsterCab, clawCab, bbCab, rockfallCab, skyTowerCab]) {
       if (!(vis(c) && !(c.userData.visit && c.userData.visit.on))) continue;
       if (!LIVE_SCREENS && stillScreen(c)) continue;   // v22: idle screens stay the still painted at build
       if (PS.on && camera.position.distanceTo(c.userData.centre) > PS.cabNear && (now - (c.userData._psTick || 0) < PS.cabFarMs)) continue;
