@@ -10,7 +10,7 @@ const CPU = +(process.env.CPU || 4), MAXMS = +(process.env.MAXMS || 150);
   await page.waitForFunction(() => window.__gaVR && window.__gaVR.prewarm && window.__gaVR.prewarm.done, null, { timeout: 300000 });
   await page.waitForTimeout(2000);
   const R = await page.evaluate(() => { const P = window.__gaVR.prewarm, a = window.__lag.iv.filter(x => x[0] > P.startedAt - 200), v = a.map(x => x[1]), s = v.slice().sort((x, y) => y - x);
-    return { prewarmMs: P.ms, startScreen: !!document.getElementById('start'), frames: v.length, max: s[0], top5: s.slice(0, 5), over50: v.filter(x => x > 50).length, over100: v.filter(x => x > 100).length, p95: s[Math.floor(s.length * 0.05)], areas: P.areas, programs: P.programs, textures: P.textures }; });
+    return { prewarmMs: P.ms, startScreen: !!document.getElementById('start'), frames: v.length, max: s[0], top5: s.slice(0, 5), over50: v.filter(x => x > 50).length, over100: v.filter(x => x > 100).length, p95: s[Math.floor(s.length * 0.05)], areas: P.areas, programs: P.programs, textures: P.textures, slices: P.slices, loadShopMs: P.loadShopMs, loadNKMs: P.loadNKMs, long: window.__lag.iv.filter(x => x[1] > 400 && x[0] > P.startedAt - 200).map(x => [Math.round(x[0] - P.startedAt), x[1]]) }; });
   console.log('START ' + JSON.stringify(R));
   if (process.env.CHECK) { chk(R.startScreen, 'measured on the start screen'); chk(R.max <= MAXMS, 'start screen: no frame over ' + MAXMS + ' ms while the VR pre-warm runs (longest ' + R.max + ' ms, ' + R.over100 + ' over 100 ms)'); chk(errors.length === 0, 'no page errors ' + errors.slice(0, 3).join('|')); console.log(ok ? 'ALL PASS' : 'SOME FAILED'); }
   await close(); process.exit(ok ? 0 : 1);
