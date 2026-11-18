@@ -12,7 +12,7 @@ const { open, play } = require('./lib');
     await play(page, false, 'Astro'); await ev(() => { window.__gaMusicHold = 1500; });
     await page.waitForFunction(() => window.__music.loaded || window.__music.err, null, { timeout: 30000 });
     await at(0, 4); await page.waitForTimeout(1500);
-    let m = await M(); chk(m.loaded && m.mb > 20, 'room loop decoded and playing in room 1', m);
+    let m = await M(); chk(m.loaded && m.mb > 5, 'room loop decoded and playing in room 1', m);   // v11: mono AAC decodes to ~13.4 MB at the context rate (v9 stereo 26.8)
     await at(-48, 0); await page.waitForFunction(() => !window.__music.loaded, null, { timeout: 20000 }).catch(() => {});
     m = await M(); chk(!m.loaded && m.drops >= 1 && m.mb === 0, 'in the Neon Knockout studio the room loop is dropped after the hold', m);
     await page.waitForTimeout(2500); m = await M(); chk(!m.loaded && m.loads === 1, 'it is not re-decoded while still away', m);
