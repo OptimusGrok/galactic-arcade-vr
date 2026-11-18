@@ -13,15 +13,18 @@
   // 48-bar loop (after the intro), seamless. The other loops are kit compositions (cabinet-kit/audio/gen.py), not the games' music.
   // exact loop lengths (samples) let us skip mp3 encoder padding like music.js does; berserker reuses its own title music
   var TRACKS = {
-    strike: { src: 'audio/cab_strike.mp3', samples: 1638813, rate: 22050 }, monkey: { src: 'audio/cab_monkey.mp3', samples: 358780, rate: 22050 },
-    nova: { src: 'audio/cab_nova.mp3', samples: 441000, rate: 22050 }, cyber: { src: 'audio/cab_cyber.mp3', samples: 341419, rate: 22050 },
-    orc: { src: 'audio/cab_orc.mp3', samples: 320727, rate: 22050 }, ghost: { src: 'audio/cab_ghost.mp3', samples: 302400, rate: 22050 },
-    roadster: { src: 'audio/cab_roadster.mp3', samples: 294000, rate: 22050 }, ds: { src: 'audio/cab_ds.mp3', samples: 504000, rate: 22050 },
-    blaster: { src: 'audio/cab_blaster.mp3', samples: 264600, rate: 22050 }, pip: { src: 'audio/cab_pip.mp3', samples: 330750, rate: 22050 },
-    claw: { src: 'audio/cab_claw.mp3', samples: 384873, rate: 22050 }, bb: { src: 'audio/cab_bb.mp3', samples: 352800, rate: 22050 },
+    strike: { src: 'audio/cab_strike.mp3', samples: 1638813, rate: 22050 }, monkey: { src: 'audio/cab_monkey.mp3', samples: 355560, rate: 22050 },
+    nova: { src: 'audio/cab_nova.mp3', samples: 357443, rate: 22050 }, cyber: { src: 'audio/cab_cyber.mp3', samples: 357443, rate: 22050 },
+    orc: { src: 'audio/cab_orc.mp3', samples: 357443, rate: 22050 }, ghost: { src: 'audio/cab_ghost.mp3', samples: 357443, rate: 22050 },
+    roadster: { src: 'audio/cab_roadster.mp3', samples: 294000, rate: 22050 }, ds: { src: 'audio/cab_ds.mp3', samples: 353678, rate: 22050 },
+    blaster: { src: 'audio/cab_blaster.mp3', samples: 264600, rate: 22050 }, pip: { src: 'audio/cab_pip.mp3', samples: 291060, rate: 22050 },
+    claw: { src: 'audio/cab_claw.mp3', samples: 384873, rate: 22050 }, bb: { src: 'audio/cab_bb.mp3', samples: 357443, rate: 22050 },
     berserker: { src: 'audio/cab_berserker.mp3', vol: 0.3 },
+    // vrtest-v8 (Dave t466u): bb, cyber, ds, ghost, monkey, nova, orc, pip and skytower are now Chief's tracks from the normal link (v255,
+    // the games' own music recorded by his tools/render_cab_music.js); strike, blaster, claw, roadster, berserker already were. Chief has no
+    // Rockfall track (his stays silent), so Rockfall keeps the vrtest-v5 loop.
     // vrtest-v5 (t458u): Rockfall Rush and Sky Tower had no entry here, so positions() skipped their cabinets and walking up was silent
-    rockfall: { src: 'audio/cab_rockfall.mp3', samples: 311294, rate: 22050 }, skytower: { src: 'audio/cab_skytower.mp3', samples: 336000, rate: 22050 }
+    rockfall: { src: 'audio/cab_rockfall.mp3', samples: 311294, rate: 22050 }, skytower: { src: 'audio/cab_skytower.mp3', samples: 355560, rate: 22050 }
   };
   var C = window.__cabMusic = { tracks: TRACKS, want: null, cur: null, duck: 0, fades: 0, loads: 0, starts: 0, maxSources: 0, radius: RADIUS, err: null };
   var ac = null, out = null, node = null, ng = null, curKey = null, cache = {}, order = [], pending = {}, pos = null, lastNear = null, live = 0;
