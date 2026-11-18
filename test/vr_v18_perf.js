@@ -27,7 +27,7 @@ const CHECK = !!process.env.CHECK;
     const vl = await page.waitForFunction(() => { const V = window.__gaVR.veil; return !V || !V.on; }, null, { timeout: 240000 }).then(() => E(() => { const V = window.__gaVR.veil, P = window.__xp; return V ? { shows: V.shows, ms: V.ms, at: P.iv.length } : null; }));
     if (vl && vl.shows) { await page.waitForFunction(n => window.__xp.iv.length >= n + 120, vl.at, { timeout: 240000 });
       console.log('VEIL ' + JSON.stringify(await E(n => { const P = window.__xp, a = P.iv.slice(0, n), b = P.iv.slice(n, n + 120), s = b.slice().sort((x, y) => y - x);
-        return { cardMs: window.__gaVR.veil.ms, framesUnderCard: a.length, maxUnderCard: Math.max(...a), after: { maxIv: s[0], top5: s.slice(0, 5), progs: P.prog.slice(n, n + 121).reduce((x, y) => x + y, 0) }, warms: (window.__gaVR.warms || []).map(w => w.why + ':' + w.ms + 'ms/' + w.programs + 'p') }; }, vl.at))); }
+        return { pw: window.__gaVR.prewarm, cardMs: window.__gaVR.veil.ms, framesUnderCard: a.length, maxUnderCard: Math.max(...a), after: { maxIv: s[0], top5: s.slice(0, 5), progs: P.prog.slice(n, n + 121).reduce((x, y) => x + y, 0) }, warms: (window.__gaVR.warms || []).map(w => w.why + ':' + w.ms + 'ms/' + w.programs + 'p') }; }, vl.at))); }
     const en = await E(() => { const P = window.__xp, iv = P.iv.slice(0, 120), s = iv.slice().sort((a, b) => b - a); return { clickToFirst: +(P.first - P.t0).toFixed(1), maxIv: s[0], top5: s.slice(0, 5), progs: P.prog.slice(0, 121).reduce((a, b) => a + b, 0), med: iv.slice().sort((a, b) => a - b)[60], warms: (window.__gaVR.warms || []).map(w => w.why + ':' + w.ms + 'ms/' + w.programs + 'p') }; });
     console.log('ENTRY ' + JSON.stringify(en));
     // beams

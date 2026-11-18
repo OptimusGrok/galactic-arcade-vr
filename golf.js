@@ -63,7 +63,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const lights = [];
   for (const h of holes) { const l = new THREE.PointLight(0xffffff, 7, 11, 1.3); l.position.set(h.cx, FY + 3.2, h.cz); lights.push(l); grp.add(l); }
   { const l = new THREE.PointLight(0xff4fd8, 4, 9, 1.4); l.position.set(XS + 2, FY + 2.6, (Z0 + WZ1) / 2); lights.push(l); grp.add(l); const f2 = new THREE.PointLight(0x7fe8ff, 3, 8, 1.4); f2.position.set(X0 + RUN * 0.5, -1.4, ZM); lights.push(f2); grp.add(f2); }
-  const setLights = on => { if (S.lightsOn === on) return; S.lightsOn = on; for (const l of lights) l.visible = on; };
+  const setLights = on => { S.lightsOn = on; for (const l of lights) l.visible = on; };   // vrtest-v8: enforced every frame (a warm-up stage left them on in the arcade = an unwarmed 28-light set)
   S.lightsOn = null; setLights(false);
   const toW = (h, x, z) => [h.cx + x, h.cz + z];
   function placeBall(h) { const b = h.ball; h.mesh.visible = !b.sunk; h.mesh.position.set(h.cx + b.x, FY + Math.max(b.y - BALL_R + BALL_R * 1.55, BALL_R * 0.85) + 0.08, h.cz + b.z); }

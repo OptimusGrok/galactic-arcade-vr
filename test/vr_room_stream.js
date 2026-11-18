@@ -43,7 +43,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     b = await win(); console.log('BEAM arcade ' + JSON.stringify(b));
     chk(b.progsWhole === 0 && b.lit.every(l => l > 5) && b.maxAtCut < 600, 'beam back to the arcade: no compiles, no black, no freeze', b);
     await place(0, 6, 0); await until(() => window.__gaStream.shop === 'off', 30000);
-    chk(true, 'after walking away the shop evicts again (hold + deadband)', await E(() => window.__gaStream));
+    { const g = await E(() => window.__gaStream); chk(g.shop === 'on' && g.room2 === 'on', 'v8: in the headset the shop + room 2 textures stay resident after walking away (no re-upload at the next beam)', g); }
     await E(() => { const P = window.__tp.PAD1, S = window.__gaVR; S.rig = { x: P.x + 0.3, y: 0, z: P.z + 0.3, yaw: 0.8 }; S.applyRig(); window.__arcade.monkey.position.set(P.x + 0.3, 0, P.z + 0.3);
       window.__xp.mark = window.__xp.iv.length; window.__tp.go('nk'); });
     await until(() => window.__tp.where === 3 && window.__tp.state === 'idle', 120000); await H.frames(page, 30);
