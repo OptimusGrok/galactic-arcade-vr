@@ -916,8 +916,10 @@ export function setupVR(A) {
   // compiles asynchronously and draws each area once; then the world appears already warm. Safety: the card lifts after 45 s regardless.
   const VEIL = S.veil = { on: false, t0: 0, shows: 0, ms: 0, hidden: [] };
   const veilM = panel(0.9, 0.3, 768, 256); veilM.name = 'vrVeil'; veilM.visible = false; veilM.renderOrder = 2000; veilM.material.depthTest = false; scene.add(veilM);
-  function veilFrame() { if (!VEIL.on) return; const pct = Math.min(99, Math.round(100 * ((PW.areas.length + (PW.textures ? 1 : 0)) / 5)));
-    if (PW.done || performance.now() - VEIL.t0 > 45000 || !S.presenting) { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig); return; }
+  function veilFrame() { if (!VEIL.on) return; const where = (A.tp && A.tp.where) || 1, q = PW.cur && PW.cur.gate ? 0.5 : 0;
+    // v9: the card waits only for the area you are in (its visible set compiled, linked and drawn once); the rest warms in the background
+    const pct = Math.min(99, Math.round(100 * (S.areaWarm(where) ? 1 : (PW.pending.size ? 0.6 : q))));
+    if (S.areaWarm(where) || performance.now() - VEIL.t0 > 45000 || !S.presenting) { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; return; }
     camera.updateMatrixWorld(true); camera.getWorldQuaternion(veilM.quaternion); camera.getWorldPosition(veilM.position); veilM.position.add(_v.set(0, 0, -1.4).applyQuaternion(veilM.quaternion));
     drawPanel(veilM, ['PREPARING VR', pct + '%']); }
   function veilHide() { const H = VEIL.hidden; H.length = 0; for (const c of scene.children) if (c !== veilM && c.visible && !c.isLight) { H.push(c); c.visible = false; } veilM.visible = true; }
@@ -932,8 +934,8 @@ export function setupVR(A) {
     try { renderer.xr.setFoveation(1); } catch (e) {}
     document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
-    if (!PW.done && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; }
-    S.warmReq = PW.done || VEIL.on ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
+    if (!S.areaWarm((A.tp && A.tp.where) || 1) && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; }
+    S.warmReq = PW.done || VEIL.on || PW.busy || S.areaWarm((A.tp && A.tp.where) || 1) ? null : 'start';   // v9: a running sliced pre-warm is never replaced by a one-frame compile S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
     S.blurred = false; S.vis = session.visibilityState || 'visible';
@@ -1075,7 +1077,7 @@ export function setupVR(A) {
   function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); PIN.golf = false; }
   S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
   function warmCheck() {
-    if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
+    if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop && !PW.busy && !PW.done) S.warmReq = S.warmReq || 'shop'; }
     if (S.warmReq && S.frames > 1) { const why = S.warmReq; S.warmReq = null; pinScan(); pinLights(); warmXR(why); unpinLights(); } }
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
@@ -1224,7 +1226,7 @@ export function setupVR(A) {
   // is marked done, so the cut, the arrival and the session start find everything ready. Phones / computers (no immersive-vr) skip all of it.
   const PW = S.prewarm = { done: false, busy: false, areas: [], ms: 0, programs: 0, textures: 0, err: null, startedAt: 0 };
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
-  function stageArea(area, fn) { const T = A.tp, nkRoot = scene.getObjectByName('nkStudio'), P = area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : T.PAD1;
+  function stageArea(area, fn) { const T = A.tp, nkRoot = scene.getObjectByName('nkStudio'), P = area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : area === 4 ? { x: 0, z: (A.Z2 || -40) + 3 } : T.PAD1;
     const pos = new THREE.Vector3(P.x, 1.6, P.z), fv = fill.visible, nkv = nkRoot ? nkRoot.visible : false, mv = monkey.visible, cp = camera.position.clone(), cq = camera.quaternion.clone();
     const fr = new THREE.Frustum(); camera.position.copy(pos); camera.updateMatrixWorld(true);
     fr.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
@@ -1236,55 +1238,92 @@ export function setupVR(A) {
   // after the compile: draw the staged area once into a 2x2 corner of the default framebuffer (the headset's program variants), looking
   // four ways from the pad, so the GPU driver builds its draw state and the meshes' vertex buffers are uploaded before the first real frame.
   // Reflector passes are switched off for it (the headset doesn't draw them either); the next normal frame repaints those pixels.
-  const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300);
-  function drawWarm(area, spot, restage) { if (S.presenting && !VEIL.on) return; const xe = renderer.xr.enabled; renderer.xr.enabled = false; try { drawWarm0(area, spot, restage); } finally { renderer.xr.enabled = xe; } }
-  function drawWarm0(area, spot, restage) { stageArea(area, () => { const undoG = restage ? restage() : null; const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
-      const vp = new THREE.Vector4(), sc = new THREE.Vector4(), st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(vp); renderer.getScissor(sc);
-      try { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true);
-        _wc.position.copy(camera.position); if (spot) _wc.position.set(spot.x, 1.6, spot.z);
-        for (let k = 0; k < (spot ? 8 : 4); k++) { _wc.rotation.set(spot && k >= 4 ? -0.9 : -0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws = (PW.draws || 0) + 1; }
-        const tw = area === 2 ? MV.twin : null;   // the shop mirror's own pass (its half-float target, xr off) as the headset draws it
-        if (tw) { const rt = tw.getRenderTarget(), mv = monkey.visible, xe = renderer.xr.enabled; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(rt); rt.scissor.set(0, 0, 2, 2); rt.scissorTest = true; rt.viewport.set(0, 0, 2, 2);
-            for (let k = 0; k < 4; k++) { _wc.rotation.set(-0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws++; } }
-          finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } } }
+  // ---------- vrtest-v9 (Dave t468u: start-screen lag, PREPARING VR ~30 s on the Quest; t469u: the first shop -> arcade beam froze) ----------
+  // The v18 pre-warm compiled the WHOLE scene (every material of every room, ~150 programs) for each area's light set in one call, drew each
+  // area 4-8 times in one frame and uploaded 6 textures per frame: long frames on the start screen, and the PREPARING VR card waited for all of it.
+  // Now everything is sliced into small jobs run inside a per-frame time budget (start screen / flat 5 ms, under the VR card 14 ms, in VR 3 ms;
+  // at least one job per frame), shaders are only issued (KHR_parallel_shader_compile links them on driver threads) and polled for readiness:
+  //   gate  (the card waits only for this): the meshes you can see in the area you are in (deduped by program inputs), compiled + linked,
+  //         drawn once per direction into a 2x2 corner (driver state + vertex buffers);
+  //   then  the rest, in order: the shop (with the golf basement + lamps, its mirror pass), room 2, the Neon Knockout studio, every other
+  //         material under each of those light sets (hidden UI / props), the textures, and a simulated arcade -> shop -> arcade round trip
+  //         (the arcade drawn again from the pad after the shop: what froze on the first return).
+  // A beam whose destination isn't warm yet holds at the cut (max 4 s) while that area's jobs run first with a big budget.
+  const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300), _vp = new THREE.Vector4(), _sc = new THREE.Vector4();
+  const areaPos = area => { const T = A.tp; return area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : area === 4 ? { x: 0, z: (A.Z2 || -40) + 3 } : T.PAD1; };
+  function golfStage(area) { const G = window.__minigolf; return area === 2 && G && G.warmStage && !dbg().golfold ? G.warmStage(true, true) : null; }
+  // one 2x2 draw of the staged area: dir 0-3 = level, 4-7 = from the golf stairs looking down (shop), 8-11 = the shop mirror's own pass
+  function drawOne(area, dir) { if (S.presenting && !VEIL.on && !PW.holdFor) return; const xe = renderer.xr.enabled; renderer.xr.enabled = false;
+    try { stageArea(area, () => { const undoG = golfStage(area), refl = [], fc = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
+      scene.traverseVisible(o => { if (o.frustumCulled && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) { o.frustumCulled = false; fc.push(o); } });   // every staged mesh drawn in this one 2x2 pass: programs, VAOs and vertex buffers all go to the GPU at once
+      const st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(_vp); renderer.getScissor(_sc);
+      try { const G = window.__minigolf, spot = dir >= 4 && dir < 8 && G && G.warmSpot ? G.warmSpot() : null;
+        _wc.position.copy(camera.position); if (spot) _wc.position.set(spot.x, 1.6, spot.z); _wc.rotation.set(dir >= 4 && dir < 8 ? -0.9 : -0.15, (dir % 4) * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true);
+        const tw = dir >= 8 ? MV.twin : null;
+        if (tw) { const rt = tw.getRenderTarget(), mv = monkey.visible; try { monkey.visible = true; renderer.setRenderTarget(rt); rt.scissor.set(0, 0, 2, 2); rt.scissorTest = true; rt.viewport.set(0, 0, 2, 2); renderer.render(scene, _wc); }
+          finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); monkey.visible = mv; } }
+        else if (dir < 8) { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true); renderer.render(scene, _wc); }
+        PW.draws = (PW.draws || 0) + 1; }
       catch (e) { PW.err = 'draw ' + e; }
-      finally { renderer.setScissorTest(st0); renderer.setScissor(sc); renderer.setViewport(vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; if (undoG) undoG(); } }); }
-  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; if (dbg().nowarm) { PW.done = true; PW.ms = 0; return; } PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
-    try {
-      try { if (window.__arcade && window.__arcade.loadShop) await window.__arcade.loadShop(); } catch (e) {}
-      try { if (window.__loadNK) await window.__loadNK(); } catch (e) {}   // the studio's code + scene now, not during the first beam
-      await nextFrame();
-      for (const area of [1, 2, 3]) { if (area === 3 && !scene.getObjectByName('nkStudio')) continue;
-        const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '';
-        stageArea(area, () => { LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
-          try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
-          if (area === 2) { const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } } });
-        if (job) await job; await nextFrame();
-        drawWarm(area); await nextFrame();
-        PW.areas.push({ area, sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
-      // vrtest-v5 (t458u): the shop's other light sets: the golf basement in view (from ~8 m before the stairs) and the golf lamps on (from 3 m)
-      const G = window.__minigolf;
-      if (G && G.warmStage && scene.getObjectByName('golfRoom')) for (const [show, lit] of (dbg().golfold ? [[true, false], [true, true]] : [[true, true]])) {   // v7: golf lights pinned = one set (24p), only the basement's first draw is left to warm
-
-        const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '', undo = G.warmStage(show, lit);
-        try { stageArea(2, () => { undo(); undo = G.warmStage(show, lit); LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
-            try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
-            const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } });
-          undo(); undo = () => {};   // v8: staged only inside the synchronous calls, never across an await (live frames saw the lit lamps = 28 lights)
-          if (job) await job; await nextFrame();
-          drawWarm(2, G.warmSpot(), () => G.warmStage(show, lit)); await nextFrame();
-        } catch (e) { PW.err = 'golf ' + e; } finally { undo(); LS.t = -1e9; }
-        PW.areas.push({ area: 'golf' + (lit ? 'Lit' : 'Room'), sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
-      // link + read uniforms a handful of programs per frame (the first draw would otherwise do it)
-      const progs = (renderer.info.programs || []).slice(); for (let i = 0; i < progs.length; i++) { try { progs[i].getUniforms(); } catch (e) {} if (i % 12 === 11) await nextFrame(); }
-      // upload every texture (hidden rooms too), a few per frame
-      const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
+      finally { renderer.setScissorTest(st0); renderer.setScissor(_sc); renderer.setViewport(_vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; for (const o of fc) o.frustumCulled = true; if (undoG) undoG(); } }); }
+    finally { renderer.xr.enabled = xe; } }
+  // program inputs that matter for dedupe: the material(s), instancing / skinning / batching, vertex colours, morph targets
+  const progKey = o => { const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry; return ms.map(m => m && m.uuid).join(',') + (o.isInstancedMesh ? 'I' : '') + (o.isSkinnedMesh ? 'S' : '') + (o.isBatchedMesh ? 'B' : '') + (o.isPoints ? 'P' : o.isLine ? 'L' : o.isSprite ? 'Sp' : '') + (g && g.attributes && g.attributes.color ? 'c' : '') + (g && g.morphAttributes ? Object.keys(g.morphAttributes).length : ''); };
+  function meshList(area, visibleOnly, skip) { const out = [], keys = new Set(); stageArea(area, () => { const undoG = golfStage(area);
+      try { const add = o => { if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || o.isReflector) return; const k = progKey(o); if (keys.has(k) || (skip && skip.has(k))) return; keys.add(k); out.push(o); };
+        if (visibleOnly) scene.traverseVisible(add); else scene.traverse(add); } finally { if (undoG) undoG(); } }); return { list: out, keys }; }
+  // compile meshes[i..] under the staged area's lights until the slice budget runs out (always at least one); returns the next index
+  function compileSome(area, list, i, budget, mirror) { const t0 = performance.now(); let j = i; const fake = { traverse: cb => { for (let q = j0; q < j1; q++) cb(list[q]); }, traverseVisible() {} }; let j0 = i, j1 = i;
+    stageArea(area, () => { const undoG = golfStage(area), prev = renderer.getRenderTarget(); LS.t = -1e9; const sig = lightSig(); LS.done.add(sig); PW.lastSig = sig;
+      try { camera.updateMatrixWorld(true); renderer.setRenderTarget(null);
+        while (j < list.length && (j === i || performance.now() - t0 < budget)) { j0 = j; j1 = j + 1; const ms = renderer.compile(fake, camera, scene); for (const m of ms) PW.pending.add(m);
+          if (mirror && MV.twin) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(MV.twin.getRenderTarget()); renderer.compile(fake, camera, scene); } finally { renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } }
+          j++; PW.jobs++; } }
+      catch (e) { PW.err = 'compile ' + e; j = Math.max(j, i + 1); }
+      finally { renderer.setRenderTarget(prev); if (undoG) undoG(); } });
+    return j; }
+  // poll KHR_parallel_shader_compile completion (three's isReady) without blocking; true when everything issued so far is linked
+  function ready(budget) { const t0 = performance.now(); for (const m of PW.pending) { if (performance.now() - t0 > budget) return false; let r = true; try { const p = renderer.properties.get(m).currentProgram; r = !p || p.isReady(); } catch (e) {} if (r) PW.pending.delete(m); } return PW.pending.size === 0; }
+  const budget = () => PW.holdFor ? 16 : S.presenting ? (VEIL.on ? 14 : 3) : 5;
+  function frame() { return new Promise(r => { if (S.presenting && session) session.requestAnimationFrame(() => r()); else requestAnimationFrame(() => r()); }); }
+  // the job list: [name, area, kind, ...]
+  function buildJobs(first) { const J = []; const areas = [first, ...[1, 2, 4, 3].filter(a => a !== first)];
+    for (const a of areas) J.push({ area: a, kind: 'vis', gate: a === first });
+    J.push({ area: first, kind: 'rest' }); for (const a of areas) if (a !== first && a !== 4) J.push({ area: a, kind: 'rest' });
+    J.push({ kind: 'tex' }, { kind: 'trip' }); return J; }
+  async function runJob(job) { const a = job.area, t0 = performance.now(), p0 = renderer.info.programs ? renderer.info.programs.length : 0;
+    if (a === 2) { try { if (A.loadShop) await A.loadShop(); } catch (e) {} try { mirrorTwin(); } catch (e) {} }
+    if (a === 3) { try { if (window.__loadNK) await window.__loadNK(); } catch (e) {} if (!scene.getObjectByName('nkStudio')) return; }
+    if (job.kind === 'vis' || job.kind === 'rest') {
+      const { list, keys } = meshList(a, job.kind === 'vis', job.kind === 'rest' ? PW.seenKeys[a] : null); if (job.kind === 'vis') PW.seenKeys[a] = keys;
+      let i = 0; while (i < list.length) { i = compileSome(a, list, i, budget(), a === 2 && job.kind === 'vis'); await frame(); }
+      while (!ready(budget())) await frame();
+      if (job.kind === 'vis') { if (S.presenting && !VEIL.on) PW.needDraw.add(a); else for (const d of (a === 2 ? [0, 8] : [0])) { drawOne(a, d); await frame(); } }   // in VR (card gone) the one draw waits for the beam's cut
+      PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
+      if (job.kind === 'vis') PW.warm.add(a); }
+    else if (job.kind === 'tex') { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
         for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap', 'bumpMap']) { const x = m[k]; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); }
         if (o.material && o.material.uniforms) for (const u of Object.values(o.material.uniforms)) { const x = u && u.value; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); } });
-      let n = 0; for (const x of seen) { try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (++n % 6 === 0) await nextFrame(); }
-      PW.programs = PW.areas.reduce((a, b) => a + b.programs, 0); PW.done = true;
-    } catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
-    PW.busy = false; PW.ms = Math.round(performance.now() - t0); }
+      let t = performance.now(); for (const x of seen) { const props = renderer.properties.get(x); if (props && props.__webglTexture && props.__version === x.version) continue; try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (performance.now() - t > budget()) { await frame(); t = performance.now(); } } }
+    else if (job.kind === 'trip') { if (S.presenting && !VEIL.on) return;   // arcade -> shop -> arcade, one direction per frame (the first return froze on the Quest)
+      for (const [ar, d] of [[1, 0], [2, 0], [1, 2]]) { drawOne(ar, d); await frame(); } PW.trip = true; } }
+  PW.warm = new Set(); PW.pending = new Set(); PW.seenKeys = {}; PW.jobs = 0; PW.holdFor = 0;
+  PW.needDraw = new Set();
+  S.areaWarm = a => (PW.done || PW.warm.has(a)) && !PW.needDraw.has(a);
+  // a beam whose destination area isn't warm yet holds at the cut (max 4 s) while that area's jobs run first with a 16 ms budget
+  { const hold = { t: 0 }; const T = () => A.tp; const hook = () => { const tp = T(); if (!tp || tp.holdCut) return !!tp; tp.holdCut = dd => { const a = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1;
+      if (S.presenting && PW.needDraw.has(a) && PW.warm.has(a)) { PW.needDraw.delete(a); PW.holdFor = a; for (const d of (a === 2 ? [0, 8] : [0])) drawOne(a, d); PW.holdFor = 0; PW.cutDraws = (PW.cutDraws || 0) + 1; return true; }   // compiled in VR, drawn once now at the cut
+      if (!S.presenting || S.areaWarm(a) || !PW.busy) { PW.holdFor = 0; hold.t = 0; return false; }
+      if (!hold.t) { hold.t = performance.now(); PW.holds = (PW.holds || 0) + 1; } if (performance.now() - hold.t > 4000) { PW.holdFor = 0; hold.t = 0; return false; }
+      PW.holdFor = a; return true; }; return true; };
+    const iv = setInterval(() => { if (hook()) clearInterval(iv); }, 500); }
+  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; if (dbg().nowarm) { PW.done = true; PW.ms = 0; return; } PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
+    try { const first = A.tp.where || 1; PW.queue = buildJobs(first);
+      while (PW.queue.length) { let k = 0; if (PW.holdFor) { const h = PW.queue.findIndex(j => j.kind === 'vis' && j.area === PW.holdFor); if (h >= 0) k = h; }
+        const job = PW.queue.splice(k, 1)[0]; PW.cur = job; await runJob(job); if (job.gate) PW.gateMs = Math.round(performance.now() - t0); }
+      PW.programs = renderer.info.programs ? renderer.info.programs.length : 0; PW.done = true; }
+    catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
+    PW.busy = false; PW.cur = null; PW.ms = Math.round(performance.now() - t0); }
   S.prewarmRun = prewarm;
   { const kick = setInterval(() => { if (PW.done || PW.busy) { if (PW.done) clearInterval(kick); return; } if (window.__noPrewarm) return; const ST = window.__arcade && window.__arcade.stats; if (S.supported && ST && ST.frames > 5 && A.tp) prewarm(); }, 500); }
   function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }

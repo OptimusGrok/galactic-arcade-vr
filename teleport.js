@@ -174,7 +174,8 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
         if (f >= 1) { api.state = 'flash'; api.t = 0; } }
       else if (api.state === 'flash') { const D = 0.35; fl.style.opacity = String(Math.sin(Math.PI * Math.min(1, T / D)) * DB);
         if (!api.cut) { power(padOf(api.where), 1 - T / D, T); chargeRings(padOf(api.where), 9, 1 - T / D); }
-        if (T > D / 2 && !api.cut) { api.cut = 1; power(padOf(api.where), 0, 0); chargeRings(padOf(api.where), 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'nk' ? pads[2] : dd === 'arcade' ? pads[0] : null; st.camInit = false;
+        if (T > D / 2 && !api.cut && api.holdCut && api.holdCut(api.dest)) { api.t = D / 2; api.held = (api.held || 0) + 1; }   // vrtest-v9: VR pre-warm still preparing the destination: wait at the cut
+        else if (T > D / 2 && !api.cut) { api.cut = 1; power(padOf(api.where), 0, 0); chargeRings(padOf(api.where), 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'nk' ? pads[2] : dd === 'arcade' ? pads[0] : null; st.camInit = false;
           if (dd === 'arcade') arrive(); else if (dd === 'nk') { const f = Math.atan2(-NK_PAD.x, -NK_PAD.z); st.face = f; monkey.rotation.y = f; st.yaw = f + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; } else if (DD.pos) { st.face = DD.face; monkey.rotation.y = DD.face; st.yaw = DD.face + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; }
           swirlAt(tp.x, tp.z, 2.0); plane.normal.set(0, -1, 0); plane.constant = -0.05; }
         if (T >= D) { fl.style.opacity = '0'; api.cut = 0; api.state = 'remat'; api.t = 0; zapIn(); zap(false, 0.05); } }
