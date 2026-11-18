@@ -111,12 +111,22 @@ export function buildGrokClerk() {
 export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const W = tp.whiteRoom, WXp = W.position.x, H0 = 12, K = SHOP_HALF / H0;
   const getMonkey = () => monkey || (window.__arcade && window.__arcade.monkey);
+  // t487u: v12's 0.8x whites were hard to see in VR (MeshBasic toneMapped:false + emissive still clipped).
+  // Another 30% on top of v12: 0.8 * 0.7 = 0.56 of the original, applied to ALL shop-room whites.
+  // Colours / emissive only — the shop's fixed 24-light set (one PointLight at 40 * 1.3) is unchanged.
+  const WHITE_K = 0.56, FLOOR_GLOW_K = 0.5, EMISSIVE_K = 0.56;
+  const dimC = (hex, k = WHITE_K) => new THREE.Color().setRGB(((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k, THREE.SRGBColorSpace);
   // ---------- enlarge the white room: stretch the existing floor / ceiling / wall planes ----------
+  const dimmedMats = new Set();
   for (const o of [...W.children]) {
     if (o.isPointLight) { o.distance = 24; o.intensity *= 1.3; continue; }
     if (!o.isMesh || !o.geometry.parameters || o.geometry.type !== 'PlaneGeometry') continue;
-    if (Math.abs(Math.abs(o.rotation.x) - Math.PI / 2) < 1e-3) { o.scale.set(K, K, 1); if (o.position.y > 1) o.visible = false; }   // floor / ceiling (flat ceiling hidden: the curved glass roof replaces it)
-    else { o.position.x *= K; o.position.z *= K; o.scale.x = K; }                       // walls
+    if (Math.abs(Math.abs(o.rotation.x) - Math.PI / 2) < 1e-3) { o.scale.set(K, K, 1); if (o.position.y > 1) { o.visible = false; o.name = o.name || 'shopRoomCeiling'; } else o.name = o.name || 'shopRoomFloor'; }   // floor / ceiling (flat ceiling hidden: the curved glass roof replaces it)
+    else { o.position.x *= K; o.position.z *= K; o.scale.x = K; o.name = o.name || 'shopRoomWall'; }                       // walls
+    for (const m of [].concat(o.material).filter(Boolean)) {
+      if (!m.color || dimmedMats.has(m)) continue;   // four walls share one material — dim once
+      dimmedMats.add(m); m.color.copy(dimC(m.color.getHex()));
+    }
   }
   const G = new THREE.Group(); G.name = 'prizeShop'; W.add(G);
   const HS = SHOP_HALF;
@@ -273,9 +283,6 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const basic = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
-  // t484u: dim the white around the space window, prize (price) shelves and Grok's counter to 80%,
-  // and the counter's glow on the neon floor to 50%. Colours / intensities only — the shop's fixed 24-light set is unchanged.
-  const WHITE_K = 0.8, FLOOR_GLOW_K = 0.5, dimC = (hex, k = WHITE_K) => new THREE.Color().setRGB(((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k, THREE.SRGBColorSpace);
   const ledM = basic(0x3d7bff), ledM2 = basic(0xa64dff), ledC = basic(0x40e8ff), litM = basic(dimC(0xffffff));
   const ledB = [], ledP = [], ledCy = [], lit = [];
   const setUV = (g, u0, u1, v0, v1) => { const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * (u1 - u0), v0 + uv.getY(k) * (v1 - v0)); return g; };
@@ -285,7 +292,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // ---------- SHOP SHELL: one big square room - back wall partition (full height), the white room's own flat ceiling + side walls, neon trim only ----------
   const ZW = -3.2, SXW = HS, CH = 8.5, ZF = HS, shell = [];
   part(shell, BOX, 0xf7f8fb, 0, CH / 2, ZW - 0.05, 2 * HS, CH, 0.1);                                        // back wall (full width, floor to ceiling)
-  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopShell');
+  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopShell');
   // ---------- CORNICE: white soffit band where the walls meet the vault, flush downlight strips + cyan neon (nothing hangs) ----------
   const cor = [];
   for (const sd of [-1, 1]) { part(cor, BOX, 0xf4f6fa, sd * (SXW - 0.3), CH - 0.18, (ZW + ZF) / 2, 0.6, 0.36, ZF - ZW); lit.push(new THREE.BoxGeometry(0.16, 0.02, ZF - ZW - 1.0).translate(sd * (SXW - 0.38), CH - 0.37, (ZW + ZF) / 2));
@@ -317,7 +324,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
         if (uCap < .5) { rib = line(vU.y * 6., .018); pur = line(vU.x * 12., .012); }
         else { vec2 p = vec2(vU.x * 2. - 1., vU.y); float r = length(p), a = atan(p.y, p.x); rib = line(r * 3., .01) * step(r, 1.) * step(.1, r) + step(.985, r); pur = 0.; }
         col += vec3(.55,.75,1.) * .045 * smoothstep(.5, 0., abs(fract(vU.x * 3. + vU.y * .7) - .5));                     // faint glass sheen
-        col = mix(col, vec3(.688,.712,.752), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
+        col = mix(col, vec3(.482,.498,.526), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
   { const vg = new THREE.CylinderGeometry(VR, VR, VL, 72, 1, true, -Math.PI / 2, Math.PI).rotateX(-Math.PI / 2).translate(0, CH, VZ);
     const sk = new THREE.Mesh(vg, skyMat); sk.name = 'shopSkylight'; sk.frustumCulled = false; G.add(sk); api_sky = skyMat;
     const capM = skyMat.clone(); capM.uniforms = { uT: skyMat.uniforms.uT, uCap: { value: 1 } };
@@ -458,10 +465,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     part(cand, CYL, 0xffffff, x, yb + 0.25, z, 0.014, 0.5, 0.014);
     const cg = setUV(new THREE.CircleGeometry(R0, 22), 0, 1, 0, 1); const uv = cg.attributes.uv; for (let q = 0; q < uv.count; q++) uv.setX(q, (t + uv.getX(q)) / 3); cg.rotateY(Math.PI / 2); cg.translate(x + 0.02, yb + 0.55 + (j % 2) * 0.1, z); pops.push(cg); }
   const cm = (geos, mat, name, ro) => { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.name = name; if (ro) m.renderOrder = ro; CG.add(m); return m; };
-  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
+  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
   cm(pops, new THREE.MeshBasicMaterial({ map: sw.t, side: THREE.DoubleSide, toneMapped: false }), 'swirlPops'); cm(cLed, ledM, 'candyLed');
-  cm(jars, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
-  cm(lids, new THREE.MeshBasicMaterial({ color: 0xe4e8ef }), 'jarLids');
+  cm(jars, new THREE.MeshBasicMaterial({ color: dimC(0xffffff), transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
+  cm(lids, new THREE.MeshBasicMaterial({ color: dimC(0xe4e8ef) }), 'jarLids');
 
   // ---------- CHECKOUT (right front): curved white counter, cyan base glow, till + register, chunky Grok behind ----------
   const QX = 4.45, QZ = -1.95, RO = 1.95, RI = 1.4, A0 = Math.PI * 0.9, A1 = Math.PI * 1.62;
@@ -469,7 +476,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     return new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false, curveSegments: 28 }).rotateX(-Math.PI / 2); };
   const counterMat = new THREE.MeshStandardMaterial({ color: 0x0e1638, roughness: 0.35, emissive: 0x060a20 });   // shared with the wardrobe island
   add([ring(RO, RI, 1.0).translate(QX, 0.04, QZ)], counterMat, 'checkoutCounter');
-  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: dimC(0xffffff), roughness: 0.2, emissive: dimC(0xb0b4bc) }), 'checkoutTop');
+  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: dimC(0xffffff), roughness: 0.2, emissive: dimC(0xb0b4bc), emissiveIntensity: EMISSIVE_K }), 'checkoutTop');
   { const AL = A1 - A0, ss = Math.max(0.5, tierQuality().shopLab || 1), CW = Math.round(2048 * ss), CHh = Math.round(256 * ss);
     const ft = canvasTex(CW, CHh, (g, w, h) => { g.setTransform(w / 2048, 0, 0, h / 256, 0, 0); g.fillStyle = '#0e1638'; g.fillRect(0, 0, 2048, 256);
       const neon = (c, blur, lw, fn) => { g.save(); g.strokeStyle = c; g.shadowColor = c; g.shadowBlur = blur; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); fn(); g.stroke(); g.restore(); };
@@ -501,7 +508,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
 
   // ---------- glossy floor (fake reflections of the glowing wall, candy and counter) ----------
   { const fl = canvasTex(512, 512, (g, w, h) => { g.clearRect(0, 0, w, h); const X = x => (x + SXW) / (2 * SXW) * w, Zp = z => (z - ZW) / (ZF - ZW) * h;
-      let r = g.createLinearGradient(0, 0, 0, Zp(1.2)); r.addColorStop(0, 'rgba(255,255,255,.9)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(X(-SW / 2), 0, X(SW / 2) - X(-SW / 2), Zp(1.2));
+      let r = g.createLinearGradient(0, 0, 0, Zp(1.2)); r.addColorStop(0, 'rgba(255,255,255,' + (0.9 * WHITE_K).toFixed(2) + ')'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(X(-SW / 2), 0, X(SW / 2) - X(-SW / 2), Zp(1.2));
       for (const [k, ux] of UX.entries()) { r = g.createLinearGradient(0, 0, 0, Zp(0.6)); r.addColorStop(0, k % 2 ? 'rgba(166,77,255,.6)' : 'rgba(61,123,255,.6)'); r.addColorStop(1, 'rgba(61,123,255,0)'); g.fillStyle = r; g.fillRect(X(ux) - 3, 0, 6, Zp(0.6)); }
       for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(${[255, 40, 255, 60][k % 4]},${[60, 200, 40, 120][k % 4]},${[90, 60, 160, 255][k % 4]},.18)`; g.fillRect(X(-5.6 + rnd() * 1.8), Zp(-1.8 + rnd() * 3.6), 10, 26); } });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * SXW, ZF - ZW), new THREE.MeshBasicMaterial({ map: fl.t, transparent: true, depthWrite: false, toneMapped: false }));
@@ -636,7 +643,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const WDS = 1.04, WDX = 1.75, WDZ = 7.5, WDW = 3.1 * WDS, WDD = 0.85 * WDS;   // scale, back-panel x, centre z, half width (along z), depth (toward -x)
   const wd = new THREE.Group(); wd.name = 'wardrobeCorner'; wd.position.set(WDX, 0, WDZ); wd.rotation.y = -Math.PI / 2; wd.scale.setScalar(WDS); G.add(wd);   // local +z faces -x (the pad side), local +x runs toward +z
   { const L = [], neon = [], neonP = [], dark = [], q = (geo, c, x, y, z, sx, sy = sx, sz = sx, rx = 0, ry = 0, rz = 0) => part(L, geo, c, x, y, z, sx, sy, sz, rx, ry, rz);
-    const CHR = 0xd6dbe2, WH = 0xffffff;
+    const CHR = dimC(0xd6dbe2).getHex(), WH = dimC(0xffffff).getHex();
     const HOODC = [0x1d2452, 0xd42a2a, 0x2b62e8, 0x2fae3a, 0xf2c418, 0x7a2bd6, 0xff5fb4, 0xff7a1a, 0x13b8a8, 0x202026, 0xe8eaf0];   // player.js HOOD order
     const SHOEC = [[0x8a1e2c, 0xf1e8d6], [0x1f4fbf, 0xeaf0ff], [0x1a1a1e, 0x4a4a52], [0xf2f2f4, 0xd03040], [0x1f9a3a, 0xe8ffe8], [0xff5fb4, 0xffffff], [0xd9a51c, 0x2a1a08], [0x6a24c4, 0x00e5ff]];
     // back panel + plinth
@@ -824,7 +831,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     const b = balance(); if (b < g.price) { say(`The ${g.name} are ${g.price} tickets and you've got ${b}. Win a few more games and come back!`); return false; }
     spend(g.price); grantGlove(id); api.buys++; api.gloveBuys = (api.gloveBuys || 0) + 1; try { window.__announce && window.__announce('buy', { item: g.name, cost: g.price }); } catch (e) {} say(`Great choice! The ${g.name} are yours. Wear them in the Neon Knockout studio!`); fill(); return true; }
   const NK_SHOP = () => { const on = gloveState().on; return NK_GLOVES.map(g => ({ id: 'nk_' + g.id, nk: g.id, name: g.name, price: g.price, owned: ownsGlove(g.id), on: on === g.id })); };
-  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP };
+  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP, WHITE_K, FLOOR_GLOW_K, EMISSIVE_K };
   chat.register('clerk', { open() { if (api.open) closeShop(); happyT = Math.max(happyT, 1.5); return { state: 'shop' }; }, close() {}, talk(text) { talkT = Math.max(talkT, Math.min(4, 0.6 + String(text || '').length * 0.03)); happyT = talkT + 0.6; } });   // t810u
   function openShop() { if (api.open) return; api.open = true; btn.classList.remove('on'); fill(); holo.classList.add('on'); say(GREET);
     const k = window.__arcade && window.__arcade.keys; if (k) for (const c in k) k[c] = false; }
@@ -1085,16 +1092,80 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     '.pzAway{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.pzAway .pzU{flex:1 1 120px;margin:0;min-height:44px;font-size:13px;letter-spacing:.04em}' +
     '.pzU{display:block;width:100%;min-height:52px;margin-top:10px;padding:0 14px;border-radius:26px;border:2px solid #ff6b8b;background:#3a0614cc;color:#ffe1e8;font:900 16px Arial,sans-serif;letter-spacing:.06em;cursor:pointer;touch-action:manipulation}';
   document.head.appendChild(css2);
-  // t555-557: prize tiles - square picture (rendered once from the held 3D model / box art into a cached dataURL), name ON TOP of the picture
+  // t555-557 + t486u: bake prize + accessory pictures ONCE into a shared atlas canvas (no per-frame renders, no shop lights).
+  // Cells are also exposed as dataURLs for the flat price list / inventory chips.
   const ICON = {}; let iconR = null, iconQ = [], iconT = 0;
-  function iconFor(id) { if (ICON[id]) return ICON[id]; if (!iconQ.includes(id)) iconQ.push(id); clearTimeout(iconT); iconT = setTimeout(drawIcons, 30); return ''; }
+  const ATLAS = { cv: document.createElement('canvas'), cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false };
+  ATLAS.cv.width = ATLAS.cols * ATLAS.cell; ATLAS.cv.height = ATLAS.cols * ATLAS.cell; ATLAS.g = ATLAS.cv.getContext('2d');
+  ATLAS.g.fillStyle = '#0000'; ATLAS.g.clearRect(0, 0, ATLAS.cv.width, ATLAS.cv.height);
+  function atlasCell(id) { if (ATLAS.cells[id]) return ATLAS.cells[id]; const i = ATLAS.n++, col = i % ATLAS.cols, row = Math.floor(i / ATLAS.cols);
+    if ((row + 1) * ATLAS.cell > ATLAS.cv.height) { const nxt = document.createElement('canvas'); nxt.width = ATLAS.cv.width; nxt.height = (row + 4) * ATLAS.cell; nxt.getContext('2d').drawImage(ATLAS.cv, 0, 0); ATLAS.cv = nxt; ATLAS.g = nxt.getContext('2d'); }
+    return ATLAS.cells[id] = { x: col * ATLAS.cell, y: row * ATLAS.cell, w: ATLAS.cell, h: ATLAS.cell }; }
+  function atlasStamp(id, src) { const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true;
+    try { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); ICON[id] = c.toDataURL('image/png'); } catch (e) {} }
+  function iconBlit(g, id, x, y, w, h) { const r = ATLAS.cells[id]; if (!r) return false; g.drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, x, y, w, h); return true; }
+  function enqueue(id) { if (!id || ICON[id] || ATLAS.cells[id] || iconQ.includes(id)) return; iconQ.push(id); }
+  function scheduleDraw() { clearTimeout(iconT); iconT = setTimeout(drawIcons, 30); }
+  function iconFor(id) { if (ICON[id]) return ICON[id]; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
+  function swatchCanvas(cols) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'), n = cols.length;
+    if (n === 1) { g.fillStyle = '#' + ('00000' + cols[0].toString(16)).slice(-6); g.fillRect(0, 0, c.width, c.height); }
+    else { const grd = g.createLinearGradient(0, 0, c.width, c.height); cols.forEach((h, i) => grd.addColorStop(i / Math.max(1, n - 1), '#' + ('00000' + h.toString(16)).slice(-6))); g.fillStyle = grd; g.fillRect(0, 0, c.width, c.height); }
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 4; g.strokeRect(2, 2, c.width - 4, c.height - 4); return c; }
+  function placeholder(id) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'); g.fillStyle = '#1a2030'; g.fillRect(0, 0, c.width, c.height); atlasStamp(id, c); }
+  function queueAllIcons() {
+    ITEMS.forEach(it => enqueue(it.id));
+    const CLAW_IDS = ['bear','bunny','duck','frog','cat','octopus','penguin','alien','monkey','grok'];
+    CLAW_IDS.forEach(k => enqueue('claw:' + k));
+    try { const cl = JSON.parse(localStorage.getItem('arcade_clawMachine.collection') || '{}'); for (const k in cl) if (cl[k]) enqueue('claw:' + k); } catch (e) {}
+    Object.keys(HOLDABLES).forEach(id => enqueue(id));
+    NK_GLOVES.forEach(g => enqueue('nk_' + g.id)); enqueue('nk_classic');
+    const gp = window.__gaPlayer; if (gp && gp.allOpts) {
+      ['hat', 'glasses', 'back', 'hand', 'hoodie', 'suit', 'fur', 'shoes'].forEach(k => (gp.allOpts[k] || []).forEach(o => { if (o[0] !== 'none') enqueue(k + ':' + o[0]); })); }
+    if (iconQ.length) scheduleDraw();
+  }
+  function iconCanvasFromRT(main, rt, size) {
+    const buf = new Uint8Array(size * size * 4); main.readRenderTargetPixels(rt, 0, 0, size, size, buf);
+    const c = document.createElement('canvas'); c.width = c.height = size; const img = c.getContext('2d').createImageData(size, size);
+    for (let y = 0; y < size; y++) img.data.set(buf.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
+    c.getContext('2d').putImageData(img, 0, 0); return c; }
+  function renderIcon(sc, cam) {
+    const size = ATLAS.cell, A = window.__arcade, main = A && A.renderer;
+    if (main && main.setRenderTarget) {
+      const rt = renderIcon.rt || (renderIcon.rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, stencilBuffer: false }));
+      if (rt.width !== size) rt.setSize(size, size);
+      const prevRT = main.getRenderTarget(), prevCS = main.outputColorSpace, prevC = new THREE.Color(), prevA = main.getClearAlpha();
+      main.getClearColor(prevC);
+      try {
+        main.outputColorSpace = THREE.SRGBColorSpace; main.setClearColor(0x000000, 0);
+        main.setRenderTarget(rt); main.clear(); main.render(sc, cam);
+        return iconCanvasFromRT(main, rt, size);
+      } finally { main.setRenderTarget(prevRT); main.setClearColor(prevC, prevA); main.outputColorSpace = prevCS; }
+    }
+    if (!iconR) { iconR = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' }); iconR.setSize(size, size, false); iconR.setPixelRatio(1); iconR.outputColorSpace = THREE.SRGBColorSpace; iconR.setClearColor(0x000000, 0); }
+    iconR.render(sc, cam); return iconR.domElement;
+  }
   function drawIcons() { const q = iconQ.splice(0); if (!q.length) return;
-    try { if (!iconR) { const isz = tierQuality().shopCell || 64; iconR = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' }); iconR.setSize(isz, isz, false); iconR.setPixelRatio(1); iconR.outputColorSpace = THREE.SRGBColorSpace; }
+    try {
       const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 3); sc.add(dl);
       const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 20), box = new THREE.Box3(), c = new THREE.Vector3(), sz = new THREE.Vector3();
-      for (const id of q) { let g; try { g = buildHeld(id); } catch (e) { continue; } if (!g) continue; g.rotation.y = -0.5; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
+      const bakeObj = (id, g, yaw) => { if (!g) return false; g.rotation.y = yaw == null ? -0.5 : yaw; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
         const r = Math.max(sz.x, sz.y, sz.z) * 0.62 || 0.3; cam.position.set(c.x, c.y + r * 0.35, c.z + r / Math.tan(15 * Math.PI / 180)); cam.lookAt(c);
-        iconR.render(sc, cam); ICON[id] = iconR.domElement.toDataURL('image/png'); sc.remove(g); }
+        const src = renderIcon(sc, cam); atlasStamp(id, src); sc.remove(g); return true; };
+      for (const id of q) {
+        if (ATLAS.cells[id]) continue;
+        if (id.indexOf('nk_') === 0) { try { const cv = gloveIcon(id.slice(3), ATLAS.cell); if (cv) { atlasStamp(id, cv); continue; } } catch (e) {} placeholder(id); continue; }
+        const col = id.indexOf(':'), accKeys = { hat:1, glasses:1, back:1, hand:1, hoodie:1, suit:1, fur:1, shoes:1 };
+        if (col > 0 && accKeys[id.slice(0, col)]) {
+          if (!window.__gaPlayer) { enqueue(id); continue; }   // player not ready yet — retry later
+          const k = id.slice(0, col), v = id.slice(col + 1), gp = window.__gaPlayer, opt = (gp.allOpts[k] || []).find(o => o[0] === v);
+          if (opt && typeof opt[1] === 'number') { atlasStamp(id, swatchCanvas(opt.slice(1, 3))); continue; }
+          try { const g = gp.previewItem && gp.previewItem(k, v); if (g) { bakeObj(id, g, k === 'back' ? 0.8 : -0.45); continue; } } catch (e) {}
+          placeholder(id); continue;
+        }
+        let g; try { g = buildHeld(id); } catch (e) { g = null; } if (g) { bakeObj(id, g, -0.5); continue; }
+        placeholder(id);
+      }
+      if (iconQ.length) scheduleDraw();
     } catch (e) { console.warn('prize icons', e); }
     try { if (iconR) { iconR.dispose(); iconR.forceContextLoss(); iconR = null; } } catch (e) {}   // free the extra GL context on phones
     for (const im of document.querySelectorAll('img[data-ic]')) if (ICON[im.dataset.ic]) im.src = ICON[im.dataset.ic]; }
@@ -1205,7 +1276,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // t632u: lazy-load Grok's arcade visit (2nd look at the pad / random). Own file; no Arcade main.js edit.
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
-  window.__shop = api;
+  api.iconAtlas = ATLAS; api.iconBlit = iconBlit; api.iconFor = iconFor; api.queueIcons = queueAllIcons; Object.defineProperty(api, 'iconRev', { get: () => ATLAS.rev }); window.__shop = api;
+  setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500);
   api.gpu = bindStreamGpu(G, { stagger: true, minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
   api.setGpu = on => api.gpu.set(!!on);
   return api;

@@ -314,7 +314,7 @@ export function setupVR(A) {
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
     K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
   function nbStart() { const n = nbApi(); if (!n || n.playing || play.mode !== 'walk' || (A.tp && A.tp.locked)) return false; uiClose(); n.start(); if (n.playing) { S.nbStarts++; try { n.setZoomAmt(0); } catch (e) {} } return n.playing; }
-  S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
+  S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on, art: b.art || null, pix: b.pix || null })); }, beam, collect, nbStart,
     // world point of a button (tests aim the ray at it)
     btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
   // v12 (t388u): picture tiles for the backpack (prizes + accessories)
@@ -328,6 +328,7 @@ export function setupVR(A) {
   const floorNow = () => ROOM_FLOORS[Math.floor(performance.now() / 5000) % ROOM_FLOORS.length];
   S.menuFloor = () => floorNow()[0]; S.menuArt = {};
   function uiSpec() {
+    if (UI.open === 'shop' || UI.open === 'pack' || UI.open === 'ward') { try { const sh = window.__shop || (A.shop); if (sh && sh.queueIcons) sh.queueIcons(); } catch (e) {} }
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
     let title = '', sub = '', body = '';
     add('close', 'X', 900, 22, 100, 90, true, uiClose);
@@ -341,8 +342,10 @@ export function setupVR(A) {
     else if (UI.open === 'shop') { const sh = A.shop; title = 'GROK PRIZE SHOP';
       if (!sh) sub = 'THE SHOP IS LOADING'; else { const b = sh.balance(), per = 4, items = (sh.ITEMS || []).concat(sh.NK_SHOP ? sh.NK_SHOP() : []), pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
         sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
-        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => it.nk ? add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + (it.on ? 'WEARING' : it.owned ? 'OWNED · WEAR' : it.price), 40, 190 + i * 112, 944, 96, it.owned || b >= it.price, () => { if (sh.buyGlove(it.nk)) { S.shopBuys++; say((it.owned ? 'WEARING: ' : 'GOT IT: ') + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); })   // v16 Neon Knockout gloves
-          : add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
+        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const lab = it.nk ? it.name.toUpperCase() + '  ·  ' + (it.on ? 'WEARING' : it.owned ? 'OWNED · WEAR' : it.price + ' TICKETS') : it.name.toUpperCase() + '  ·  ' + it.price + ' TICKETS';
+          it.nk ? add('item_' + it.id, lab, 40, 190 + i * 112, 944, 96, it.owned || b >= it.price, () => { if (sh.buyGlove(it.nk)) { S.shopBuys++; say((it.owned ? 'WEARING: ' : 'GOT IT: ') + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); })
+          : add('item_' + it.id, lab, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); });
+          B[B.length - 1].art = 'shopRow'; B[B.length - 1].pix = it.nk ? 'nk_' + it.nk : it.id; });
         add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'MONKEY BACKPACK';
       packTabs(add, 'ward');
@@ -357,7 +360,7 @@ export function setupVR(A) {
           add('w_' + k + '_' + v, nm(v) + (on ? ' · ON' : own ? '' : ' · ' + pr + ' T'), 40 + i * 240, 380, 224, 210, own || bal >= pr, () => {
             if (own) { gp.pick(k, v); S.wardPicks++; say(v === 'none' ? 'REMOVED' : 'WEARING ' + nm(v)); }
             else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } });
-          B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); B[B.length - 1].sel = on; });
+          B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); if (v !== 'none') B[B.length - 1].pix = k + ':' + v; B[B.length - 1].sel = on; });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 610, 564, 80, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 610, 170, 80, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 610, 170, 80, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();   // v23 (Dave t432u): preset questions only (no TYPE keyboard, no TALK)
@@ -377,7 +380,7 @@ export function setupVR(A) {
         sub = 'RIGHT: ' + (h.R ? nm(h.R) : '-') + '   ·   LEFT: ' + (h.L ? nm(h.L) : '-');
         if (!items.length) UI.msg = UI.msg || 'NO PRIZES YET · BUY AT THE GROK SHOP OR WIN THE CLAW';
         items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const sl = h.R === it.id ? 'R' : h.L === it.id ? 'L' : '';
-          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? ' · ' + sl : ''), 40 + (i % 4) * 240, 250 + Math.floor(i / 4) * 175, 224, 160, true, () => packTap(sh, it)); B[B.length - 1].ic = prizeIcon(it); B[B.length - 1].sel = !!sl; });
+          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? ' · ' + sl : ''), 40 + (i % 4) * 240, 250 + Math.floor(i / 4) * 175, 224, 160, true, () => packTap(sh, it)); B[B.length - 1].ic = prizeIcon(it); B[B.length - 1].pix = it.id; B[B.length - 1].sel = !!sl; });
         add('away_R', 'PUT R AWAY', 40, 610, 300, 70, !!h.R, () => { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('RIGHT HAND EMPTY'); });
         add('away_L', 'PUT L AWAY', 362, 610, 300, 70, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
         add('away', 'PUT BOTH AWAY', 684, 610, 300, 70, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
@@ -455,7 +458,7 @@ export function setupVR(A) {
   S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
   function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
-    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(','); if (key === UI.key) return; UI.key = key;
+    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(',') + '|ir' + ((window.__shop && window.__shop.iconRev) || 0); if (key === UI.key) return; UI.key = key;
     const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
     g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, UI.open === 'pack' ? 500 : 470, 70, UI.open === 'pack' ? 740 : 820);
@@ -473,9 +476,18 @@ export function setupVR(A) {
   // v12 (t388u): picture tiles: the real monkey backpack art (inventory.js's #bPack canvas), the cycling floor, or a big emoji + name
   function tileArt(g, b) { const pad = 18, lh = Math.max(26, Math.min(44, b.h * 0.13)), ih = b.h - lh - pad * 2.2, cx = b.x + b.w / 2;
     g.save(); g.beginPath(); g.rect(b.x + 6, b.y + 6, b.w - 12, b.h - 12); g.clip();
+    if (b.art === 'shopRow') {
+      const ts = Math.min(80, b.h - 16), tx = b.x + 12, ty = b.y + (b.h - ts) / 2;
+      g.fillStyle = 'rgba(8,12,24,0.55)'; g.beginPath(); g.roundRect ? g.roundRect(tx, ty, ts, ts, 12) : g.rect(tx, ty, ts, ts); g.fill();
+      if (b.pix && window.__shop && window.__shop.iconBlit && window.__shop.iconBlit(g, b.pix, tx + 4, ty + 4, ts - 8, ts - 8)) S.menuArt.icons = (S.menuArt.icons || 0) + 1;
+      else if (b.ic) { g.font = '600 36px "Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(b.ic, tx + ts / 2, ty + ts / 2); }
+      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(40, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(b.label, tx + ts + 16, b.y + b.h / 2 + 2, b.w - ts - 40); g.restore(); return;
+    }
     if (b.art === 'pack') { const pc = document.querySelector('#bPack canvas'), sz = Math.min(ih, b.w - pad * 2); if (pc && pc.width) g.drawImage(pc, cx - sz / 2, b.y + pad, sz, sz); else drawPackIcon(g, cx, b.y + pad + sz / 2, sz / 70); S.menuArt.pack = pc && pc.width ? 'bPack' : 'icon'; }
     else if (b.art === 'floor') { const [v, nm] = floorNow(), im = floorImg(v), w = b.w - pad * 2, h = ih; S.menuArt.floor = v; S.menuArt.floorImg = !!im; S.menuArt.floorDraws = (S.menuArt.floorDraws || 0) + 1; if (im) g.drawImage(im, b.x + pad, b.y + pad, w, h); else { g.fillStyle = '#222'; g.fillRect(b.x + pad, b.y + pad, w, h); }
       g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(b.x + pad, b.y + pad + h - 46, w, 46); g.fillStyle = '#ffe14a'; g.font = '900 28px "Arial Black", Arial, sans-serif'; g.fillText(nm, cx, b.y + pad + h - 22, w - 12); }
+    else if (b.pix && window.__shop && window.__shop.iconBlit && window.__shop.iconBlit(g, b.pix, b.x + pad, b.y + pad, b.w - pad * 2, ih)) { S.menuArt.icons = (S.menuArt.icons || 0) + 1; }
     else { g.font = Math.round(Math.min(ih, b.w * 0.6) * 0.8) + 'px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif'; g.fillStyle = '#fff'; g.globalAlpha = b.on ? 1 : 0.45; S.menuArt.icons = (S.menuArt.icons || 0) + 1; g.fillText(b.ic, cx, b.y + pad + ih / 2 + 4); g.globalAlpha = 1; }
     g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(lh) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, cx, b.y + b.h - pad - lh / 2 + 2, b.w - 20); g.restore(); }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);

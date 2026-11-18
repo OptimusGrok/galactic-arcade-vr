@@ -65,6 +65,15 @@ const { openVR, H } = require('./vrlib');
     const items = await page.evaluate(() => window.__gaVR.ui.btns.filter(b => /^item_/.test(b.id)));
     const it = items.find(b => b.on), B0 = await page.evaluate(() => window.__gaVR.ui.shop().balance());
     chk(!!it, 'prizes listed (' + items.length + ' on this page), some affordable with ' + B0 + ' tickets');
+    await page.waitForFunction(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^item_/.test(b.id));
+      return sh && B.length && B.every(b => b.art === 'shopRow' && b.pix && sh.iconAtlas && sh.iconAtlas.cells[b.pix]);
+    }, null, { timeout: 30000 });
+    const shopThumbs = await page.evaluate(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^item_/.test(b.id));
+      return { n: B.length, art: B.every(b => b.art === 'shopRow'), pix: B.map(b => b.pix), cells: B.every(b => b.pix && sh.iconAtlas.cells[b.pix]), rev: sh.iconRev };
+    });
+    chk(shopThumbs.art && shopThumbs.cells && shopThumbs.n > 0, 'prize shop list shows a baked thumb next to name + ticket price (' + shopThumbs.pix.join(',') + '; rev ' + shopThumbs.rev + ')');
     if (it) { await aimPress(await btnAt(it.id)); const r = await page.evaluate(() => ({ b: window.__gaVR.ui.shop().balance(), buys: window.__gaVR.shopBuys }));
       chk(r.buys === 1 && r.b < B0, 'bought "' + it.label + '" with the ray (' + B0 + ' -> ' + r.b + ' tickets)'); }
     await aimPress(await btnAt('close'));

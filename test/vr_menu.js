@@ -60,12 +60,31 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     const items = await page.evaluate(() => window.__gaVR.ui.btns.filter(b => /^p_/.test(b.id)).map(b => b.label));
     const ic1 = await page.evaluate(() => window.__gaVR.menuArt.icons || 0);
     chk(items.length === 4 && ic1 - ic0 >= 4, 'prizes as picture tiles (' + items.join(' | ') + '; ' + (ic1 - ic0) + ' pictures drawn)');
+    await page.waitForFunction(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^p_/.test(b.id));
+      return sh && sh.iconRev > 0 && B.length >= 4 && B.every(b => b.pix && sh.iconAtlas && sh.iconAtlas.cells[b.pix]);
+    }, null, { timeout: 30000 });
+    await H.frames(page, 4);
+    const thumbs = await page.evaluate(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^p_/.test(b.id));
+      return { rev: sh.iconRev, n: Object.keys(sh.iconAtlas.cells).length, pix: B.map(b => b.pix), cells: B.every(b => b.pix && sh.iconAtlas.cells[b.pix]) };
+    });
+    chk(thumbs.cells && thumbs.pix.length >= 4, 'MENU prizes use bigger baked atlas thumbs (' + thumbs.pix.join(',') + '; ' + thumbs.n + ' cells, rev ' + thumbs.rev + ')');
     const tabs = await ids(); chk(tabs.includes('pt_prizes') && tabs.includes('ward'), 'PRIZES + ACCESSORIES tabs inside the backpack');
     await page.waitForTimeout(2500);
     await tap('p_claw:frog'); let h = await held(); chk(h && h.R === 'claw:frog', 'tap the frog picture -> right hand ' + JSON.stringify(h));
     await tap('away'); h = await held(); chk(!h.R && !h.L, 'PUT BOTH AWAY');
     await tap('ward'); chk((await st()).panel === 'ward', 'ACCESSORIES tab');
     await tap('cat_hat'); const wt = await page.evaluate(() => window.__gaVR.ui.btns.filter(b => /^w_hat_/.test(b.id)).map(b => b.label)); chk(wt.length > 0, 'hat pictures: ' + wt.join(' | '));
+    await page.waitForFunction(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^w_hat_/.test(b.id) && !/none$/.test(b.id));
+      return sh && B.length && B.every(b => b.pix && sh.iconAtlas && sh.iconAtlas.cells[b.pix]);
+    }, null, { timeout: 30000 });
+    const hatsPix = await page.evaluate(() => {
+      const sh = window.__shop, B = window.__gaVR.ui.btns.filter(b => /^w_hat_/.test(b.id) && !/none$/.test(b.id));
+      return { n: B.length, pix: B.map(b => b.pix), ready: B.every(b => b.pix && sh.iconAtlas.cells[b.pix]), uniq: new Set(B.map(b => b.pix)).size };
+    });
+    chk(hatsPix.ready && hatsPix.n > 0 && hatsPix.uniq === hatsPix.n, 'ACCESSORIES tiles use unique baked thumbs (' + hatsPix.pix.join(',') + ')');
     const firstHat = await page.evaluate(() => { const gp = window.__gaPlayer, b = window.__gaVR.ui.btns.filter(q => /^w_hat_/.test(q.id) && q.on && !/none$/.test(q.id) && !/ON$/.test(q.label))[0]; return b && b.id; });
     if (firstHat) { await tap(firstHat); const p = await page.evaluate(() => window.__gaPlayer.p.hat); chk('w_hat_' + p === firstHat, 'tap a hat picture -> wearing ' + p); }
     await tap('pt_prizes'); chk((await st()).panel === 'pack', 'back to PRIZES');
