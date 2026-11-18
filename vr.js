@@ -1272,7 +1272,7 @@ export function setupVR(A) {
   // draw a whole visible list in chunks (one chunk per frame), plus the mirror pass for the shop
   async function drawList(area, list, mirror) { for (let i = 0; i < list.length;) { i = drawChunk(area, list, i, 24, false); await frame(); }
     if (mirror && MV.twin) { const ml = list.filter(o => !o.isReflector); for (let i = 0; i < ml.length;) { i = drawChunk(area, ml, i, 24, true); await frame(); } } }
-  function drawAllNow(area) { const l = PW.lists[area] || []; for (let i = 0; i < l.length;) i = drawChunk(area, l, i, 1e9, false); if (area === 2 && MV.twin) drawChunk(area, l, 0, 1e9, true); }
+  function drawAllNow(area) { const l = LISTS[area] || []; for (let i = 0; i < l.length;) i = drawChunk(area, l, i, 1e9, false); if (area === 2 && MV.twin) drawChunk(area, l, 0, 1e9, true); }
   // program inputs that matter for dedupe: the material(s), instancing / skinning / batching, vertex colours, morph targets
   const progKey = o => { const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry; return ms.map(m => m && m.uuid).join(',') + (o.isInstancedMesh ? 'I' : '') + (o.isSkinnedMesh ? 'S' : '') + (o.isBatchedMesh ? 'B' : '') + (o.isPoints ? 'P' : o.isLine ? 'L' : o.isSprite ? 'Sp' : '') + (g && g.attributes && g.attributes.color ? 'c' : '') + (g && g.morphAttributes ? Object.keys(g.morphAttributes).length : ''); };
   function meshList(area, visibleOnly, skip) { const out = [], keys = new Set(); stageArea(area, () => { const undoG = golfStage(area);
@@ -1306,7 +1306,7 @@ export function setupVR(A) {
       const { list, keys } = meshList(a, job.kind === 'vis', job.kind === 'rest' ? PW.seenKeys[a] : null); if (job.kind === 'vis') PW.seenKeys[a] = keys;
       let i = 0; while (i < list.length) { i = compileSome(a, list, i, budget(), a === 2 && job.kind === 'vis'); await frame(); }
       while (!ready(budget())) await frame();
-      if (job.kind === 'vis') { PW.lists[a] = list; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); }   // in VR (card gone) the one draw waits for the beam's cut
+      if (job.kind === 'vis') { LISTS[a] = list; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); }   // in VR (card gone) the one draw waits for the beam's cut
       PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
       if (job.kind === 'vis') PW.warm.add(a); }
     else if (job.kind === 'tex') { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
@@ -1314,8 +1314,8 @@ export function setupVR(A) {
         if (o.material && o.material.uniforms) for (const u of Object.values(o.material.uniforms)) { const x = u && u.value; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); } });
       let t = performance.now(); for (const x of seen) { const props = renderer.properties.get(x); if (props && props.__webglTexture && props.__version === x.version) continue; try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (performance.now() - t > budget()) { await frame(); t = performance.now(); } } }
     else if (job.kind === 'trip') { if (S.presenting && !VEIL.on) return;   // arcade -> shop -> arcade, one direction per frame (the first return froze on the Quest)
-      for (const ar of [1, 2, 1]) await drawList(ar, PW.lists[ar] || [], false); PW.trip = true; } }
-  PW.lists = {}; PW.warm = new Set(); PW.pending = new Set(); PW.seenKeys = {}; PW.jobs = 0; PW.holdFor = 0;
+      for (const ar of [1, 2, 1]) await drawList(ar, LISTS[ar] || [], false); PW.trip = true; } }
+  const LISTS = {}; PW.warm = new Set(); PW.pending = new Set(); PW.seenKeys = {}; PW.jobs = 0; PW.holdFor = 0;
   PW.needDraw = new Set();
   S.areaWarm = a => (PW.done || PW.warm.has(a)) && !PW.needDraw.has(a);
   // a beam whose destination area isn't warm yet holds at the cut (max 4 s) while that area's jobs run first with a 16 ms budget
@@ -1334,7 +1334,8 @@ export function setupVR(A) {
     PW.busy = false; PW.cur = null; PW.ms = Math.round(performance.now() - t0); }
   S.prewarmRun = prewarm;
   { const kick = setInterval(() => { if (PW.done || PW.busy) { if (PW.done) clearInterval(kick); return; } if (window.__noPrewarm) return; const ST = window.__arcade && window.__arcade.stats; if (S.supported && ST && ST.frames > 5 && A.tp) prewarm(); }, 500); }
-  function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
+  function prerender() { pinScan(); if (!PIN.golf && window.__minigolf && window.__minigolf.lampsOff && !dbg().golfold) window.__minigolf.lampsOff();   // v9: beam-cut frames (monkey at the shop pad, arcade still drawn) counted the lamps = an unwarmed 28-light set
+    pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
   { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
     scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) { if (VEIL.on) veilHide(); else prerender(); } };
     scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (VEIL.hidden.length) veilShow(); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }

@@ -307,6 +307,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   // warmStage(show, lit) stages one and returns the undo.
   S.warmStage = (show, lit) => { const rv = room.visible, lv = lights.map(l => l.visible); room.visible = show; for (const l of lights) l.visible = lit;
     return () => { room.visible = rv; lights.forEach((l, i) => { l.visible = lv[i]; }); }; };
+  S.lampsOff = () => { for (const l of lights) l.visible = false; };   // vrtest-v9: vr.js keeps the stair lamps out of the light list unless the shop is drawn
   S.warmSpot = () => ({ x: X0 - 1.2, z: ZM });
   cutFloor(); return S;
 }
