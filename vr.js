@@ -2,6 +2,8 @@
 // ENTER VR on the arcade floor -> the headset is the camera at real-world scale (1 unit = 1 m; cabinets are life size).
 //   LEFT STICK   smooth walk where you look (same wall / cabinet collision as the flat game)
 //   RIGHT STICK  left/right = smooth turn; the further you push, the faster (deadzone 0.15, x^2 curve, max 90 deg/s) (t350u)
+//   R STICK CLICK  (button 3) holographic laser fire-type menu above the right controller; stick moves the highlight, A selects, click again closes (t489u)
+//   L STICK CLICK  hide / show the left-wrist HUD (battery, time, player count)
 //   TRIGGER      point at a cabinet = play it; point at the floor = teleport there; point at a sign / menu button = press it
 //   Y / B        MENU: BEAM TO SHOP / ARCADE (teleporter), BUY TICKETS (ticket exchange), PRIZE SHOP, NEON BRICKS
 //   signs        BUY TICKETS over the kiosk, BEAM TO SHOP / ARCADE over each teleporter pad, PRIZE SHOP over the shop counter,
@@ -162,7 +164,7 @@ export function setupVR(A) {
     return out; }
   const PI_ = { t: -1e9, lines: [], key: '' };
   function battScan(o) { const r = []; for (const line of propsOf(o)) if (/batt|power|charge/i.test(line)) r.push(line); return r; }
-  function padInfoUpdate(now) { if (!padBoard) return; padBoard.visible = S.presenting; if (!S.presenting) return;
+  function padInfoUpdate(now) { if (!padBoard) return; padBoard.visible = !!(S.presenting && !S.hudHidden); if (!padBoard.visible) return;
     padBoard.position.set(0, 0.3, 0).applyQuaternion(hud.quaternion).add(hud.position); padBoard.quaternion.copy(hud.quaternion);
     if (now - PI_.t < 2000) return; PI_.t = now; const L = ['PADINFO  ' + navigator.userAgent.slice(0, 90)];
     try { const ss = renderer.xr.getSession(); for (const src of (ss && ss.inputSources) || []) { L.push('== ' + src.handedness + ' ' + src.targetRayMode + ' profiles=' + (src.profiles || []).join(','));
@@ -246,7 +248,7 @@ export function setupVR(A) {
     const sx = ax.length >= 4 ? ax[2] : (ax[0] || 0), sy = ax.length >= 4 ? ax[3] : (ax[1] || 0);
     const leg = !!(gp && gp.mapping !== 'xr-standard' && gp.buttons.length < 6);   // v24: a non xr-standard pad (old Oculus layout: 3 = A / X, 4 = B / Y)
     const cur = { trig: b(0), grip: b(1), a: leg ? b(3) : b(4), b: leg ? b(4) : b(5), stick: b(3), x: Math.abs(sx) > 0.08 ? sx : 0, y: Math.abs(sy) > 0.08 ? sy : 0, src };
-    for (const k of ['trig', 'grip', 'a', 'b']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
+    for (const k of ['trig', 'grip', 'a', 'b', 'stick']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
     return cur; }
   function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null; if (S.blurred) { S.blurPolls = (S.blurPolls || 0) + 1; return; }   // vrtest-v5: system overlay up: no input
     const ss = session && session.inputSources; if (!ss) return;
@@ -581,7 +583,7 @@ export function setupVR(A) {
     const fp = fpList(), was = fp.map(o => o.visible); for (const o of fp) o.visible = false; MV.fpHidden = fp.length;
     S.inMirror = true; pinScan(); pinLights(); try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; } S.inMirror = false; unpinLights();
     fp.forEach((o, i) => { o.visible = was[i]; }); monkey.visible = vis; }
-  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
+  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (VL.beamMesh) _fp.push(VL.beamMesh); if (FM.group) _fp.push(FM.group); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
   S.fpNames = () => fpList().map(o => o.name || o.type);
   S.ctrlFor = ctrlFor;   // vrtest-v2: golf.js puts the held putter on the right controller
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
@@ -964,7 +966,7 @@ export function setupVR(A) {
     for (const k in A.keys) A.keys[k] = false; st.joy.on = false; st.joy.x = st.joy.y = 0;
     S.rig = { x: monkey.position.x, y: monkey.position.y, z: monkey.position.z, yaw: st.yaw }; applyRig();
     try { renderer.xr.setFoveation(1); } catch (e) {}
-    document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
+    document.body.classList.add('vr'); hud.visible = !S.hudHidden; fill.visible = true; uiClose(); kioskBox = null; closeFireMenu();
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
     if (!S.areaWarm((A.tp && A.tp.where) || 1) && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; holdAV(true); logW('card up at VR entry'); }
     S.warmReq = PW.done || VEIL.on || PW.busy || S.areaWarm((A.tp && A.tp.where) || 1) ? null : 'start';   // v9: a running sliced pre-warm is never replaced by a one-frame compile S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
@@ -993,7 +995,7 @@ export function setupVR(A) {
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
-    document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
+    document.body.classList.remove('vr'); uiClose(); closeFireMenu(); laserEndBeam(); laserGlow(null); S.hudHidden = false; for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
     mirrorVR(false); avatarHandsOff(); unadoptAll(); LS.done.clear();
     A.resumeFlat();
@@ -1010,17 +1012,85 @@ export function setupVR(A) {
   const laserOn = () => { const rf = window.__roomFire; try { return !!(rf && rf.equipped && rf.equipped()); } catch (e) { return false; } };
   S.gear = () => ({ jet: jetOn(), laser: laserOn(), flying: !!S.vrFly, firing: !!S.vrFire, flyFrames: S.flyFrames || 0, laserPulls: S.laserPulls || 0 });
   function gear(ok, dt) { const R = IN.right, rf = window.__roomFire;
-    const jet = jetOn(), fly = !!(ok && jet && R && R.a);
+    const jet = jetOn(), fly = !!(ok && jet && R && R.a && !FM.open && !FM.ateA);
     if (jet || S.vrFly) { if (st.fly) st.fly.hold = fly; if (fly) S.flyFrames = (S.flyFrames || 0) + 1; S.vrFly = fly; }
-    const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown);
-    if (las || S.vrFire || VL.beam || VL.glow) vrLaser(fire, dt, R); S.vrFire = fire; }
-  // ---------- t359u: the laser pistol fires from the RIGHT CONTROLLER (full 3D aim: hand down = shoots down) ----------
-  // roomfire.js aims from the avatar's body and takes no aim, so in VR vr.js runs the trigger cycle itself, with the same numbers as roomfire.js
-  // (hold charges for CHARGE_T s, release = one bolt scaled by the charge, a full charge = a BEAM_T s beam). It uses roomfire's own pieces:
-  // RF.fire() makes the real shot (bolt, zap, shot count, multiplayer zap), then the bolt is moved onto the controller's aim; playerCols() gives
-  // the colours (blue monkey, red alien). The charge glow sits on the controller and grows while you hold B.
-  const VL = { held: false, charge: 0, spent: false, beam: null, beamT: 0, glow: null, last: null, beams: 0, bolts: 0 };
-  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion(), _le = new THREE.Vector3(), _lt = new THREE.Vector3();
+    const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown && !FM.open);
+    if (las || S.vrFire || VL.beam || (VL.glow && VL.glow.visible) || VL.beamHeld) vrLaser(fire, dt, R); S.vrFire = fire; }
+  // ---------- t359u + vrtest-v14 (t488u/t489u): laser from the RIGHT CONTROLLER, five fire types ----------
+  // roomfire.js aims from the avatar's body, so VR runs the trigger itself: RF.fire() still makes the real bolt (zap, shot count,
+  // multiplayer), then we place it on the controller / muzzle aim. Classic = the original single bolt; the other four types have
+  // their own colour, sound and haptic. Bolts are pooled in roomfire.js; the beam and charge glow are reused (no new lights).
+  const FIRE_KEY = 'galacticarcade.vrFireType';
+  const FIRE_TYPES = [
+    { id: 'classic', name: 'CLASSIC', color: 0x48f2ff, accent: 0x2f8cff },
+    { id: 'pulse', name: 'RAPID PULSE', color: 0xffe14a, accent: 0xffb000 },
+    { id: 'scatter', name: 'SCATTER SHOT', color: 0xff6a22, accent: 0xff3010 },
+    { id: 'charge', name: 'CHARGE SHOT', color: 0xe14bff, accent: 0xffe14a },
+    { id: 'beam', name: 'CONTINUOUS', color: 0x2dff8a, accent: 0x00c853 }
+  ];
+  const FM = { open: false, hover: 0, type: 'classic', group: null, warm: [], stickArmed: true, ateA: false, picks: 0, opens: 0 };
+  try { const v = localStorage.getItem(FIRE_KEY); if (FIRE_TYPES.some(t => t.id === v)) FM.type = v; } catch (e) {}
+  FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type));
+  const fireSpec = id => FIRE_TYPES.find(t => t.id === (id || FM.type)) || FIRE_TYPES[0];
+  function setFireType(id) { const t = fireSpec(id); if (!t) return; FM.type = t.id; FM.hover = FIRE_TYPES.indexOf(t); try { localStorage.setItem(FIRE_KEY, t.id); } catch (e) {} if (FM.group) drawFireMenu(); }
+  function fireCols(id) { const t = fireSpec(id); if (t.id === 'classic') return laserCols(); const c = laserCols(); return { a: t.color, b: t.accent, char: c.char, kind: t.id }; }
+  function drawFireIcon(g, id, x, y, s, col) {
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = Math.max(2, s * 0.1); g.lineCap = 'round'; g.lineJoin = 'round';
+    if (id === 'classic') { g.beginPath(); g.moveTo(x - s * 0.45, y); g.lineTo(x + s * 0.5, y); g.stroke(); g.beginPath(); g.arc(x + s * 0.5, y, s * 0.14, 0, 7); g.fill(); }
+    else if (id === 'pulse') { for (let i = 0; i < 3; i++) { const px = x - s * 0.4 + i * s * 0.32; g.beginPath(); g.moveTo(px, y); g.lineTo(px + s * 0.18, y); g.stroke(); g.beginPath(); g.arc(px + s * 0.18, y, s * 0.08, 0, 7); g.fill(); } }
+    else if (id === 'scatter') { for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(x - s * 0.2, y); g.lineTo(x + s * 0.5, y + i * s * 0.22); g.stroke(); } }
+    else if (id === 'charge') { g.beginPath(); g.arc(x, y, s * 0.22, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, s * 0.38, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, s * 0.12, 0, 7); g.fill(); }
+    else { g.beginPath(); g.moveTo(x - s * 0.5, y); g.lineTo(x + s * 0.55, y); g.lineWidth = s * 0.22; g.stroke(); g.lineWidth = s * 0.1; g.beginPath(); g.moveTo(x - s * 0.5, y - s * 0.18); g.lineTo(x + s * 0.45, y - s * 0.18); g.moveTo(x - s * 0.5, y + s * 0.18); g.lineTo(x + s * 0.45, y + s * 0.18); g.stroke(); } }
+  function drawFireMenu() {
+    if (!FM.cv) return; const g = FM.cv.getContext('2d'), W = FM.cv.width, H = FM.cv.height, n = FIRE_TYPES.length, row = (H - 70) / n;
+    g.clearRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, 'rgba(8, 28, 48, 0.55)'); bg.addColorStop(1, 'rgba(4, 10, 24, 0.72)');
+    g.fillStyle = bg; g.fillRect(8, 8, W - 16, H - 16);
+    g.strokeStyle = 'rgba(80, 230, 255, 0.85)'; g.lineWidth = 4; g.strokeRect(10, 10, W - 20, H - 20);
+    g.fillStyle = '#7dffff'; g.font = '900 36px "Courier New",monospace'; g.textAlign = 'center'; g.fillText('LASER', W / 2, 48);
+    g.font = '800 22px "Courier New",monospace'; g.fillStyle = 'rgba(180, 240, 255, 0.7)'; g.fillText('A SELECT  ·  CLICK CLOSE', W / 2, 70);
+    for (let i = 0; i < n; i++) {
+      const t = FIRE_TYPES[i], y = 86 + i * row, on = i === FM.hover, sel = t.id === FM.type, hex = '#' + t.color.toString(16).padStart(6, '0');
+      if (on) { g.fillStyle = 'rgba(80, 230, 255, 0.28)'; g.fillRect(20, y, W - 40, row - 6); g.strokeStyle = '#7dffff'; g.lineWidth = 3; g.strokeRect(20, y, W - 40, row - 6); }
+      else if (sel) { g.strokeStyle = hex; g.lineWidth = 2; g.strokeRect(22, y + 2, W - 44, row - 10); }
+      drawFireIcon(g, t.id, 58, y + row * 0.42, 28, on ? '#e8ffff' : hex);
+      g.textAlign = 'left'; g.font = (on ? '900 ' : '800 ') + '30px "Courier New",monospace'; g.fillStyle = on ? '#e8ffff' : sel ? hex : 'rgba(200, 240, 255, 0.82)';
+      g.fillText(t.name, 96, y + row * 0.48 + 10);
+      if (sel) { g.textAlign = 'right'; g.font = '900 26px "Courier New",monospace'; g.fillStyle = hex; g.fillText('●', W - 36, y + row * 0.48 + 10); } }
+    if (FM.tex) FM.tex.needsUpdate = true; }
+  function makeFireMenu() {
+    if (FM.group) return;
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 640; FM.cv = cv;
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.premultiplyAlpha = false; FM.tex = tex;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, fog: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.225), mat); mesh.name = 'vrFireMenu'; mesh.renderOrder = 1002; mesh.frustumCulled = false;
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(0.188, 0.233), new THREE.MeshBasicMaterial({ color: 0x0a2030, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, fog: false }));
+    back.position.z = -0.002; back.renderOrder = 1001; back.frustumCulled = false;
+    const group = new THREE.Group(); group.name = 'vrFireHolo'; group.add(back); group.add(mesh); group.visible = false; scene.add(group);
+    FM.group = group; FM.mesh = mesh; FM.warm.push(mesh, back); drawFireMenu(); }
+  function openFireMenu() { makeFireMenu(); FM.open = true; FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type)); FM.stickArmed = true; FM.opens++; drawFireMenu(); S.fireMenuOpens = FM.opens; }
+  function closeFireMenu() { FM.open = false; if (FM.group) FM.group.visible = false; }
+  function placeFireMenu() {
+    if (!FM.group) return; const show = !!(S.presenting && FM.open && !VEIL.on && !S.blurred); FM.group.visible = show; if (!show) return;
+    const rc = ctrlFor('right'); if (!rc || !rc.userData.src) { FM.group.visible = false; return; }
+    rc.updateMatrixWorld(true); FM.group.position.set(0, 0.16, -0.05).applyMatrix4(rc.matrixWorld);
+    if (S.head) FM.group.lookAt(S.head.x, S.head.y, S.head.z); else { rc.getWorldQuaternion(_q); FM.group.quaternion.copy(_q); } }
+  function fireMenuInput(L, R) {
+    FM.ateA = false;
+    if (L && L.stickDown) { S.hudHidden = !S.hudHidden; S.hudToggles = (S.hudToggles || 0) + 1; if (L.src) pulse(L.src, 0.35, 20); }
+    const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open) && !(A.nb && A.nb.playing) && !nkPlaying();
+    if (R && R.stickDown && walk) { if (FM.open) closeFireMenu(); else openFireMenu(); if (R.src) pulse(R.src, 0.45, 28); }
+    if (!FM.open) { FM.stickArmed = true; return; }
+    if (R && R.aDown) { setFireType(FIRE_TYPES[FM.hover].id); FM.picks++; FM.ateA = true; FM.lastPick = FM.type; closeFireMenu(); if (R.src) pulse(R.src, 0.7, 35); return; }
+    if (!R) return;
+    const ax = R.x || 0, ay = R.y || 0, mag = Math.hypot(ax, ay);
+    if (mag < 0.35) { FM.stickArmed = true; return; }
+    if (!FM.stickArmed || mag < 0.55) return;
+    const step = Math.abs(ay) >= Math.abs(ax) ? (ay > 0 ? 1 : -1) : (ax > 0 ? 1 : -1);   // WebXR stick y+: down / toward the player = next option
+    FM.hover = (FM.hover + step + FIRE_TYPES.length) % FIRE_TYPES.length; FM.stickArmed = false; drawFireMenu(); if (R.src) pulse(R.src, 0.25, 15); }
+  const VL = { held: false, charge: 0, spent: false, beam: null, beamMesh: null, beamT: 0, beamHeld: false, glow: null, last: null, beams: 0, bolts: 0, pulseT: 0 };
+  const CHARGE_FIRE_T = 1.25, PULSE_GAP = 0.09;
+  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion(), _le = new THREE.Vector3(), _lt = new THREE.Vector3(), _fan = new THREE.Vector3(), _fanQ = new THREE.Quaternion(), _fanAx = new THREE.Vector3();
   function laserAim() { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null;
     const c = ctrls[i], g = grips[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_lq); _ld.set(0, 0, -1).applyQuaternion(_lq).normalize();   // pointing direction = the controller's ray
     (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
@@ -1032,34 +1102,76 @@ export function setupVR(A) {
     const u = monkey.userData || {}; if (u.char === 'alien') { const eye = monkey.getObjectByName('botEye') || u.bot; if (eye) { monkey.updateMatrixWorld(true); eye.getWorldPosition(_le); _lt.copy(_lo).addScaledVector(_ld, 20); _ld.copy(_lt).sub(_le).normalize(); _lo.copy(_le).addScaledVector(_ld, 0.12); return { o: _lo, d: _ld, alien: true }; } }
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
-  function laserGlow(k, aim, col) { if (k == null && !VL.glow) return; if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); }
+  function ensureLaserFX() {
+    if (!VL.glow) { const col = fireCols('charge'); VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; VL.glow.visible = false;
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); FM.warm.push(VL.glow, halo); }
+    if (!VL.beamMesh) { const L = 28, col = fireCols('beam'), g = new THREE.Group(); g.name = 'vrLaserBeam';
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.a, toneMapped: false, depthWrite: false, fog: false }));
+      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      for (const m of [core, glow]) { m.rotation.x = Math.PI / 2; m.position.z = L / 2; m.renderOrder = 6; m.frustumCulled = false; g.add(m); }
+      g.visible = false; scene.add(g); VL.beamMesh = g; FM.warm.push(core, glow); }
+    makeFireMenu(); }
+  function laserGlow(k, aim, col) { ensureLaserFX(); if (!VL.glow) return;
     const on = k != null && !!aim; VL.glow.visible = on; if (!on) return;
     VL.glow.position.copy(aim.o); VL.glow.scale.setScalar(0.5 + k * 2.2); VL.glow.material.color.setHex(col.a); VL.glow.children[0].material.color.setHex(col.b);
     VL.glow.material.opacity = 0.5 + k * 0.45; VL.glow.children[0].material.opacity = 0.18 + k * 0.4 + Math.sin(S.frames * 0.5) * 0.05 * k; }
-  function laserBeam(aim, col) { const L = 28; if (!VL.beam) { const g = new THREE.Group(); g.name = 'vrLaserBeam';
-      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.a, toneMapped: false, depthWrite: false, fog: false }));
-      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.45, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      for (const m of [core, glow]) { m.rotation.x = Math.PI / 2; m.position.z = L / 2; m.renderOrder = 6; m.frustumCulled = false; g.add(m); } scene.add(g); VL.beam = g; VL.beamT = 3; VL.beams++; S.vrBeams = VL.beams; }
-    if (aim) { VL.beam.position.copy(aim.o); VL.beam.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), beam: true }; } }
-  function laserEndBeam() { if (!VL.beam) return; scene.remove(VL.beam); VL.beam.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); VL.beam = null; VL.beamT = 0; }
-  function vrLaser(held, dt, R) { const rf = window.__roomFire, aim = laserAim(), col = laserCols(), CT = (rf && rf.CHARGE_T) || 4;
-    if (VL.beam) { VL.beamT -= dt; laserBeam(aim, col); if (R && S.frames % 6 === 0) pulse(R.src, 0.5, 20); if (VL.beamT <= 0) laserEndBeam(); }
-    if (held && !VL.held) { VL.charge = 0; VL.spent = !!VL.beam; S.laserPulls = (S.laserPulls || 0) + 1; if (R) pulse(R.src, 0.4, 30); }
-    if (held && !VL.spent) { VL.charge += dt; const k = Math.min(1, VL.charge / CT); laserGlow(k, aim, col); if (R && S.frames % 8 === 0) pulse(R.src, 0.1 + k * 0.5, 15);
-      if (VL.charge >= CT) { VL.spent = true; laserGlow(null); laserBeam(aim, col); } }
-    else laserGlow(null);
-    if (!held && VL.held && !VL.spent && aim && rf && rf.fire) {   // release: the real shot, then put the bolt on the controller's aim
-      // t362u: roomfire's own multiplayer zap would carry the flat facing; hold it, then send the shot along the controller's aim
-      const M = window.__mp, z0 = M && M.zap; let zh = null; if (z0) M.zap = (o, d, c) => { zh = c; return true; };
-      const k = Math.min(0.999, VL.charge / CT); let L = null; try { L = rf.fire({ fromRelease: true, k }); } finally { if (z0) M.zap = z0; }
-      if (L && z0 && zh) { try { if (z0(aim.o.toArray(), aim.d.toArray(), zh, k)) MPV.zaps++; } catch (e) {} }
-      if (L && L.mesh) { L.mesh.position.copy(aim.o); L.mesh.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); L.dir.copy(aim.d); L.o = aim.o.toArray();
-        if (rf.last) { rf.last.o = aim.o.toArray(); rf.last.d = aim.d.toArray(); } VL.bolts++; VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), k, char: col.char }; if (R) pulse(R.src, 0.7, 40); } }
+  function laserBeam(aim, col, opts) { ensureLaserFX(); const g = VL.beamMesh, first = !VL.beam; g.children[0].material.color.setHex(col.a); g.children[1].material.color.setHex(col.b);
+    g.visible = true; VL.beam = g;
+    if (opts && opts.held) VL.beamHeld = true;
+    else if (first) { VL.beamHeld = false; VL.beamT = 3; VL.beams++; S.vrBeams = VL.beams; }
+    if (aim) { g.position.copy(aim.o); g.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), beam: true, kind: FM.type }; } }
+  function laserEndBeam() { if (VL.beamMesh) VL.beamMesh.visible = false; VL.beam = null; VL.beamT = 0; VL.beamHeld = false; stopBeamHum(); }
+  let beamHum = null;
+  function stopBeamHum() { if (!beamHum) return; try { const ac = window.__unlockAC; if (ac && beamHum.g) { const t = ac.currentTime; beamHum.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06); if (beamHum.o) beamHum.o.stop(t + 0.08); if (beamHum.o2) beamHum.o2.stop(t + 0.08); } } catch (e) {} beamHum = null; }
+  function startBeamHum() { stopBeamHum(); try { if (window.__muted || (window.__mute && window.__mute.on) || localStorage.getItem('neonarcade.mute') === '1') return; const ac = window.__unlockAC || (window.__unlockAC = new (window.AudioContext || window.webkitAudioContext)()); if (!ac) return; if (ac.state === 'suspended' && ac.resume) ac.resume().catch(() => {});
+      const t = ac.currentTime, o = ac.createOscillator(), o2 = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth'; o.frequency.value = 280; o2.type = 'sine'; o2.frequency.value = 560; f.type = 'lowpass'; f.frequency.value = 900; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.08);
+      o.connect(f); o2.connect(f); f.connect(g); g.connect(ac.destination); o.start(t); o2.start(t); beamHum = { o, o2, g }; } catch (e) { beamHum = null; } }
+  function shootAimed(aim, opts, R) {
+    const rf = window.__roomFire; if (!rf || !rf.fire || !aim) return null;
+    const dir = opts.dir || aim.d, o = aim.o.toArray(), d = dir.toArray ? dir.toArray() : dir;
+    const M = window.__mp, z0 = M && M.zap; let zh = null; if (z0) M.zap = (oo, dd, c) => { zh = c; return true; };
+    let L = null; try { L = rf.fire(Object.assign({ fromRelease: true, o, d }, opts)); } finally { if (z0) M.zap = z0; }
+    if (L && z0 && zh) { try { if (z0(L.o, L.dir.toArray(), zh, opts.k || 0)) MPV.zaps++; } catch (e) {} }
+    if (L) { VL.bolts++; VL.last = { o: L.o, d: L.dir.toArray(), k: L.k, char: (L.hue === 'red' ? 'alien' : 'monkey'), kind: opts.kind || FM.type }; }
+    return L; }
+  function vrLaser(held, dt, R) {
+    const rf = window.__roomFire, aim = laserAim(), kind = FM.type, col = fireCols(kind);
+    if (VL.beam && !VL.beamHeld && kind !== 'beam') { VL.beamT -= dt; laserBeam(aim, col); if (R && S.frames % 6 === 0) pulse(R.src, 0.5, 20); if (VL.beamT <= 0) laserEndBeam(); }
+    if (VL.beamHeld && kind !== 'beam') laserEndBeam();
+    if (kind === 'classic') {
+      laserGlow(null); if (held && !VL.held) { S.laserPulls = (S.laserPulls || 0) + 1; shootAimed(aim, { k: 0, kind: 'classic' }, R); if (R) pulse(R.src, 0.55, 28); } }
+    else if (kind === 'pulse') {
+      laserGlow(null);
+      if (held && aim) { if (!VL.held) { VL.pulseT = 0; S.laserPulls = (S.laserPulls || 0) + 1; } VL.pulseT -= dt;
+        if (VL.pulseT <= 0) { VL.pulseT = PULSE_GAP; shootAimed(aim, { k: 0, kind: 'pulse', color: col.a, cool: PULSE_GAP, force: true, life: 0.32 }, R); if (R) pulse(R.src, 0.25, 14); } } }
+    else if (kind === 'scatter') {
+      laserGlow(null);
+      if (held && !VL.held && aim) { S.laserPulls = (S.laserPulls || 0) + 1; const n = 5, spread = 0.14;
+        _fanAx.set(0, 1, 0); if (Math.abs(aim.d.dot(_fanAx)) > 0.95) _fanAx.set(1, 0, 0);
+        for (let i = 0; i < n; i++) { _fanQ.setFromAxisAngle(_fanAx, (i - (n - 1) / 2) * spread); _fan.copy(aim.d).applyQuaternion(_fanQ).normalize();
+          shootAimed(aim, { k: 0, kind: 'scatter', color: col.a, dir: _fan.clone(), silent: i > 0, force: i > 0, noCool: i > 0 }, R); }
+        if (R) pulse(R.src, 0.8, 40); } }
+    else if (kind === 'charge') {
+      if (held && !VL.held) { VL.charge = 0; VL.spent = false; S.laserPulls = (S.laserPulls || 0) + 1; if (R) pulse(R.src, 0.35, 24); try { if (rf && rf.startChargeSnd) rf.startChargeSnd(); } catch (e) {} }
+      if (held) { VL.charge += dt; const k = Math.min(1, VL.charge / CHARGE_FIRE_T); laserGlow(k, aim, col); if (R && S.frames % 8 === 0) pulse(R.src, 0.1 + k * 0.55, 15); try { if (rf && rf.tickChargeSnd) rf.tickChargeSnd(k); } catch (e) {} }
+      else { laserGlow(null); try { if (rf && rf.stopChargeSnd) rf.stopChargeSnd(); } catch (e) {}
+        if (VL.held && !VL.spent && aim) { const k = Math.min(0.999, Math.max(0.08, VL.charge / CHARGE_FIRE_T)); shootAimed(aim, { k, kind: 'charge', color: col.a, fromRelease: true }, R); if (R) pulse(R.src, 0.4 + k * 0.6, 50); } } }
+    else if (kind === 'beam') {
+      laserGlow(null);
+      if (held && aim) { if (!VL.held || !VL.beamHeld) { S.laserPulls = (S.laserPulls || 0) + 1; laserBeam(aim, col, { held: true }); VL.beams++; S.vrBeams = VL.beams; try { if (rf && rf.zapKind) rf.zapKind('beam', col.char === 'alien' ? 'red' : 'cyan'); } catch (e) {} startBeamHum(); if (R) pulse(R.src, 0.6, 30); }
+        else { laserBeam(aim, col, { held: true }); if (R && S.frames % 6 === 0) pulse(R.src, 0.4, 18); } }
+      else if (VL.beamHeld) laserEndBeam(); }
     VL.held = held; }
+  ensureLaserFX();
+  S.setFireType = setFireType;
+  S.fireMenu = () => ({ open: FM.open, hover: FM.hover, type: FM.type, types: FIRE_TYPES.map(t => t.id), visible: !!(FM.group && FM.group.visible),
+    hudHidden: !!S.hudHidden, hudVisible: hud.visible, picks: FM.picks, opens: FM.opens, lastPick: FM.lastPick || null,
+    pos: FM.group && FM.group.visible ? FM.group.position.toArray() : null, labels: FIRE_TYPES.map(t => t.name), colors: FIRE_TYPES.map(t => t.color) });
   S.vrLaser = () => ({ ctrl: (() => { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null; const c = ctrls[i]; c.updateMatrixWorld(true); const q = c.getWorldQuaternion(new THREE.Quaternion()); return { d: new THREE.Vector3(0, 0, -1).applyQuaternion(q).toArray(), o: new THREE.Vector3().setFromMatrixPosition((grips[i] || c).matrixWorld).toArray() }; })(),
-    eye: (() => { const e = monkey.getObjectByName('botEye'); if (!e || (monkey.userData || {}).char !== 'alien') return null; monkey.updateMatrixWorld(true); return e.getWorldPosition(new THREE.Vector3()).toArray(); })(), held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
+    eye: (() => { const e = monkey.getObjectByName('botEye'); if (!e || (monkey.userData || {}).char !== 'alien') return null; monkey.updateMatrixWorld(true); return e.getWorldPosition(new THREE.Vector3()).toArray(); })(), held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, beamHeld: !!VL.beamHeld, type: FM.type, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
     aim: (() => { const a = laserAim(); return a ? { o: a.o.toArray(), d: a.d.toArray() } : null; })() });
   // ---------- t358u: warm-up so walking / turning / beaming doesn't freeze ----------
   // The flat game compiles its shaders for the post-processing target (linear, no tone mapping); the headset draws straight into the XR
@@ -1122,15 +1234,17 @@ export function setupVR(A) {
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
     S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
+    const L = IN.left, R = IN.right;
+    fireMenuInput(L, R);
     if (chessPre()) { gear(false, dt); if (S.head) st.yaw = S.head.yaw; return; }   // v12: seated at the chess table: no walking / turning
     gear(walk && !(A.nb && A.nb.playing), dt);
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
     const h = S.head, q = _v.set(h.x, monkey.position.y, h.z); A.collide(q); moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z;
-    const L = IN.left, R = IN.right;
     const nbOn = !!(A.nb && A.nb.playing);
     // t350u smooth turn: rate = 90 deg/s * ((|x| - 0.15) / 0.85)^2, nothing inside the deadzone, no snapping. Off while Neon Bricks takes the sticks.
-    if (R && !nbOn) { const ax = Math.abs(R.x);
+    // vrtest-v14: the fire-type hologram owns the right stick while it is open (no turn / no teleport from that stick).
+    if (R && !nbOn && !FM.open) { const ax = Math.abs(R.x);
       if (ax > TURN_DZ) { const k = Math.min(1, (ax - TURN_DZ) / (1 - TURN_DZ)), rate = -Math.sign(R.x) * TURN_MAX * k * k, a = rate * dt;
         turnRig(a); S.turnRate = rate; S.turnSum += Math.abs(a); S.turnTime += dt; S.turnMaxStep = Math.max(S.turnMaxStep, Math.abs(a)); } }
     st.yaw = S.head.yaw;
@@ -1227,6 +1341,7 @@ export function setupVR(A) {
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
     if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(HUD_TILT); }
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
+    hud.visible = !!(S.presenting && !S.hudHidden); placeFireMenu(); if (padBoard) padBoard.visible = !!(PADINFO && S.presenting && !S.hudHidden);
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
     const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
@@ -1319,7 +1434,7 @@ export function setupVR(A) {
   const progKey = o => { const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry; return ms.map(m => m && m.uuid).join(',') + (o.isInstancedMesh ? 'I' : '') + (o.isSkinnedMesh ? 'S' : '') + (o.isBatchedMesh ? 'B' : '') + (o.isPoints ? 'P' : o.isLine ? 'L' : o.isSprite ? 'Sp' : '') + (g && g.attributes && g.attributes.color ? 'c' : '') + (g && g.morphAttributes ? Object.keys(g.morphAttributes).length : ''); };
   function meshList(area, visibleOnly, skip) { const out = [], keys = new Set(); stageArea(area, () => { const undoG = golfStage(area);
       try { const add = o => { if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || o.isReflector) return; const k = progKey(o); if (keys.has(k) || (skip && skip.has(k))) return; keys.add(k); out.push(o); };
-        if (visibleOnly) scene.traverseVisible(add); else scene.traverse(add); } finally { if (undoG) undoG(); } }); return { list: out, keys }; }
+        if (visibleOnly) { scene.traverseVisible(add); for (const o of (FM.warm || [])) add(o); } else scene.traverse(add); } finally { if (undoG) undoG(); } }); return { list: out, keys }; }
   // compile meshes[i..] under the staged area's lights until the slice budget runs out (always at least one); returns the next index
   function compileSome(area, list, i, budget, mirror) { const t0 = performance.now(); let j = i; const fake = { traverse: cb => { for (let q = j0; q < j1; q++) cb(list[q]); }, traverseVisible() {} }; let j0 = i, j1 = i;
     stageArea(area, () => { const undoG = golfStage(area), prev = renderer.getRenderTarget(); LS.t = -1e9; const sig = lightSig(); LS.done.add(sig); PW.lastSig = sig;
