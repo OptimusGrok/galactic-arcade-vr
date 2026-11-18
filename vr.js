@@ -551,7 +551,8 @@ export function setupVR(A) {
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
   // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
   // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
-  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') }; } return window.__gaDbg; }
+  function dbg() { if (window.__gaDbg && window.__gaDbg.warmlog == null) window.__gaDbg.warmlog = /[?&]warmlog=1\b/.test(location.search);   // golf.js may build __gaDbg first
+    if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') }; } return window.__gaDbg; }
   S.dbg = dbg;
   function mirrorFrame() { if (VEIL.on) return; if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
     const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
@@ -936,6 +937,7 @@ export function setupVR(A) {
   function holdAV(on) { if (!!window.__gaHoldAV === !!on) return; window.__gaHoldAV = !!on; VEIL.holds = (VEIL.holds || 0) + (on ? 1 : 0);
     try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred || window.__gaHoldAV ? Promise.resolve() : r0()); ac.__gaHold = r0; }
         if (on && ac.state === 'running') { ac.suspend(); S.acHeld = true; } else if (!on && S.acHeld) { S.acHeld = false; if (!S.blurred) ac.__gaHold(); } } } catch (e) {}
+    try { window.__music && window.__music.tick && window.__music.tick(); } catch (e) {}   // music target 0 at once, not on its next 120 ms tick
     if (!on) { window.__gaRevealAt = performance.now(); logW('reveal: arcade audio + sim released'); } }
   S.holdAV = holdAV;
   function veilOff() { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; holdAV(false); }
@@ -1332,7 +1334,7 @@ export function setupVR(A) {
         while (!ready(budget())) { PW.prog.i = n0 - PW.pending.size; if (performance.now() - tR > (VEIL.on ? 3000 : 8000)) break; await frame(); }
         if (PW.pending.size) { const left = [...PW.pending]; PW.linkCapped = (PW.linkCapped || 0) + left.length; logW('link cap: ' + left.length + ' of ' + n0 + ' not reported ready after ' + Math.round(performance.now() - tR) + ' ms; linking one per frame');
           PW.prog = { a, kind: job.kind, ph: 'link1', i: 0, n: left.length };
-          for (const m of left) { const t1 = performance.now(); try { const p = renderer.properties.get(m).currentProgram; if (p) p.getUniforms(); } catch (e) {} PW.pending.delete(m); PW.prog.i++; const d = performance.now() - t1; if (d > (PW.link1Max || 0)) PW.link1Max = Math.round(d); await frame(); } }
+          let tF = performance.now(); for (const m of left) { const t1 = performance.now(); try { const p = renderer.properties.get(m).currentProgram; if (p) p.getUniforms(); } catch (e) {} PW.pending.delete(m); PW.prog.i++; const d = performance.now() - t1; if (d > (PW.link1Max || 0)) PW.link1Max = Math.round(d); if (performance.now() - tF > 6) { await frame(); tF = performance.now(); } } }   // shared programs are already linked: several per frame while under 6 ms, a slow real link gets a frame to itself
         logW('linked ' + a + ':' + job.kind + ' ' + n0 + ' in ' + Math.round(performance.now() - tR) + ' ms'); }
       if (job.kind === 'vis') { LISTS[a] = list; PW.prog = { a, kind: job.kind, ph: 'draw', i: 0, n: list.length }; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); logW('drawn ' + a + ' at ' + Math.round(performance.now() - PW.startedAt) + ' ms'); }   // in VR (card gone) the one draw waits for the beam's cut
       PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });

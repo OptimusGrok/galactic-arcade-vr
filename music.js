@@ -51,5 +51,5 @@
     }
     if (g) { if (ac.state === 'suspended' && t > 0) ac.resume(); g.gain.setTargetAtTime(t, ac.currentTime, t > M.gain ? 0.5 : 0.25); M.gain = g.gain.value; }
   }
-  setInterval(tick, 120); document.addEventListener('visibilitychange', tick);
+  M.tick = tick; setInterval(tick, 120); document.addEventListener('visibilitychange', tick);
 })();

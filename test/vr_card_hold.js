@@ -15,9 +15,10 @@ const FAKE_KHR = `;(function(){ for (const C of [WebGLRenderingContext, WebGL2Re
   const { page, errors, close } = await openVR({ cpu: 4, qs: '?warmlog=1', init: { content: (NEVER ? FAKE_KHR : '') + IWER_SRC + SETUP } });
   const E = (f, a) => page.evaluate(f, a); const logs = []; page.on('console', m => { const t = m.text(); if (t.startsWith('[warm]')) logs.push(t); });
   try {
+    // like Dave tapping PLAY then entering VR before the pre-warm is done: the start screen counts as dismissed now (greeting due in 3 s, music + Grok armed)
     await page.waitForFunction(() => document.getElementById('vrBtn').classList.contains('on'), null, { timeout: 60000 });
-    await E(() => { try { window.__music && window.__music.setOn && window.__music.setOn(true); } catch (e) {} });
-    await page.click('#vrBtn'); await page.waitForFunction(() => window.__gaVR.presenting, null, { timeout: 30000 });
+    await E(() => { const S = window.__start; S.dismissed = true; S.at = performance.now(); }); await page.click('#vrBtn');
+    await page.waitForFunction(() => window.__gaVR.presenting, null, { timeout: 30000 });
     const samples = [];
     for (let k = 0; k < 400; k++) { const s = await E(() => { const S = window.__gaVR, ac = window.__unlockAC, M = window.__music || {}, C = window.__cabMusic || {}, P = window.__pa || {}, G = window.__grokVisit || {};
         return { on: S.veil.on, pct: S.veil.pct, hold: !!window.__gaHoldAV, ac: ac ? ac.state : 'none', mt: M.target || 0, cab: C.want || null, pa: !!P.playing, paN: P.played || 0, grok: G.state || null, t: Math.round(performance.now()) }; });
@@ -33,8 +34,8 @@ const FAKE_KHR = `;(function(){ for (const C of [WebGLRenderingContext, WebGL2Re
     chk(up.every(s => !s.grok || s.grok === 'idle'), 'Grok does not start his visit under the card');
     chk(up.every(s => s.paN === 0), 'the greeting has not played before the reveal');
     await page.waitForTimeout(1500);
-    const a = await E(() => ({ hold: !!window.__gaHoldAV, ac: window.__unlockAC ? window.__unlockAC.state : 'none', mt: window.__music ? window.__music.target : 0, g: window.__music ? window.__music.gain : 0 }));
-    chk(!a.hold && (a.ac === 'running' || a.ac === 'none'), 'after the reveal the arcade sound runs again ' + JSON.stringify(a));
+    await page.waitForTimeout(1500); const a = await E(() => ({ hold: !!window.__gaHoldAV, ac: window.__unlockAC ? window.__unlockAC.state : 'none', mt: window.__music ? window.__music.target : 0, g: window.__music ? window.__music.gain : 0, loaded: window.__music && window.__music.loaded }));
+    chk(!a.hold && a.ac === 'running' && a.mt > 0 && (!a.loaded || a.g > 0.05), 'after the reveal the arcade sound runs again and the room music fades in ' + JSON.stringify(a));
     const pa = await page.waitForFunction(() => window.__pa && window.__pa.played > 0, null, { timeout: 15000 }).then(() => E(() => ({ at: window.__pa.at, reveal: window.__gaRevealAt }))).catch(() => null);
     chk(pa && pa.at >= pa.reveal + 1400, 'the greeting starts after the reveal ' + JSON.stringify(pa && { afterRevealMs: Math.round(pa.at - pa.reveal) }));
     chk(logs.length > 3 && V.log.some(l => /linked 1:vis/.test(l)), '?warmlog=1 logs the steps (' + logs.length + ' console lines)');
