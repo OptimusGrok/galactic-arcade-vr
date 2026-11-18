@@ -43,7 +43,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await E(() => { window.__xp.mark = window.__xp.iv.length; window.__tp.go(); }); await until(() => window.__tp.where === 1 && window.__tp.state === 'idle', 120000); await H.frames(page, 30);
     b = await win(); console.log('BEAM arcade ' + JSON.stringify(b));
     chk(b.progsWhole === 0 && b.lit.every(l => l > 5) && b.maxAtCut < 600, 'beam back to the arcade: no compiles, no black, no freeze', b);
-    await place(0, 6, 0); await until(() => window.__gaStream.shop === 'off', 30000);
+    await place(0, 6, 0); await page.waitForTimeout(3000);   // v8: nothing to wait for (no eviction in VR)
     { const g = await E(() => window.__gaStream); chk(g.shop === 'on' && g.room2 === 'on', 'v8: in the headset the shop + room 2 textures stay resident after walking away (no re-upload at the next beam)', g); }
     await E(() => { const P = window.__tp.PAD1, S = window.__gaVR; S.rig = { x: P.x + 0.3, y: 0, z: P.z + 0.3, yaw: 0.8 }; S.applyRig(); window.__arcade.monkey.position.set(P.x + 0.3, 0, P.z + 0.3);
       window.__xp.mark = window.__xp.iv.length; window.__tp.go('nk'); });
@@ -54,7 +54,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     b = await win(); console.log('BEAM arcade2 ' + JSON.stringify(b));
     chk(b.progsWhole === 0 && b.lit.every(l => l > 5) && b.maxAtCut < 600, 'beam back from Neon Knockout: no compiles, no black, no freeze', b);
     // 3) room 2: evicted from the south of room 1, then a single jump (like a ray teleport) into room 2
-    await place(0, 8, 0); await until(() => window.__gaStream.room2 === 'off', 30000);
+    await place(0, 8, 0); await page.waitForTimeout(2000);   // v8: room 2 stays resident in VR (no eviction to wait for)
     const z2 = await E(() => window.__arcade.Z2);
     await E(() => { window.__xp.mark = window.__xp.iv.length; });
     await place(0, z2 + 3, Math.PI); await H.frames(page, 40);
