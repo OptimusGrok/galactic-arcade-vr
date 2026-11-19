@@ -6,7 +6,7 @@
 //   L STICK CLICK  hide / show the left-wrist HUD (battery, time, player count)
 //   TRIGGER      point at a cabinet = play it; point at the floor = teleport there; point at a sign / menu button = press it
 //   Y / B        MENU: BEAM TO SHOP / ARCADE (teleporter), BUY TICKETS (ticket exchange), PRIZE SHOP, NEON BRICKS
-//   signs        BUY TICKETS over the kiosk, BEAM TO SHOP / ARCADE over each teleporter pad, PRIZE SHOP over the shop counter,
+//   signs        BUY TICKETS over the kiosk, SHOP / NEON KNOCKOUT pad labels (press to beam), BEAM TO ARCADE over the shop / studio pads, PRIZE SHOP over the shop counter,
 //                NEON BRICKS by the window game (point at the window + trigger = play; sticks move, A/X/trigger rotate, B/Y drop, hold grip = leave)
 //   in a game    the cabinet's game shows on a big screen in front of you. A/X = insert tickets / start, then the
 //                game's buttons (sticks = arrows, A/X = fire / primary, B/Y = secondary or CONTINUE, trigger = fire or tap
@@ -513,10 +513,14 @@ export function setupVR(A) {
   function addSign(id, text, color, where, act, show) { const m = makeSign(text, color); m.name = 'vrSign_' + id; signs.push({ id, m, where, act, show }); return m; }
   const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 4 ? tp.PAD4 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
-  addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), () => beam('shop'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD1);
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
   // v17 (t494u): NEON KNOCKOUT has its own SW pad (PAD4); the original pad is shop only. Return from the studio is still on PAD3.
-  addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(4), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD4);
+  // v18 (t500u): no extra 'BEAM TO SHOP' / 'BEAM TO NEON KNOCKOUT' signs above the pads — the existing SHOP /
+  // NEON KNOCKOUT labels are what you point at to beam (same position). BEAM TO ARCADE over the shop / studio pads stays.
+  function padLabel(name) { return (A.tp && A.tp.labels || []).find(o => o.name === name) || scene.getObjectByName(name) || null; }
+  function addPadLabelSign(id, name, act, show) { signs.push({ id, m: padLabel(name), name, act, show, keep: true, where: () => { const m = padLabel(name); return m ? [m.position.x, m.position.y, m.position.z] : null; } }); }
+  addPadLabelSign('beamShop', 'teleportLabel_SHOP', () => beam('shop'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD1);
+  addPadLabelSign('beamNK', 'teleportLabel_NEONKNOCKOUT', () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD4);
   // v19 (t411u, Dave: "can't play mini golf in VR"): the stairwell's energy shield only had a flat-screen PAY button. In the headset a sign
   // over the shield: trigger = pay 5 tickets (only if you have them) and the shield drops; then walk down the stairs with the stick.
   const golfA = () => A.golf || null;
@@ -901,7 +905,7 @@ export function setupVR(A) {
     () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || inChat() || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
-  S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
+  S.signs = () => signs.filter(g => g.m && g.m.visible && (!g.keep || (S.presenting && g.show()))).map(g => ({ id: g.id, at: g.m.position.toArray() }));
   const _sph = new THREE.Sphere(); let kioskBox = null;
   function nbBox() { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()), z = n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0;
     return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
@@ -982,13 +986,15 @@ export function setupVR(A) {
     VC.frameUpdate(w, A, dt); }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
   function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
-    for (const g of signs) { if (!g.m.visible) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
+    for (const g of signs) { if (!g.m || !g.m.visible) continue; if (g.show && !g.show()) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
     const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
     const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2 && !grokAway()) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
     if (chessFree()) { const p = ray.intersectBox(chessBox(), _hit); if (p) take(p.distanceTo(ray.origin), p, chessGo, 'chessTable'); }   // v12: the chess table itself
     return best; }
-  function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
+  function signsUpdate() { const h = S.head; for (const g of signs) {
+    if (g.keep) { if (!g.m) g.m = padLabel(g.name); if (g.m && g.m.material && g.m.material.color) { const hv = S.presenting && g.show() && S.hoverTarget === g.id; g.m.material.color.setHex(hv ? 0xffffff : 0xffffff); g.m.userData.hl = hv; } continue; }
+    const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
     if (w) { const hv = S.hoverTarget === g.id || (g.id === 'tickets' && S.hoverTarget === 'kiosk') || (g.id === 'nb' && S.hoverTarget === 'nbWindow') || (g.id === 'shop' && S.hoverTarget === 'shop') || (g.id === 'chess' && S.hoverTarget === 'chessTable'); g.m.material.color.setHex(hv ? 0xffffff : 0xb8b8c8); g.m.userData.hl = hv;
       g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6)) * (hv ? 1.12 : 1)); } } } }   // far signs grow so they stay readable / easy to point at
 
@@ -1410,7 +1416,7 @@ export function setupVR(A) {
       gameInput(w, aimScreen, dt);
     } else { if (Object.keys(S.held).length || G.ptrDown) releaseAll(); G.placed = false; G.rect = null; S.gripT = 0; }
     // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
-    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
+    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m).filter(Boolean), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
       for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
     fpRayPost();
@@ -1421,7 +1427,7 @@ export function setupVR(A) {
     hud.visible = !!(S.presenting && !S.hudHidden); placeFireMenu(); if (padBoard) padBoard.visible = !!(PADINFO && S.presenting && !S.hudHidden);
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: SHOP', beamNK: 'TRIGGER: NEON KNOCKOUT', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
     const CTs = chessOn ? chessT() : null, chessLine = CTs ? (CTs.state === 'play' ? 'TRIGGER: MOVE A PIECE · GRIP: STAND UP' : CTs.state === 'stand' ? 'STANDING UP' : CTs.gstate === 'seated' || CTs.gstate === 'sitdown' ? 'GROK SITS DOWN · GRIP: STAND UP' : 'GROK IS COMING · A: SKIP · GRIP: STAND UP') : null;
     const GA = golfA(), golfLine = GA && GA.below && S.head ? (GA.rolling ? 'ROLLING…' : GA.aiming && GA.vr ? 'LET GO: PUTT · POWER ' + Math.round((GA.power || 0) * 100) + '% · GRIP: CANCEL' : GA.vrNear(S.head.x, S.head.z) ? 'POINT WHERE TO PUTT · HOLD TRIGGER TO AIM' : null) : null;
     const line2 = S.msgT > 0 ? S.msg : chessLine ? chessLine : golfLine ? golfLine : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : UI.open ? 'TRIGGER: PRESS · GRIP: BACK' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';

@@ -48,11 +48,11 @@ const { openVR, H } = require('./vrlib');
     // ---- 3) beam to the shop from the teleporter ----
     await page.evaluate(() => { window.__tpTimeScale = 3; window.__arcade.play.addTickets(400); });
     await H.press(page, 'left', 'y-button'); let m = await page.evaluate(() => window.__gaVR.ui.btns.map(b => b.id + ':' + b.label));
-    chk(!m.some(x => /^(beam|tickets|close2):/.test(x)) && m.includes('pack:BACKPACK') && m.includes('room:FLOOR + WALLS'), 'v12 (t388u): the MENU has no BEAM / BUY TICKETS / CLOSE button, beaming is on the pad sign (' + m.join(', ') + ')');
+    chk(!m.some(x => /^(beam|tickets|close2):/.test(x)) && m.includes('pack:BACKPACK') && m.includes('room:FLOOR + WALLS'), 'v12 (t388u): the MENU has no BEAM / BUY TICKETS / CLOSE button, beaming is on the pad label (' + m.join(', ') + ')');
     await aimPress(await btnAt('close'));
     const pad = await page.evaluate(() => [window.__gaVR.ui.tp().PAD1.x, window.__gaVR.ui.tp().PAD1.z]);
     await place(pad[0] + 2.2, pad[1] + 2.2, Math.PI / 4);
-    const sg = await sign('beamShop'); chk(!!sg, 'BEAM TO SHOP sign over the teleporter pad ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
+    const sg = await sign('beamShop'); chk(!!sg, 'SHOP pad label is the beam target ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
     await aimPress(sg);
     await page.waitForFunction(() => { const s = window.__gaVR.state(); return s.tpWhere === 2 && s.tpState === 'idle'; }, null, { timeout: 90000 });
     let s = await st(); const P2 = await page.evaluate(() => [window.__gaVR.ui.tp().PAD2.x, window.__gaVR.ui.tp().PAD2.z]);

@@ -91,7 +91,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await tap('close'); chk(!(await st()).panel, 'X closes');
     // still reachable elsewhere
     chk(!!(await sign('tickets')), 'BUY TICKETS: the ticket machine sign is still there');
-    chk(!!(await sign('beamShop')), 'BEAM TO SHOP: the teleporter pad sign is still there');
+    chk(!!(await sign('beamShop')), 'SHOP pad label is still there to beam with');
   } catch (e) { chk(false, 'exception ' + (e && e.stack || e).toString().slice(0, 500)); }
   const errs = errors.filter(e => !/supabase|ERR_FAILED|net::/i.test(e)); chk(errs.length === 0, 'no page errors ' + errs.slice(0, 3).join(' | '));
   await close(); process.exit(ok ? 0 : 1);
