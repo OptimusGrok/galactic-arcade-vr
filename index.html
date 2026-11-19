@@ -9,7 +9,7 @@
 <script>/* t855u / v233: if an older galactic-arcade-v* cache is still on this phone, clear it and reload ONCE
    before the start screen is interactive — never mid-session (v228 did this 6s after the room started drawing). */
 (function(){if(!('caches'in window)||location.protocol==='file:')return;
-  var want='galactic-arcade_vr-v25',key='gavrReloaded.'+want,skip=false;   /* VR edition: only its own galactic-arcade_vr-* caches */
+  var want='galactic-arcade_vr-v26',key='gavrReloaded.'+want,skip=false;   /* VR edition: only its own galactic-arcade_vr-* caches */
   try{skip=!!sessionStorage.getItem(key);}catch(e){skip=true;}
   window.__gaUpdate={want:want,checked:!!skip,reloading:false};
   if(skip)return;
@@ -31,14 +31,15 @@
 <script src="player.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Galactic Arcade VR</title>
-<meta name="theme-color" content="#07040c">
+<title>Galactic Arcade</title>
+<meta name="theme-color" content="#000000">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Galactic Arcade">
+<link rel="manifest" href="manifest.webmanifest?v=26">
+<link rel="icon" href="icons/icon-192.png?v=26">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=26">
 <style>
 html,body{margin:0;height:100%;background:#07040c;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
 canvas{display:block;width:100vw;height:100vh;height:100dvh;outline:none}
@@ -420,7 +421,7 @@ if (document.getElementById('flBtn')) flBtnInit(); else document.addEventListene
 <script src="quest-pad.js"></script><!-- Quest Browser 2D (not in VR): v13 both sticks walk, turn with the on-screen turn buttons / trigger-drag (vr.js applies it) -->
 <script>/* FAST LOAD (t229): register the service worker (its install pre-caches ~7 MB) only after the room is drawing and things settle, so it never competes with the first load */
 if('serviceWorker' in navigator&&location.protocol!=='file:'){(function(){window.__GA_VER=window.__GA_VER||'v235';
-var done=0,want='galactic-arcade_vr-v25';
+var done=0,want='galactic-arcade_vr-v26';
 var reg=function(){if(done)return;done=1;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(){
   return caches.keys();}).then(function(ks){var stale=ks.filter(function(k){return k.indexOf('galactic-arcade_vr-')===0&&k!==want;});
   if(!stale.length)return;return Promise.all(stale.map(function(k){return caches.delete(k);}));

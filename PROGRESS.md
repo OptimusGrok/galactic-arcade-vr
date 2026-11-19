@@ -22,3 +22,8 @@
 - Room controls (headset): Y (left) = menu open / close, always; B (right) = gun fire only (gear()), nothing without the gun (B no longer opens the menu). NK B / Y pause, Strike B bomb, Neon Bricks, chess, golf unchanged.
 - Flat Quest (B / Y = trapped history back, the browser can't tell them apart): walking in the room, B fires the gun's FIRE button only while it is shown, else nothing (was Space = jump). In games / Neon Bricks unchanged.
 - test/vr_bfire_v25.js (real PLAY -> VR start; B with gun off / on / off, Y menu; flat Quest B gun off / on). Older tests that opened the menu with B now use Y.
+
+## VR v26 (Dave t499u, sw galactic-arcade_vr-v26)
+- App name is Galactic Arcade (manifest name + short_name, page title, apple-mobile-web-app-title).
+- Full-bleed black app icons (192 / 512 / 180 apple-touch, plus a 512 maskable): the neon hexagon sits in the 80% safe zone and the black fills the tile edge to edge. theme_color / background_color are #000000 so Quest does not add a white plate.
+- Icons and the manifest are precached with ?v=26.
