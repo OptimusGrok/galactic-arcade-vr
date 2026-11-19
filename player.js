@@ -61,7 +61,8 @@
     root.traverse(function (o) { if (o.isMesh && o.material && o.material.color) { var k = H[o.material.userData.gaOrig != null ? o.material.userData.gaOrig : o.material.color.getHex()]; if (k && m[k].indexOf(o.material) < 0) { o.material.userData.gaOrig = o.material.userData.gaOrig != null ? o.material.userData.gaOrig : o.material.color.getHex(); m[k].push(o.material); } } }); return m; }
   function capOf(root) { var c = null; root.traverse(function (o) { if (!c && o.isGroup && o.userData.gaCap) c = o; }); if (c) return c;
     root.traverse(function (o) { if (!c && o.isGroup && o.children.some(function (k) { return k.isMesh && k.material && k.material.color && k.material.color.getHex() === 0xff4f9e; })) c = o; }); if (c) c.userData.gaCap = 1; return c; }
-  function hatMeshes(T, cap) { var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
+  function hatMeshes(T, cap) { if (/[?&]oldacc=1\b/.test(location.search)) return hatMeshesV12(T, cap);
+    var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
     head.children.filter(function (o) { return /^ga/.test(o.name); }).forEach(function (o) { head.remove(o); }); h = head.userData.gaHats = {};   // a clone() copies hat refs + meshes: rebuild its own
     var AM = accMats(T);
     // crown: jewelled gold circlet with velvet cap, filigree rim, fleur spikes and a front ruby in a bezel
@@ -461,6 +462,153 @@
   }
   // t741u laser pistol (HAND row): Sky Tower's blocky blaster, held in the monkey's right hand (main.js names it 'handR'); muzzle = 'gaPistolMuzzle'.
   // The alien never holds it: his floating robot gets a red emitter ring instead ('gaBotGun') and fires the lasers (roomfire.js).
+  // vrtest-v16: v12 accessory builders for ?oldacc=1 (skip the detailed v13 meshes)
+  function hatMeshesV12(T, cap) { var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
+    head.children.filter(function (o) { return /^ga/.test(o.name); }).forEach(function (o) { head.remove(o); }); h = head.userData.gaHats = {};   // a clone() copies hat refs + meshes: rebuild its own
+    var gold = new T.MeshStandardMaterial({ color: 0xffc640, metalness: 1, roughness: 0.25, emissive: 0x402800, emissiveIntensity: 0.5 }), gem = new T.MeshStandardMaterial({ color: 0xff2b6a, roughness: 0.2, emissive: 0x500010 });
+    // crown: sits ON the head (head sphere top is ~0.33 above the head node), not inside it
+    var cr = new T.Group(); cr.position.set(0, 0.315, -0.005); cr.name = 'gaCrown';
+    var band = new T.Mesh(new T.CylinderGeometry(0.135, 0.125, 0.075, 28, 1, true), gold); band.material.side = T.DoubleSide; band.position.y = 0.035; cr.add(band);
+    var rim = new T.Mesh(new T.TorusGeometry(0.128, 0.012, 6, 28), gold); rim.rotation.x = Math.PI / 2; cr.add(rim);
+    for (var i = 0; i < 7; i++) { var a = i / 7 * Math.PI * 2, sp = new T.Mesh(new T.ConeGeometry(0.034, 0.1, 4), gold); sp.position.set(Math.sin(a) * 0.13, 0.12, Math.cos(a) * 0.13); cr.add(sp);
+      var bl = new T.Mesh(new T.SphereGeometry(0.016, 8, 6), gold); bl.position.set(Math.sin(a) * 0.13, 0.175, Math.cos(a) * 0.13); cr.add(bl); }
+    var g1 = new T.Mesh(new T.SphereGeometry(0.024, 10, 8), gem); g1.position.set(0, 0.04, 0.135); cr.add(g1); head.add(cr); h.crown = cr;
+    // space helmet: big glass bubble round the whole head + solid white collar, rim and antenna so it reads at a distance
+    var white = new T.MeshStandardMaterial({ color: 0xf2f4f8, roughness: 0.35, metalness: 0.3 });
+    var hl = new T.Group(); hl.position.set(0, 0.15, 0.01); hl.name = 'gaHelmet';
+    var glass = new T.Mesh(new T.SphereGeometry(0.31, 32, 22), new T.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.35, emissive: 0x0a2a44, depthWrite: false, side: T.DoubleSide })); glass.renderOrder = 3; hl.add(glass);
+    var col = new T.Mesh(new T.TorusGeometry(0.2, 0.045, 10, 32), white); col.rotation.x = Math.PI / 2; col.position.y = -0.24; hl.add(col);
+    var vr = new T.Mesh(new T.TorusGeometry(0.31, 0.018, 8, 40), white); hl.add(vr);   // outline ring round the bubble, facing front
+    var an = new T.Mesh(new T.CylinderGeometry(0.008, 0.008, 0.12, 6), white); an.position.set(0.12, 0.33, 0); an.rotation.z = -0.35; hl.add(an);
+    var tip = new T.Mesh(new T.SphereGeometry(0.025, 10, 8), new T.MeshBasicMaterial({ color: 0xff3cf0, toneMapped: false })); tip.position.set(0.145, 0.39, 0); hl.add(tip);
+    head.add(hl); h.helmet = hl; moreHatsV12(T, head, h);
+    var cb = cap.clone(true); cb.name = 'gaHat_capblue'; delete cb.userData.gaCap; cb.traverse(function (o) { if (o.isMesh && o.material) { var hx = o.material.color.getHex(); o.material = o.material.clone(); o.material.userData = {}; o.material.color.setHex(hx === 0xd93a82 ? 0x1a4fc0 : 0x2b7bff); } });
+    head.add(cb); h.capblue = cb; newItemsV12(T, head, h); return h; }
+  // head space: skull centre y 0.15 r 0.18 (top ~0.333), face +z, eyes y 0.165 z ~0.22, ears x +-0.2. Every hat sits ON/above the skull top.
+  function moreHatsV12(T, head, h) { var HALF = Math.PI / 2, g, m;
+    g = h.beanie = grp(T, head, 'gaHat_beanie'); var knit = std(T, 0x16c2b2, { roughness: 0.95 }), knit2 = std(T, 0xff7a1a, { roughness: 0.95 });
+    add(g, new T.SphereGeometry(0.198, 26, 12, 0, Math.PI * 2, 0, HALF), knit, 0, 0.2, -0.005, 1, 1.0, 1.04);
+    m = add(g, new T.CylinderGeometry(0.203, 0.203, 0.065, 26, 1, true), knit2, 0, 0.215, -0.005, 1, 1, 1.04); m.material.side = T.DoubleSide;
+    add(g, new T.SphereGeometry(0.055, 12, 10), knit2, 0, 0.41, -0.005);
+    g = h.cowboy = grp(T, head, 'gaHat_cowboy'); var lea = std(T, 0x8b5a2b, { roughness: 0.7 }), bnd = std(T, 0x2a1608);
+    add(g, new T.CylinderGeometry(0.34, 0.34, 0.02, 36), lea, 0, 0.29, 0, 1, 1, 0.9);
+    add(g, new T.CylinderGeometry(0.125, 0.155, 0.18, 26), lea, 0, 0.385, 0);
+    add(g, new T.CylinderGeometry(0.152, 0.158, 0.04, 26, 1, true), bnd, 0, 0.32, 0, 1.01, 1, 1.01);
+    add(g, new T.SphereGeometry(0.13, 20, 8, 0, Math.PI * 2, 0, HALF), lea, 0, 0.47, 0, 0.97, 0.22, 1);
+    g = h.party = grp(T, head, 'gaHat_party'); g.rotation.z = -0.14; var pm = std(T, 0xff3cf0, { emissive: 0x400030 }), py = std(T, 0xffe14a, { emissive: 0x302000 });
+    add(g, new T.ConeGeometry(0.115, 0.32, 26), pm, 0, 0.45, 0);
+    [0.35, 0.45, 0.55].forEach(function (y) { var r = 0.115 * (0.61 - y) / 0.32; m = add(g, new T.TorusGeometry(r + 0.004, 0.011, 6, 24), py, 0, y, 0); m.rotation.x = HALF; });
+    add(g, new T.SphereGeometry(0.04, 12, 10), py, 0, 0.62, 0);
+    g = h.pirate = grp(T, head, 'gaHat_pirate', 0.29); var blk = std(T, 0x15151a, { roughness: 0.5 }), wh = std(T, 0xf4f4f0), gd = std(T, 0xffc640, { metalness: 1, roughness: 0.3, emissive: 0x402800 });
+    add(g, new T.SphereGeometry(0.17, 24, 12, 0, Math.PI * 2, 0, HALF), blk, 0, -0.01, 0, 1, 0.85, 1);
+    add(g, new T.SphereGeometry(0.2, 28, 14), blk, 0, 0.09, 0, 1.6, 0.62, 0.5);
+    m = add(g, new T.TorusGeometry(0.2, 0.009, 6, 40), gd, 0, 0.09, 0.0, 1.6, 0.62, 1);
+    add(g, new T.SphereGeometry(0.034, 12, 10), wh, 0, 0.12, 0.1, 1, 1, 0.5);
+    [-0.7, 0.7].forEach(function (a) { m = add(g, new T.BoxGeometry(0.1, 0.014, 0.01), wh, 0, 0.075, 0.1); m.rotation.z = a; });
+    g = h.halo = grp(T, head, 'gaHat_halo', 0.47); g.rotation.x = -0.12;
+    m = add(g, new T.TorusGeometry(0.15, 0.022, 12, 44), new T.MeshBasicMaterial({ color: 0xffe680, toneMapped: false })); m.rotation.x = HALF;
+    m = add(g, new T.TorusGeometry(0.15, 0.05, 10, 44), new T.MeshBasicMaterial({ color: 0xffd040, transparent: true, opacity: 0.25, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false })); m.rotation.x = HALF;
+    g = h.headphones = grp(T, head, 'gaHat_headphones'); var dk = std(T, 0x202028, { roughness: 0.35, metalness: 0.4 }), glow = new T.MeshBasicMaterial({ color: 0xff3cf0, toneMapped: false });
+    add(g, new T.TorusGeometry(0.222, 0.02, 8, 36, Math.PI), dk, 0, 0.15, 0);
+    [-1, 1].forEach(function (sd) { m = add(g, new T.CylinderGeometry(0.078, 0.078, 0.055, 22), dk, 0.232 * sd, 0.15, 0); m.rotation.z = HALF;
+      m = add(g, new T.TorusGeometry(0.062, 0.011, 6, 22), glow, 0.262 * sd, 0.15, 0); m.rotation.y = HALF; });
+    // glasses (their own row)
+    var G = h.gl = {}, arms = function (g, mat) { [-1, 1].forEach(function (sd) { add(g, new T.BoxGeometry(0.012, 0.012, 0.2), mat, 0.158 * sd, 0.18, 0.14); }); };
+    g = G.shades = grp(T, head, 'gaGl_shades'); var ln = std(T, 0x07070c, { metalness: 0.7, roughness: 0.08, emissive: 0x1a0016 }), fr = std(T, 0x111114);
+    [-1, 1].forEach(function (sd) { m = add(g, new T.CylinderGeometry(0.052, 0.052, 0.014, 26), ln, 0.068 * sd, 0.172, 0.245, 1.2, 1, 0.82); m.rotation.x = HALF; });
+    add(g, new T.BoxGeometry(0.05, 0.013, 0.012), fr, 0, 0.19, 0.245); add(g, new T.BoxGeometry(0.29, 0.014, 0.012), fr, 0, 0.205, 0.243); arms(g, fr);
+    g = G.round = grp(T, head, 'gaGl_round'); var rim = std(T, 0xd4a017, { metalness: 0.9, roughness: 0.3 }), gl = new T.MeshStandardMaterial({ color: 0xcfeeff, transparent: true, opacity: 0.3, roughness: 0.05, depthWrite: false });
+    [-1, 1].forEach(function (sd) { add(g, new T.TorusGeometry(0.046, 0.008, 8, 28), rim, 0.066 * sd, 0.17, 0.245); add(g, new T.CircleGeometry(0.044, 24), gl, 0.066 * sd, 0.17, 0.244); });
+    add(g, new T.BoxGeometry(0.04, 0.009, 0.009), rim, 0, 0.18, 0.247); arms(g, rim);
+    g = G.visor = grp(T, head, 'gaGl_visor'); var vz = new T.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x0090b0, emissiveIntensity: 0.9, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.3, side: T.DoubleSide }), wt = std(T, 0xf2f4f8, { metalness: 0.3 });
+    add(g, new T.CylinderGeometry(0.255, 0.255, 0.08, 32, 1, true, -0.95, 1.9), vz, 0, 0.17, -0.01);
+    [-0.045, 0.045].forEach(function (y) { add(g, new T.CylinderGeometry(0.258, 0.258, 0.012, 32, 1, true, -0.95, 1.9), wt, 0, 0.17 + y, -0.01).material.side = T.DoubleSide; });
+    [-1, 1].forEach(function (sd) { add(g, new T.SphereGeometry(0.034, 12, 10), wt, Math.sin(0.95) * 0.255 * sd, 0.17, Math.cos(0.95) * 0.255 - 0.01); });
+    add(g, new T.CylinderGeometry(0.212, 0.212, 0.03, 28, 1, true, 0.95, Math.PI * 2 - 1.9), fr, 0, 0.17, -0.01).material.side = T.DoubleSide; }
+  // ---------- shop-only items: low-poly (few segments, shared materials) ----------
+  function newItemsV12(T, head, h) { var HALF = Math.PI / 2, g, m, G = h.gl;
+    var blk = std(T, 0x16161c, { roughness: 0.5 }), red = std(T, 0xc81e2a), wh = std(T, 0xf4f4f0, { roughness: 0.7 }), gd = std(T, 0xffc640, { metalness: 1, roughness: 0.3, emissive: 0x402800 });
+    g = h.tophat = grp(T, head, 'gaHat_tophat'); add(g, new T.CylinderGeometry(0.27, 0.27, 0.02, 20), blk, 0, 0.3, 0); add(g, new T.CylinderGeometry(0.15, 0.15, 0.26, 20), blk, 0, 0.43, 0);
+    add(g, new T.CylinderGeometry(0.153, 0.153, 0.045, 20, 1, true), red, 0, 0.33, 0);
+    g = h.wizard = grp(T, head, 'gaHat_wizard'); g.rotation.z = 0.12; var wz = std(T, 0x3a2bb8, { emissive: 0x0a0630 }), ws = new T.MeshBasicMaterial({ color: 0xffe14a, toneMapped: false });
+    add(g, new T.CylinderGeometry(0.31, 0.31, 0.018, 20), wz, 0, 0.29, 0); add(g, new T.ConeGeometry(0.17, 0.46, 16), wz, 0, 0.52, 0);
+    [[0.08, 0.45, 0.12], [-0.06, 0.6, 0.08], [0.03, 0.36, 0.16]].forEach(function (q) { add(g, new T.OctahedronGeometry(0.03), ws, q[0], q[1], q[2]); });
+    g = h.viking = grp(T, head, 'gaHat_viking'); var st = std(T, 0x9aa3ad, { metalness: 0.8, roughness: 0.35 }), hn = std(T, 0xf0e6cc, { roughness: 0.6 });
+    add(g, new T.SphereGeometry(0.2, 18, 9, 0, Math.PI * 2, 0, HALF), st, 0, 0.21, 0, 1, 0.95, 1.04); m = add(g, new T.TorusGeometry(0.2, 0.018, 6, 20), gd, 0, 0.22, 0); m.rotation.x = HALF;
+    [-1, 1].forEach(function (sd) { m = add(g, new T.ConeGeometry(0.045, 0.22, 8), hn, 0.23 * sd, 0.36, 0); m.rotation.z = -0.9 * sd; });
+    g = h.chef = grp(T, head, 'gaHat_chef'); add(g, new T.CylinderGeometry(0.17, 0.165, 0.14, 18), wh, 0, 0.36, 0);
+    [[0, 0.5, 0, 0.13], [0.1, 0.47, 0.05, 0.1], [-0.1, 0.47, 0.05, 0.1], [0, 0.47, -0.1, 0.1]].forEach(function (q) { add(g, new T.SphereGeometry(q[3], 12, 8), wh, q[0], q[1], q[2]); });
+    g = h.bunny = grp(T, head, 'gaHat_bunny'); var bw = std(T, 0xf6f0f4, { roughness: 0.9 }), bp = std(T, 0xff9cc8, { roughness: 0.9 });
+    add(g, new T.TorusGeometry(0.2, 0.014, 6, 20, Math.PI), std(T, 0xff5fb4), 0, 0.15, 0);
+    [-1, 1].forEach(function (sd) { var e = new T.Group(); e.position.set(0.09 * sd, 0.32, 0); e.rotation.z = -0.22 * sd; g.add(e); e.T = T;
+      add(e, new T.SphereGeometry(0.06, 10, 8), bw, 0, 0.17, 0, 0.75, 2.6, 0.45); add(e, new T.SphereGeometry(0.035, 8, 6), bp, 0, 0.17, 0.02, 0.75, 2.6, 0.4); });
+    g = h.propeller = grp(T, head, 'gaHat_propeller'); var pb = std(T, 0x2b62e8), py = std(T, 0xf2c418), pr = std(T, 0xd42a2a);
+    add(g, new T.SphereGeometry(0.192, 18, 9, 0, Math.PI * 2, 0, HALF), pb, 0, 0.2, -0.005, 1, 0.95, 1.04); add(g, new T.CylinderGeometry(0.012, 0.012, 0.09, 6), py, 0, 0.42, 0);
+    m = add(g, new T.BoxGeometry(0.34, 0.008, 0.05), pr, 0, 0.465, 0); m.rotation.y = 0.5; m.name = 'gaProp';
+    // glasses & face (same slot as the glasses row)
+    var arms = function (g, mat) { [-1, 1].forEach(function (sd) { add(g, new T.BoxGeometry(0.012, 0.012, 0.2), mat, 0.158 * sd, 0.18, 0.14); }); };
+    g = G.monocle = grp(T, head, 'gaGl_monocle'); add(g, new T.TorusGeometry(0.05, 0.009, 6, 20), gd, 0.068, 0.17, 0.245); add(g, new T.CircleGeometry(0.048, 16), new T.MeshStandardMaterial({ color: 0xcfeeff, transparent: true, opacity: 0.35, depthWrite: false }), 0.068, 0.17, 0.244);
+    m = add(g, new T.CylinderGeometry(0.003, 0.003, 0.2, 4), gd, 0.11, 0.07, 0.24); m.rotation.z = 0.3;
+    var heartGeo = (function () { var sh = new T.Shape(); sh.moveTo(0, -0.04); sh.bezierCurveTo(-0.06, 0, -0.05, 0.05, 0, 0.025); sh.bezierCurveTo(0.05, 0.05, 0.06, 0, 0, -0.04); return new T.ShapeGeometry(sh, 4); })();
+    var starGeo = (function () { var sh = new T.Shape(); for (var i = 0; i < 10; i++) { var a = i / 10 * Math.PI * 2, r = i % 2 ? 0.022 : 0.052; sh[i ? 'lineTo' : 'moveTo'](Math.sin(a) * r, Math.cos(a) * r); } return new T.ShapeGeometry(sh); })();
+    g = G.heart = grp(T, head, 'gaGl_heart'); var hm = std(T, 0xff2b8a, { emissive: 0x500020, side: T.DoubleSide }); [-1, 1].forEach(function (sd) { add(g, heartGeo, hm, 0.068 * sd, 0.172, 0.248, 1.25, 1.25, 1); }); add(g, new T.BoxGeometry(0.05, 0.01, 0.01), hm, 0, 0.19, 0.247); arms(g, hm);
+    g = G.star = grp(T, head, 'gaGl_star'); var sm = std(T, 0xffd21a, { emissive: 0x504000, side: T.DoubleSide }); [-1, 1].forEach(function (sd) { add(g, starGeo, sm, 0.07 * sd, 0.172, 0.248, 1.15, 1.15, 1); }); add(g, new T.BoxGeometry(0.05, 0.01, 0.01), sm, 0, 0.19, 0.247); arms(g, sm);
+    g = G['3d'] = grp(T, head, 'gaGl_3d'); var fw = std(T, 0xf4f4f0); add(g, new T.BoxGeometry(0.3, 0.085, 0.012), fw, 0, 0.172, 0.243);
+    add(g, new T.PlaneGeometry(0.1, 0.06), new T.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.85 }), -0.068, 0.172, 0.25); add(g, new T.PlaneGeometry(0.1, 0.06), new T.MeshBasicMaterial({ color: 0x20c0ff, transparent: true, opacity: 0.85 }), 0.068, 0.172, 0.25); arms(g, fw);
+    g = G.mustache = grp(T, head, 'gaGl_mustache'); var mu = std(T, 0x2a160a, { roughness: 0.9 }); [-1, 1].forEach(function (sd) { m = add(g, new T.SphereGeometry(0.045, 10, 6), mu, 0.045 * sd, 0.085, 0.27, 1.3, 0.45, 0.6); m.rotation.z = 0.35 * sd; });
+    g = G.mask = grp(T, head, 'gaGl_mask'); var mk = std(T, 0x18181e, { roughness: 0.8, side: T.DoubleSide }); add(g, new T.CylinderGeometry(0.205, 0.205, 0.065, 20, 1, true), mk, 0, 0.17, 0);
+    [-1, 1].forEach(function (sd) { m = add(g, new T.BoxGeometry(0.03, 0.12, 0.01), mk, 0.05 * sd, 0.15, -0.21); m.rotation.z = 0.4 * sd; });
+    // t743u skull mask (Dave's mockup): sculpted ivory skull face plate — cranium plate over brow/face (top fur + ears stay), brow ridges, big dark
+    // almond sockets, cheekbones, triangular nose cavity, upper/lower teeth with a stitched gap, mandible + chin, dark strap with side clips; thin
+    // dark back-face outline so it reads as a separate mask (also on the alien's round grey head). Per-character fit in applyRoot (gaSkFit).
+    g = G.skull = grp(T, head, 'gaGl_skull');
+    var bone = std(T, 0xeee4ca, { roughness: 0.5 }), boneD = std(T, 0xcfc3a4, { roughness: 0.6 }), sock = std(T, 0x0c0910, { roughness: 0.95 }),
+      edge = new T.MeshBasicMaterial({ color: 0x2a221c, side: T.BackSide }), strap = std(T, 0x23212a, { roughness: 0.8 }), clip = std(T, 0x9aa0a8, { metalness: 0.6, roughness: 0.35 });
+    var CZ = 0.012, SZ = 1.14, R = 0.205, fz = function (x, y) { var dx = x, dy = y - 0.155, q = R * R - dx * dx - dy * dy; return CZ + (q > 0 ? Math.sqrt(q) : 0) * SZ; };   // front surface depth
+    var shell = function (r, cy, cz, sz, p0, pl, t0, tl, mat, rows) { return add(g, new T.SphereGeometry(r, 32, rows || 20, p0, pl, t0, tl), mat, 0, cy, cz, 1, 1, sz); };
+    var outl = function (mesh) { var o = new T.Mesh(mesh.geometry, edge); o.position.copy(mesh.position); o.scale.copy(mesh.scale).multiplyScalar(1.035); o.renderOrder = -1; g.add(o); return o; };
+    var FRONT0 = Math.PI / 2 - 1.12, FRONTL = 2.24;   // +-64 deg around the face: monkey ears (x +-0.2) stay out
+    m = shell(R, 0.155, CZ, SZ, FRONT0, FRONTL, 0.5, 1.45, bone); outl(m);                     // cranium / face plate: forehead down to the upper teeth
+    var MY = 0.07, MZ = 0.128, MR = 0.136, MSY = 0.86, MSZ = 1.0, mz = function (x, y) { var ex = x / MR, ey = (y - MY) / (MR * MSY), q = 1 - ex * ex - ey * ey; return MZ + MR * MSZ * (q > 0 ? Math.sqrt(q) : 0); };
+    m = add(g, new T.SphereGeometry(MR, 28, 16, Math.PI / 2 - 1.35, 2.7, 0.75, 2.25), bone, 0, MY, MZ, 1, MSY, MSZ); outl(m);   // jaw / mandible plate: encloses the monkey muzzle, chin below the teeth
+    [-1, 1].forEach(function (sd) {
+      m = add(g, new T.SphereGeometry(0.06, 16, 10), bone, 0.072 * sd, 0.226, fz(0.072, 0.226) - 0.016, 1.25, 0.38, 0.45); m.rotation.z = -0.22 * sd;   // brow ridge
+      m = add(g, new T.SphereGeometry(0.056, 20, 14), sock, 0.073 * sd, 0.17, fz(0.073, 0.17) - 0.012, 1.1, 1.22, 0.5); m.rotation.z = 0.38 * sd;      // big almond socket
+      m = add(g, new T.SphereGeometry(0.036, 14, 10), bone, 0.112 * sd, 0.118, fz(0.112, 0.118) - 0.024, 1.3, 0.7, 0.5);                           // cheekbone
+      add(g, new T.SphereGeometry(0.02, 10, 8), boneD, 0.135 * sd, 0.07, fz(0.135, 0.07) - 0.012, 0.8, 1.3, 0.5);                                   // jaw hinge shadow
+      add(g, new T.BoxGeometry(0.02, 0.028, 0.034), clip, 0.176 * sd, 0.215, 0.07).name = 'gaSkClip';                                                                 // grey side clip (mockup)
+    });
+    add(g, new T.CylinderGeometry(0.175, 0.175, 0.026, 28, 1, true, 0.35, Math.PI * 2 - 0.7), new T.MeshStandardMaterial({ color: 0x23212a, roughness: 0.8, side: T.DoubleSide }), 0, 0.215, 0).name = 'gaSkStrap';   // strap round the sides + back (front gap under the plate)
+    var nose = new T.Shape(); nose.moveTo(0, 0.026); nose.lineTo(0.017, -0.006); nose.quadraticCurveTo(0.012, -0.016, 0.002, -0.01); nose.lineTo(0, -0.012); nose.lineTo(-0.002, -0.01); nose.quadraticCurveTo(-0.012, -0.016, -0.017, -0.006); nose.closePath();
+    add(g, new T.ShapeGeometry(nose), new T.MeshBasicMaterial({ color: 0x0c0910, side: T.DoubleSide }), 0, 0.122, Math.max(fz(0, 0.122), mz(0, 0.122)) + 0.002);           // triangular nose cavity
+    var tz = function (x, y) { return mz(x, y) + 0.005; };
+    for (var ti = -3; ti <= 3; ti++) { var tx = ti * 0.0205, tt = add(g, new T.BoxGeometry(0.018, 0.022, 0.014), bone, tx, 0.0885, tz(tx, 0.0885) - 0.005); tt.rotation.y = tx * 4;
+      tt = add(g, new T.BoxGeometry(0.018, 0.02, 0.014), bone, tx, 0.0655, tz(tx, 0.0655) - 0.005); tt.rotation.y = tx * 4;
+      tt = add(g, new T.BoxGeometry(0.0215, 0.05, 0.01), sock, tx, 0.077, tz(tx, 0.077) - 0.009); tt.rotation.y = tx * 4;   // dark mouth behind each tooth (follows the jaw curve)
+      tt = add(g, new T.BoxGeometry(0.0215, 0.0035, 0.012), sock, tx, 0.077, tz(tx, 0.077) + 0.0015); tt.rotation.y = tx * 4; }   // upper + lower teeth, stitched gap line
+    // backs & extras: on the torso (head.parent.parent), behind the shoulders (-z)
+    var torso = head.parent && head.parent.parent || head; torso.children.filter(function (o) { return /^gaBk/.test(o.name); }).forEach(function (o) { torso.remove(o); });
+    var B = {}; Object.defineProperty(h, 'bk', { value: B, enumerable: false, configurable: true }); var bg = function (n) { var q = new T.Group(); q.name = 'gaBk_' + n; q.T = T; q.position.set(0, 0.3, -0.2); torso.add(q); return q; };
+    g = B.jetpack = bg('jetpack'); var jm = std(T, 0xb8c0cc, { metalness: 0.7, roughness: 0.35 }), jr = std(T, 0xd42a2a);
+    // Exhaust is off until powered flight (main.js flyFx). Two nozzles, shared cones: hot core, orange plume, wide red shell. No lights.
+    var flameM = function (c, op) { return new T.MeshBasicMaterial({ color: c, transparent: true, opacity: op, toneMapped: false, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide }); };
+    var shellM = flameM(0xff2a00, 0.62), outerM = flameM(0xff9a1a, 0.95), coreM = flameM(0xfff6c8, 1);
+    var shellGeo = new T.ConeGeometry(0.2, 0.82, 7), outerGeo = new T.ConeGeometry(0.11, 1.2, 7), coreGeo = new T.ConeGeometry(0.045, 0.78, 6);
+    [-1, 1].forEach(function (sd) { add(g, new T.CylinderGeometry(0.07, 0.07, 0.3, 10), jm, 0.08 * sd, 0, -0.05); add(g, new T.ConeGeometry(0.07, 0.08, 10), jr, 0.08 * sd, 0.19, -0.05);
+      var th = new T.Group(); th.name = 'gaThruster'; th.position.set(0.08 * sd, -0.16, -0.05); th.visible = false; th.T = T; g.add(th);
+      [[shellGeo, shellM, 'gaFlameShell', 0.82], [outerGeo, outerM, 'gaFlameOuter', 1.2], [coreGeo, coreM, 'gaFlameCore', 0.78]].forEach(function (q) {
+        m = add(th, q[0], q[1], 0, -q[3] / 2, 0); m.rotation.x = Math.PI; m.name = q[2]; m.renderOrder = 3; }); });
+    add(g, new T.BoxGeometry(0.14, 0.2, 0.05), std(T, 0x303038), 0, 0, 0);
+    g = B.cape = bg('cape'); var cp = std(T, 0xd42a2a, { side: T.DoubleSide, roughness: 0.7 }); m = add(g, new T.PlaneGeometry(0.56, 0.95, 1, 3), cp, 0, -0.42, -0.06); m.rotation.x = 0.12;
+    add(g, new T.BoxGeometry(0.4, 0.04, 0.04), gd, 0, 0.04, 0.02);
+    var wingGeo = (function () { var sh = new T.Shape(); sh.moveTo(0, 0); sh.bezierCurveTo(0.15, 0.25, 0.4, 0.3, 0.45, 0.18); sh.bezierCurveTo(0.38, 0.1, 0.42, -0.02, 0.32, -0.08); sh.bezierCurveTo(0.25, -0.2, 0.1, -0.15, 0, 0); return new T.ShapeGeometry(sh, 6); })();
+    var batGeo = (function () { var sh = new T.Shape(); sh.moveTo(0, 0.05); sh.lineTo(0.2, 0.22); sh.lineTo(0.46, 0.18); sh.lineTo(0.4, 0.02); sh.lineTo(0.32, -0.08); sh.lineTo(0.22, 0.0); sh.lineTo(0.14, -0.1); sh.lineTo(0.06, -0.02); sh.lineTo(0, -0.05); return new T.ShapeGeometry(sh); })();
+    [['wings', wingGeo, std(T, 0xf8f8ff, { side: T.DoubleSide, emissive: 0x303040 })], ['batwings', batGeo, std(T, 0x2a1838, { side: T.DoubleSide, roughness: 0.6 })]].forEach(function (w) {
+      g = B[w[0]] = bg(w[0]); [-1, 1].forEach(function (sd) { m = add(g, w[1], w[2], 0.06 * sd, 0.05, -0.04, 1.5 * sd, 1.5, 1); m.rotation.y = -0.45 * sd; }); });
+  }
+  // t741u laser pistol (HAND row): Sky Tower's blocky blaster, held in the monkey's right hand (main.js names it 'handR'); muzzle = 'gaPistolMuzzle'.
+  // The alien never holds it: his floating robot gets a red emitter ring instead ('gaBotGun') and fires the lasers (roomfire.js).
+
   function pistolOf(T, root) { var hand = root.getObjectByName('handR'); if (!hand) return null; var g = hand.getObjectByName('gaPistol'); if (g) return g;
     g = new T.Group(); g.name = 'gaPistol'; g.T = T; var metal = std(T, 0x3a4558, { metalness: 0.5, roughness: 0.4 }), dark = std(T, 0x1a2028, { roughness: 0.5 }), accent = std(T, 0x247888, { metalness: 0.3, roughness: 0.4 }),
       glow = new T.MeshBasicMaterial({ color: 0x48f2ff, toneMapped: false });
@@ -889,5 +1037,5 @@
     var wrap = setInterval(function () { var U = window.__startUI; if (!U || !U.show || U.show.ga) return; clearInterval(wrap); var o = U.show; U.show = function () { untouch(); stHat = false; TP.seen = false; TP.st = 'idle'; TP.cb = null; var r = o.apply(this, arguments); tickets(); sync(); return r; }; U.show.ga = 1; }, 200); }
   var booted = false; function boot1() { if (booted) return; booted = true; boot(); }
   if (document.readyState === 'loading') { var mo = new MutationObserver(function () { if (document.getElementById('start')) { mo.disconnect(); boot1(); } }); mo.observe(document.documentElement, { childList: true, subtree: true }); document.addEventListener('DOMContentLoaded', boot1); } else boot1();   // build ours the moment #start is parsed
-  window.__gaPlayer = { KEY: KEY, get p() { return P; }, pick: pick, setChar: setChar, play: play, apply: apply, opts: BASE, allOpts: OPTS, priceOf: priceOf, isStart: isStart, isFree: isFree, get tag() { return tag; }, get prev() { return prev; }, music: MU, dress: dress, look: look, glasses: GLAS, wardrobe: W, tp: TP, NEW: NEW, PRICE: PRICE, owned: owned, has: has, buy: buy, tryOn: tryOn, balance: balance, previewItem: previewItem, accessoryStats: accessoryStats, nameOf: nameOf };
+  window.__gaPlayer = { KEY: KEY, oldAcc: /[?&]oldacc=1\b/.test(location.search), get p() { return P; }, pick: pick, setChar: setChar, play: play, apply: apply, opts: BASE, allOpts: OPTS, priceOf: priceOf, isStart: isStart, isFree: isFree, get tag() { return tag; }, get prev() { return prev; }, music: MU, dress: dress, look: look, glasses: GLAS, wardrobe: W, tp: TP, NEW: NEW, PRICE: PRICE, owned: owned, has: has, buy: buy, tryOn: tryOn, balance: balance, previewItem: previewItem, accessoryStats: accessoryStats, nameOf: nameOf };
 })();

@@ -565,9 +565,83 @@ export function setupVR(A) {
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
   // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
   // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
-  function dbg() { if (window.__gaDbg && window.__gaDbg.warmlog == null) window.__gaDbg.warmlog = /[?&]warmlog=1\b/.test(location.search);   // golf.js may build __gaDbg first
-    if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') }; } return window.__gaDbg; }
+  function dbg() { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q);
+    if (!window.__gaDbg) window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') };
+    const D = window.__gaDbg; if (D.warmlog == null) D.warmlog = f('warmlog');   // golf.js may build __gaDbg first
+    if (D.oldacc == null) { D.oldacc = f('oldacc'); D.noatlas = f('noatlas'); D.nofiretypes = f('nofiretypes'); D.olddim = f('olddim'); D.beamlog = f('beamlog'); }
+    return D; }
   S.dbg = dbg;
+  // vrtest-v16 (t492u): ?beamlog=1 — after each beam, a small panel in VR shows the worst frame in the
+  // 3 s around the cut, shader / texture / geometry uploads, and whether an atlas bake, pre-warm, a
+  // long task or an audio decode ran, plus the first objects drawn in that window. Dave can read it out.
+  const BL = { on: false, frames: [], ev: [], first: [], seen: new WeakSet(), lastT: 0, lastP: 0, lastTx: 0, lastG: 0, texMB: 0, active: null, report: null, panel: null, until: 0, hook: false, bakeHook: false };
+  function blOn() { return !!dbg().beamlog; }
+  function blEv(n) { if (!blOn()) return; BL.ev.push({ t: performance.now(), n }); if (BL.ev.length > 100) BL.ev.shift(); }
+  function blTickFrame(ms) {
+    if (!blOn() || !S.presenting) return;
+    const i = renderer.info, p = i.programs ? i.programs.length : 0, tx = i.memory.textures, g = i.memory.geometries;
+    const rec = { t: performance.now(), ms, dp: Math.max(0, p - (BL.lastP || p)), dtx: Math.max(0, tx - (BL.lastTx || tx)), dg: Math.max(0, g - (BL.lastG || g)) };
+    BL.lastP = p; BL.lastTx = tx; BL.lastG = g;
+    BL.frames.push(rec); const cut = rec.t - 4500; while (BL.frames.length && BL.frames[0].t < cut) BL.frames.shift();
+    if (BL.active) scene.traverseVisible(o => { if ((o.isMesh || o.isPoints || o.isLine) && !BL.seen.has(o)) { BL.seen.add(o); if (BL.first.length < 24) BL.first.push(o.name || o.type); } });
+  }
+  function blEnsure() {
+    if (BL.hook || !blOn()) return; BL.hook = true;
+    const r = renderer, o = r.render.bind(r);
+    r.render = function (s, c) { const out = o(s, c); if (r.xr.isPresenting && s === scene && !S.inMirror) { const n = performance.now(), ms = BL.lastT ? n - BL.lastT : 0; BL.lastT = n; if (ms) blTickFrame(ms); } return out; };
+    try { new PerformanceObserver(list => { for (const e of list.getEntries()) if (e.duration >= 50) blEv('long ' + Math.round(e.duration) + 'ms'); }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (AC && AC.prototype.decodeAudioData && !AC.prototype.__gaBl) { const d0 = AC.prototype.decodeAudioData; AC.prototype.decodeAudioData = function () { blEv('audioDecode'); return d0.apply(this, arguments); }; AC.prototype.__gaBl = 1; } } catch (e) {}
+    try { const gl = r.getContext();
+      const add = (n, wf, hf) => { const f = gl[n]; if (typeof f !== 'function') return; gl[n] = function () { if (BL.active) { const w = (typeof arguments[wf] === 'number' && arguments[wf]) || 0, h = (typeof arguments[hf] === 'number' && arguments[hf]) || 0; BL.texMB += w && h ? w * h * 4 / (1024 * 1024) : 0.05; } return f.apply(this, arguments); }; };
+      add('texImage2D', 3, 4); add('texStorage2D', 3, 4); add('compressedTexImage2D', 3, 4); } catch (e) {}
+  }
+  function blHookBake() {
+    if (BL.bakeHook || !blOn()) return; const sh = window.__shop; if (!sh || !sh.bakeIcons) return; BL.bakeHook = true;
+    const orig = sh.bakeIcons.bind(sh); sh.bakeIcons = function () { const r = orig.apply(this, arguments); if (r && r.did) blEv('atlasBake ' + r.did + ' ' + Math.round(r.ms) + 'ms'); return r; };
+  }
+  function blDraw(rep) {
+    if (!BL.panel) { BL.panel = panel(0.5, 0.38, 1024, 780); BL.panel.name = 'vrBeamLog'; BL.panel.renderOrder = 2001; scene.add(BL.panel); }
+    const flags = [rep.atlas && 'ATLAS BAKE', rep.warm && 'PRE-WARM', rep.longTask && 'LONG TASK', rep.audio && 'AUDIO DECODE'].filter(Boolean);
+    const lines = ['BEAM ' + String(rep.dest || '?').toUpperCase(), 'WORST FRAME  ' + rep.worstMs + ' ms',
+      'SHADERS +' + rep.progs + '   TEX +' + rep.tex + (rep.texMB ? '  ' + rep.texMB + ' MB' : ''), 'GEOMETRY +' + rep.geo,
+      flags.length ? flags.join('  ') : 'no bake / warm / long task / audio', 'FIRST  ' + (rep.first.slice(0, 8).join(', ') || '(none)')];
+    drawPanel(BL.panel, lines, { border: '#ffde00', c0: '#ffde00' }); BL.panel.visible = true;
+  }
+  function blPlace() {
+    if (!BL.panel || !BL.panel.visible) return;
+    if (performance.now() > BL.until) { BL.panel.visible = false; return; }
+    if (!S.head && !camera) return; camera.updateMatrixWorld(true); camera.getWorldQuaternion(BL.panel.quaternion); camera.getWorldPosition(BL.panel.position);
+    BL.panel.position.add(_v.set(0, -0.06, -1.2).applyQuaternion(BL.panel.quaternion));
+  }
+  function blFinalize() {
+    const a = BL.active; if (!a) return;
+    const t0 = a.t0 - 500, t1 = a.t0 + 2500, fr = BL.frames.filter(f => f.t >= t0 && f.t <= t1);
+    const worst = fr.reduce((m, f) => f.ms > m.ms ? f : m, { ms: 0 });
+    const ev = BL.ev.filter(e => e.t >= t0 && e.t <= t1).map(e => e.n);
+    const sh = window.__shop && window.__shop.iconAtlas, bakeN = (sh && sh.bakeN) || 0, bakeMs = (sh && sh.bakeMs) || 0;
+    const rep = { dest: a.dest, worstMs: +((worst.ms) || 0).toFixed(1), frames: fr.length,
+      progs: fr.reduce((s, f) => s + f.dp, 0), tex: fr.reduce((s, f) => s + f.dtx, 0), texMB: +Math.max(0, BL.texMB - (a.texMB0 || 0)).toFixed(2),
+      geo: fr.reduce((s, f) => s + f.dg, 0), atlas: ev.some(n => n.indexOf('atlas') === 0) || bakeN > (a.bake0 || 0),
+      warm: ev.some(n => n.indexOf('warm') === 0) || !!(PW.busy && PW.startedAt && PW.startedAt <= t1 && (PW.startedAt + (PW.ms || 0) >= t0 || !PW.done)),
+      longTask: ev.some(n => n.indexOf('long ') === 0), audio: ev.some(n => n.indexOf('audio') === 0),
+      first: BL.first.slice(), ev: ev.slice(0, 16), bakeDelta: bakeN - (a.bake0 || 0), bakeMs: +(bakeMs - (a.bakeMs0 || 0)).toFixed(1) };
+    BL.report = rep; BL.active = null; BL.until = performance.now() + 14000; blDraw(rep);
+  }
+  function blStep() {
+    if (!blOn()) { if (BL.panel) BL.panel.visible = false; return; }
+    blEnsure(); blHookBake();
+    if (PW && PW.busy && PW.cur) { const k = 'warm ' + (PW.cur.area || '') + ':' + (PW.cur.kind || ''); if (BL._warm !== k) { BL._warm = k; blEv(k); } }
+    const tp = A.tp;
+    if (tp && tp.state !== 'idle' && !BL.active) {
+      BL.active = { t0: performance.now(), dest: tp.dest || (tp.where === 2 ? 'shop' : tp.where === 3 ? 'nk' : 'arcade'), bake0: (window.__shop && window.__shop.iconAtlas && window.__shop.iconAtlas.bakeN) || 0, bakeMs0: (window.__shop && window.__shop.iconAtlas && window.__shop.iconAtlas.bakeMs) || 0, texMB0: BL.texMB };
+      BL.first = [];
+    }
+    if (BL.active && !BL.active.idleAt && tp && tp.state === 'idle' && performance.now() - BL.active.t0 > 80) BL.active.idleAt = performance.now();
+    if (BL.active && performance.now() >= BL.active.t0 + 2500 && (!BL.active.idleAt || performance.now() >= BL.active.idleAt + 200)) blFinalize();
+    blPlace();
+  }
+  S.beamLog = () => BL.report; S.beamLogTick = blStep;
+
   function mirrorFrame() { if (VEIL.on) return; if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
     const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
     t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
@@ -1059,6 +1133,7 @@ export function setupVR(A) {
       if (sel) { g.textAlign = 'right'; g.font = '900 26px "Courier New",monospace'; g.fillStyle = hex; g.fillText('●', W - 36, y + row * 0.48 + 10); } }
     if (FM.tex) FM.tex.needsUpdate = true; }
   function makeFireMenu() {
+    if (dbg().nofiretypes) return;
     if (FM.group) return;
     const cv = document.createElement('canvas'); cv.width = 512; cv.height = 640; FM.cv = cv;
     const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.premultiplyAlpha = false; FM.tex = tex;
@@ -1068,7 +1143,7 @@ export function setupVR(A) {
     back.position.z = -0.002; back.renderOrder = 1001; back.frustumCulled = false;
     const group = new THREE.Group(); group.name = 'vrFireHolo'; group.add(back); group.add(mesh); group.visible = false; scene.add(group);
     FM.group = group; FM.mesh = mesh; FM.warm.push(mesh, back); drawFireMenu(); }
-  function openFireMenu() { makeFireMenu(); FM.open = true; FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type)); FM.stickArmed = true; FM.opens++; drawFireMenu(); S.fireMenuOpens = FM.opens; }
+  function openFireMenu() { if (dbg().nofiretypes) return; makeFireMenu(); FM.open = true; FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type)); FM.stickArmed = true; FM.opens++; drawFireMenu(); S.fireMenuOpens = FM.opens; }
   function closeFireMenu() { FM.open = false; if (FM.group) FM.group.visible = false; }
   function placeFireMenu() {
     if (!FM.group) return; const show = !!(S.presenting && FM.open && !VEIL.on && !S.blurred); FM.group.visible = show; if (!show) return;
@@ -1079,7 +1154,7 @@ export function setupVR(A) {
     FM.ateA = false;
     if (L && L.stickDown) { S.hudHidden = !S.hudHidden; S.hudToggles = (S.hudToggles || 0) + 1; if (L.src) pulse(L.src, 0.35, 20); }
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open) && !(A.nb && A.nb.playing) && !nkPlaying();
-    if (R && R.stickDown && walk) { if (FM.open) closeFireMenu(); else openFireMenu(); if (R.src) pulse(R.src, 0.45, 28); }
+    if (R && R.stickDown && walk && !dbg().nofiretypes) { if (FM.open) closeFireMenu(); else openFireMenu(); if (R.src) pulse(R.src, 0.45, 28); }
     if (!FM.open) { FM.stickArmed = true; return; }
     if (R && R.aDown) { setFireType(FIRE_TYPES[FM.hover].id); FM.picks++; FM.ateA = true; FM.lastPick = FM.type; closeFireMenu(); if (R.src) pulse(R.src, 0.7, 35); return; }
     if (!R) return;
@@ -1103,6 +1178,7 @@ export function setupVR(A) {
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
   function ensureLaserFX() {
+    if (dbg().nofiretypes) return;
     if (!VL.glow) { const col = fireCols('charge'); VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
       VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; VL.glow.visible = false;
       const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
@@ -1255,6 +1331,7 @@ export function setupVR(A) {
 
   // ---------- per frame: after the arcade step (follow the player, rays, the game screen, HUD) ----------
   function post(dt) {
+    if (blOn()) blStep();
     if (S.walkStart) { moveRig(monkey.position.x - S.walkStart.x, monkey.position.z - S.walkStart.z, monkey.position.y - S.rig.y); }
     // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
     if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; applyRig(); S.rigDirty = false; } if (UI.open) uiClose(); }   // v18: the new reference space now, so the very next headset frame is already at the destination
@@ -1478,6 +1555,7 @@ export function setupVR(A) {
       PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
       if (job.kind === 'vis') PW.warm.add(a); }
     else if (job.kind === 'icons') {   // vrtest-v15 (t491u): slice the prize/accessory atlas under the card / start screen, never at a beam
+      if (dbg().noatlas) { PW.icons = { n: 0, ms: 0, left: 0, skipped: 1 }; return; }
       const sh = window.__shop || A.shop; try { if (sh && sh.queueIcons) sh.queueIcons(); } catch (e) {}
       let t = performance.now(); const n0 = sh && sh.iconsPending ? sh.iconsPending() : 0; PW.prog = { a: 2, kind: 'icons', ph: 'bake', i: 0, n: n0 };
       while (sh && sh.iconsPending && sh.iconsPending()) {

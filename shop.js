@@ -114,8 +114,12 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // t487u: v12's 0.8x whites were hard to see in VR (MeshBasic toneMapped:false + emissive still clipped).
   // Another 30% on top of v12: 0.8 * 0.7 = 0.56 of the original, applied to ALL shop-room whites.
   // Colours / emissive only — the shop's fixed 24-light set (one PointLight at 40 * 1.3) is unchanged.
-  const WHITE_K = 0.56, FLOOR_GLOW_K = 0.5, EMISSIVE_K = 0.56;
+  // vrtest-v16 (t492u): ?olddim=1 restores the v12 0.8x dim on the original v12 surfaces only (window / price
+  // shelves / Grok's counter / floor glow), and skips the v13 all-room / accessories-shelf / candy-stand pass.
+  const OLDDIM = /[?&]olddim=1\b/.test(location.search), NOATLAS = /[?&]noatlas=1\b/.test(location.search);
+  const WHITE_K = OLDDIM ? 0.8 : 0.56, FLOOR_GLOW_K = 0.5, EMISSIVE_K = OLDDIM ? 1 : 0.56;
   const dimC = (hex, k = WHITE_K) => new THREE.Color().setRGB(((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k, THREE.SRGBColorSpace);
+  const dimNew = (hex) => dimC(hex, OLDDIM ? 1 : WHITE_K);   // surfaces first dimmed in v13; ?olddim=1 leaves them undimmed
   // ---------- enlarge the white room: stretch the existing floor / ceiling / wall planes ----------
   const dimmedMats = new Set();
   for (const o of [...W.children]) {
@@ -123,7 +127,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     if (!o.isMesh || !o.geometry.parameters || o.geometry.type !== 'PlaneGeometry') continue;
     if (Math.abs(Math.abs(o.rotation.x) - Math.PI / 2) < 1e-3) { o.scale.set(K, K, 1); if (o.position.y > 1) { o.visible = false; o.name = o.name || 'shopRoomCeiling'; } else o.name = o.name || 'shopRoomFloor'; }   // floor / ceiling (flat ceiling hidden: the curved glass roof replaces it)
     else { o.position.x *= K; o.position.z *= K; o.scale.x = K; o.name = o.name || 'shopRoomWall'; }                       // walls
-    for (const m of [].concat(o.material).filter(Boolean)) {
+    if (!OLDDIM) for (const m of [].concat(o.material).filter(Boolean)) {
       if (!m.color || dimmedMats.has(m)) continue;   // four walls share one material — dim once
       dimmedMats.add(m); m.color.copy(dimC(m.color.getHex()));
     }
@@ -292,7 +296,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // ---------- SHOP SHELL: one big square room - back wall partition (full height), the white room's own flat ceiling + side walls, neon trim only ----------
   const ZW = -3.2, SXW = HS, CH = 8.5, ZF = HS, shell = [];
   part(shell, BOX, 0xf7f8fb, 0, CH / 2, ZW - 0.05, 2 * HS, CH, 0.1);                                        // back wall (full width, floor to ceiling)
-  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopShell');
+  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimNew(0xffffff) }), 'shopShell');
   // ---------- CORNICE: white soffit band where the walls meet the vault, flush downlight strips + cyan neon (nothing hangs) ----------
   const cor = [];
   for (const sd of [-1, 1]) { part(cor, BOX, 0xf4f6fa, sd * (SXW - 0.3), CH - 0.18, (ZW + ZF) / 2, 0.6, 0.36, ZF - ZW); lit.push(new THREE.BoxGeometry(0.16, 0.02, ZF - ZW - 1.0).translate(sd * (SXW - 0.38), CH - 0.37, (ZW + ZF) / 2));
@@ -324,7 +328,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
         if (uCap < .5) { rib = line(vU.y * 6., .018); pur = line(vU.x * 12., .012); }
         else { vec2 p = vec2(vU.x * 2. - 1., vU.y); float r = length(p), a = atan(p.y, p.x); rib = line(r * 3., .01) * step(r, 1.) * step(.1, r) + step(.985, r); pur = 0.; }
         col += vec3(.55,.75,1.) * .045 * smoothstep(.5, 0., abs(fract(vU.x * 3. + vU.y * .7) - .5));                     // faint glass sheen
-        col = mix(col, vec3(.482,.498,.526), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
+        col = mix(col, vec3(${OLDDIM ? '.86,.89,.94' : '.482,.498,.526'}), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
   { const vg = new THREE.CylinderGeometry(VR, VR, VL, 72, 1, true, -Math.PI / 2, Math.PI).rotateX(-Math.PI / 2).translate(0, CH, VZ);
     const sk = new THREE.Mesh(vg, skyMat); sk.name = 'shopSkylight'; sk.frustumCulled = false; G.add(sk); api_sky = skyMat;
     const capM = skyMat.clone(); capM.uniforms = { uT: skyMat.uniforms.uT, uCap: { value: 1 } };
@@ -465,10 +469,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     part(cand, CYL, 0xffffff, x, yb + 0.25, z, 0.014, 0.5, 0.014);
     const cg = setUV(new THREE.CircleGeometry(R0, 22), 0, 1, 0, 1); const uv = cg.attributes.uv; for (let q = 0; q < uv.count; q++) uv.setX(q, (t + uv.getX(q)) / 3); cg.rotateY(Math.PI / 2); cg.translate(x + 0.02, yb + 0.55 + (j % 2) * 0.1, z); pops.push(cg); }
   const cm = (geos, mat, name, ro) => { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.name = name; if (ro) m.renderOrder = ro; CG.add(m); return m; };
-  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
+  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimNew(0xffffff) }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
   cm(pops, new THREE.MeshBasicMaterial({ map: sw.t, side: THREE.DoubleSide, toneMapped: false }), 'swirlPops'); cm(cLed, ledM, 'candyLed');
-  cm(jars, new THREE.MeshBasicMaterial({ color: dimC(0xffffff), transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
-  cm(lids, new THREE.MeshBasicMaterial({ color: dimC(0xe4e8ef) }), 'jarLids');
+  cm(jars, new THREE.MeshBasicMaterial({ color: dimNew(0xffffff), transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
+  cm(lids, new THREE.MeshBasicMaterial({ color: dimNew(0xe4e8ef) }), 'jarLids');
 
   // ---------- CHECKOUT (right front): curved white counter, cyan base glow, till + register, chunky Grok behind ----------
   const QX = 4.45, QZ = -1.95, RO = 1.95, RI = 1.4, A0 = Math.PI * 0.9, A1 = Math.PI * 1.62;
@@ -643,7 +647,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const WDS = 1.04, WDX = 1.75, WDZ = 7.5, WDW = 3.1 * WDS, WDD = 0.85 * WDS;   // scale, back-panel x, centre z, half width (along z), depth (toward -x)
   const wd = new THREE.Group(); wd.name = 'wardrobeCorner'; wd.position.set(WDX, 0, WDZ); wd.rotation.y = -Math.PI / 2; wd.scale.setScalar(WDS); G.add(wd);   // local +z faces -x (the pad side), local +x runs toward +z
   { const L = [], neon = [], neonP = [], dark = [], q = (geo, c, x, y, z, sx, sy = sx, sz = sx, rx = 0, ry = 0, rz = 0) => part(L, geo, c, x, y, z, sx, sy, sz, rx, ry, rz);
-    const CHR = dimC(0xd6dbe2).getHex(), WH = dimC(0xffffff).getHex();
+    const CHR = dimNew(0xd6dbe2).getHex(), WH = dimNew(0xffffff).getHex();
     const HOODC = [0x1d2452, 0xd42a2a, 0x2b62e8, 0x2fae3a, 0xf2c418, 0x7a2bd6, 0xff5fb4, 0xff7a1a, 0x13b8a8, 0x202026, 0xe8eaf0];   // player.js HOOD order
     const SHOEC = [[0x8a1e2c, 0xf1e8d6], [0x1f4fbf, 0xeaf0ff], [0x1a1a1e, 0x4a4a52], [0xf2f2f4, 0xd03040], [0x1f9a3a, 0xe8ffe8], [0xff5fb4, 0xffffff], [0xd9a51c, 0x2a1a08], [0x6a24c4, 0x00e5ff]];
     // back panel + plinth
@@ -831,7 +835,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     const b = balance(); if (b < g.price) { say(`The ${g.name} are ${g.price} tickets and you've got ${b}. Win a few more games and come back!`); return false; }
     spend(g.price); grantGlove(id); api.buys++; api.gloveBuys = (api.gloveBuys || 0) + 1; try { window.__announce && window.__announce('buy', { item: g.name, cost: g.price }); } catch (e) {} say(`Great choice! The ${g.name} are yours. Wear them in the Neon Knockout studio!`); fill(); return true; }
   const NK_SHOP = () => { const on = gloveState().on; return NK_GLOVES.map(g => ({ id: 'nk_' + g.id, nk: g.id, name: g.name, price: g.price, owned: ownsGlove(g.id), on: on === g.id })); };
-  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP, WHITE_K, FLOOR_GLOW_K, EMISSIVE_K };
+  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP, WHITE_K, FLOOR_GLOW_K, EMISSIVE_K, OLDDIM, NOATLAS };
   chat.register('clerk', { open() { if (api.open) closeShop(); happyT = Math.max(happyT, 1.5); return { state: 'shop' }; }, close() {}, talk(text) { talkT = Math.max(talkT, Math.min(4, 0.6 + String(text || '').length * 0.03)); happyT = talkT + 0.6; } });   // t810u
   function openShop() { if (api.open) return; api.open = true; btn.classList.remove('on'); fill(); holo.classList.add('on'); say(GREET);
     const k = window.__arcade && window.__arcade.keys; if (k) for (const c in k) k[c] = false; }
@@ -1097,16 +1101,15 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // desktop, worse on the Quest — which could land on the first shop beam. Now: slice a few ms a frame, never during a
   // beam, prefer the start screen / PREPARING VR card, and encode dataURLs lazily when a 2D list actually needs them.
   const ICON = {}; let iconR = null, iconQ = [], iconKick = 0;
-  const ATLAS = { cv: document.createElement('canvas'), cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false, pending: 0, bakeMs: 0, bakeN: 0, bakeMax: 0 };
-  ATLAS.cv.width = ATLAS.cols * ATLAS.cell; ATLAS.cv.height = ATLAS.cols * ATLAS.cell; ATLAS.g = ATLAS.cv.getContext('2d');
-  ATLAS.g.fillStyle = '#0000'; ATLAS.g.clearRect(0, 0, ATLAS.cv.width, ATLAS.cv.height);
-  function atlasCell(id) { if (ATLAS.cells[id]) return ATLAS.cells[id]; const i = ATLAS.n++, col = i % ATLAS.cols, row = Math.floor(i / ATLAS.cols);
+  const ATLAS = { cv: null, cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false, pending: 0, bakeMs: 0, bakeN: 0, bakeMax: 0 };
+  if (!NOATLAS) { ATLAS.cv = document.createElement('canvas'); ATLAS.cv.width = ATLAS.cols * ATLAS.cell; ATLAS.cv.height = ATLAS.cols * ATLAS.cell; ATLAS.g = ATLAS.cv.getContext('2d'); ATLAS.g.fillStyle = '#0000'; ATLAS.g.clearRect(0, 0, ATLAS.cv.width, ATLAS.cv.height); }
+  function atlasCell(id) { if (NOATLAS) return { x: 0, y: 0, w: 0, h: 0 }; if (ATLAS.cells[id]) return ATLAS.cells[id]; const i = ATLAS.n++, col = i % ATLAS.cols, row = Math.floor(i / ATLAS.cols);
     if ((row + 1) * ATLAS.cell > ATLAS.cv.height) { const nxt = document.createElement('canvas'); nxt.width = ATLAS.cv.width; nxt.height = (row + 4) * ATLAS.cell; nxt.getContext('2d').drawImage(ATLAS.cv, 0, 0); ATLAS.cv = nxt; ATLAS.g = nxt.getContext('2d'); }
     return ATLAS.cells[id] = { x: col * ATLAS.cell, y: row * ATLAS.cell, w: ATLAS.cell, h: ATLAS.cell }; }
-  function atlasStamp(id, src) { const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true; }
-  function encodeIcon(id) { if (ICON[id]) return ICON[id]; const r = ATLAS.cells[id]; if (!r) return '';
+  function atlasStamp(id, src) { if (NOATLAS || !ATLAS.g) return; const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true; }
+  function encodeIcon(id) { if (NOATLAS || !ATLAS.cv) return ''; if (ICON[id]) return ICON[id]; const r = ATLAS.cells[id]; if (!r) return '';
     try { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); return ICON[id] = c.toDataURL('image/png'); } catch (e) { return ''; } }
-  function iconBlit(g, id, x, y, w, h) { const r = ATLAS.cells[id]; if (!r) return false; g.drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, x, y, w, h); return true; }
+  function iconBlit(g, id, x, y, w, h) { if (NOATLAS || !ATLAS.cv) return false; const r = ATLAS.cells[id]; if (!r) return false; g.drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, x, y, w, h); return true; }
   function enqueue(id) { if (!id || ICON[id] || ATLAS.cells[id] || iconQ.includes(id)) return; iconQ.push(id); ATLAS.pending = iconQ.length; }
   function iconTp() { return window.__tp || (window.__arcade && window.__arcade.tp) || null; }
   function iconBeaming() { const tp = iconTp(); return !!(tp && tp.state && tp.state !== 'idle'); }
@@ -1120,13 +1123,14 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     iconKick = 0; if (!iconQ.length) return;
     if (iconShouldWait()) { iconKick = requestAnimationFrame(tick); return; }
     bakeIcons(iconBudget()); if (iconQ.length) iconKick = requestAnimationFrame(tick); }); }
-  function iconFor(id) { const u = ICON[id] || encodeIcon(id); if (u) return u; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
+  function iconFor(id) { if (NOATLAS) return ''; const u = ICON[id] || encodeIcon(id); if (u) return u; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
   function swatchCanvas(cols) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'), n = cols.length;
     if (n === 1) { g.fillStyle = '#' + ('00000' + cols[0].toString(16)).slice(-6); g.fillRect(0, 0, c.width, c.height); }
     else { const grd = g.createLinearGradient(0, 0, c.width, c.height); cols.forEach((h, i) => grd.addColorStop(i / Math.max(1, n - 1), '#' + ('00000' + h.toString(16)).slice(-6))); g.fillStyle = grd; g.fillRect(0, 0, c.width, c.height); }
     g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 4; g.strokeRect(2, 2, c.width - 4, c.height - 4); return c; }
   function placeholder(id) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'); g.fillStyle = '#1a2030'; g.fillRect(0, 0, c.width, c.height); atlasStamp(id, c); }
   function queueAllIcons() {
+    if (NOATLAS) { iconQ.length = 0; ATLAS.pending = 0; return; }
     ITEMS.forEach(it => enqueue(it.id));
     const CLAW_IDS = ['bear','bunny','duck','frog','cat','octopus','penguin','alien','monkey','grok'];
     CLAW_IDS.forEach(k => enqueue('claw:' + k));
@@ -1191,6 +1195,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   function iconCheap(id) { if (!id) return true; if (id.indexOf('nk_') === 0) return true; const col = id.indexOf(':'); return col > 0 && { hoodie:1, suit:1, fur:1, shoes:1 }[id.slice(0, col)]; }
   // Drain the queue for up to budgetMs (always at least one item). Safe to call from the VR pre-warm job.
   function bakeIcons(budgetMs) {
+    if (NOATLAS) return { did: 0, left: 0, ms: 0 };
     if (!iconQ.length || iconShouldWait()) return { did: 0, left: iconQ.length, ms: 0 };
     const t0 = performance.now(), budget = budgetMs == null ? 8 : budgetMs; let did = 0;
     try {
@@ -1313,7 +1318,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
   api.iconAtlas = ATLAS; api.iconBlit = iconBlit; api.iconFor = iconFor; api.queueIcons = queueAllIcons; api.bakeIcons = bakeIcons; api.iconsPending = () => iconQ.length; Object.defineProperty(api, 'iconRev', { get: () => ATLAS.rev }); window.__shop = api;
-  queueAllIcons(); setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500);
+  if (!NOATLAS) { queueAllIcons(); setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500); }
   api.gpu = bindStreamGpu(G, { stagger: true, minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
   api.setGpu = on => api.gpu.set(!!on);
   return api;
