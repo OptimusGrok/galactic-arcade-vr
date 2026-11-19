@@ -4,8 +4,9 @@
 // the ceiling), he dematerialises into cyan/white pixels from the feet up, flash-cut, then reassembles on the other pad.
 import * as THREE from 'three';
 export const WX = 80;
-// v16 (t399u): NEON KNOCKOUT studio far west at x = -WX (the shop's mirror image); its pad (PAD3) sits beside the ring. Room-1 pad offers
-// SHOP and NEON KNOCKOUT; the studio pad only goes back to the ARCADE. where: 1 = arcade, 2 = shop, 3 = Neon Knockout studio.
+// v17 (t494u): a second room-1 pad (PAD4) sits in the SW corner between BURROW BUSTER and SUPER PIP and beams only to
+// Neon Knockout. The original NW pad (PAD1) is shop-only. Return from the shop lands at PAD1; return from NK lands at PAD4.
+// The studio pad (PAD3) only goes back to the ARCADE (PAD4). where: 1 = arcade, 2 = shop, 3 = Neon Knockout studio.
 export const NKX = -WX, NK_PAD = new THREE.Vector3(2.6, 0, 2.4);
 // t233 (Dave): 1 s charge-up (the pad's groove rings light one by one), swirling light column + rising sparkles, white flash out /
 // materialise in, 'vwoom' charge + arrival zap, a WARP TO menu on the room-1 pad (SHOP / ROOM 2 / LAVA ISLAND), and other players
@@ -17,7 +18,7 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   if (Z2 == null) Z2 = -(2 * HALF + 5);
   const ISLE = new THREE.Vector3(-3.25, 0, 4.5), ROOM2 = new THREE.Vector3(0, 0, Z2 + 5);   // lavapaths.js ISLANDS()[0] centre; room 2's doorway spoke
   const DEST = { shop: { label: 'SHOP' }, room2: { label: 'ROOM 2', pos: ROOM2, face: Math.PI }, island: { label: 'LAVA ISLAND', pos: ISLE, face: Math.PI / 2 }, arcade: { label: 'ARCADE' }, nk: { label: 'NEON KNOCKOUT' } };
-  const PAD1 = new THREE.Vector3(-HALF + 1.25, 0, -HALF + 1.25), PAD2 = new THREE.Vector3(WX, 0, 0), PAD3 = new THREE.Vector3(NKX + NK_PAD.x, 0, NK_PAD.z), R = 1.2, MH = 2.0;
+  const PAD1 = new THREE.Vector3(-HALF + 1.25, 0, -HALF + 1.25), PAD2 = new THREE.Vector3(WX, 0, 0), PAD3 = new THREE.Vector3(NKX + NK_PAD.x, 0, NK_PAD.z), PAD4 = new THREE.Vector3(-HALF + 1.25, 0, HALF - 1.25), R = 1.2, MH = 2.0;   // PAD4: SW nook between Burrow Buster (south 2:4) and Super Pip (west 1:0)
   // ---- pad (brushed steel, concentric grooves, cyan neon rim) ----
   const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
   const gr = g.createRadialGradient(256, 256, 0, 256, 256, 256); gr.addColorStop(0, '#d4d8de'); gr.addColorStop(1, '#8e949c'); g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
@@ -41,7 +42,21 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
     const charge = [60, 120, 170, 215, 246].map(r => { const m = new THREE.Mesh(new THREE.TorusGeometry(r / 256 * R, 0.022, 6, 64), new THREE.MeshBasicMaterial({ color: 0x7ff6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); m.rotation.x = Math.PI / 2; m.position.y = 0.075; m.visible = false; G.add(m); return m; });
     scene.add(G); return { G, beam, rings, charge };
   }
-  const pads = [makePad(PAD1, 'teleportPad'), makePad(PAD2, 'teleportPadShop'), makePad(PAD3, 'teleportPadNK')];
+  const pads = [makePad(PAD1, 'teleportPad'), makePad(PAD2, 'teleportPadShop'), makePad(PAD3, 'teleportPadNK'), makePad(PAD4, 'teleportPadNKArcade')];
+  // unlit canvas signs (MeshBasicMaterial — no new lights; shop-freeze fix needs a stable light count)
+  function makeLabel(text, color, pos, rotY) {
+    const k = document.createElement('canvas'); k.width = 512; k.height = 128; const q = k.getContext('2d');
+    q.fillStyle = 'rgba(8,4,20,0.9)'; q.strokeStyle = color; q.lineWidth = 10;
+    q.beginPath(); if (q.roundRect) q.roundRect(8, 8, 496, 112, 22); else q.rect(8, 8, 496, 112); q.fill(); q.stroke();
+    q.fillStyle = color; q.font = '900 62px "Courier New",monospace'; q.textAlign = 'center'; q.textBaseline = 'middle';
+    q.shadowColor = color; q.shadowBlur = 18; q.fillText(text, 256, 68, 480);
+    const tex = new THREE.CanvasTexture(k); tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.85, 0.46), new THREE.MeshBasicMaterial({ map: tex, transparent: true, toneMapped: false, depthWrite: false }));
+    m.position.set(pos.x, 1.55, pos.z); m.rotation.y = rotY; m.name = 'teleportLabel_' + text.replace(/\s+/g, ''); scene.add(m); return m;
+  }
+  const labels = [makeLabel('SHOP', '#3ff3ff', { x: PAD1.x + 0.75, z: PAD1.z + 0.75 }, Math.PI / 4),
+    makeLabel('NEON KNOCKOUT', '#18d8ff', { x: PAD4.x + 0.75, z: PAD4.z - 0.75 }, 3 * Math.PI / 4)];
+
   // ---- white room: same size as room 1, plain white, soft even light (baked corner shadows in the textures) ----
   const W = new THREE.Group(); W.name = 'whiteRoom'; W.position.set(WX, 0, 0); scene.add(W);
   const shade = (w, h, ys) => { const k = document.createElement('canvas'); k.width = k.height = 256; const q = k.getContext('2d'); q.fillStyle = '#ffffff'; q.fillRect(0, 0, 256, 256);
@@ -106,20 +121,27 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   const nkBtn = document.createElement('button'); nkBtn.id = 'tpNK'; nkBtn.textContent = 'NEON KNOCKOUT'; document.body.appendChild(nkBtn);
   const menu = { classList: { toggle() {}, remove() {} } };   // t236: WARP TO menu removed (Dave: shop and back only)
   const fl = document.createElement('div'); fl.id = 'tpFl'; document.body.appendChild(fl);
-  const api = { where: 1, state: 'idle', t: 0, near: 0, pads, plane, whiteRoom: W, PAD1, PAD2, PAD3, NKX, R, get locked() { return api.state !== 'idle'; }, go, dest: null, DEST, ISLE, ROOM2, fxAt };
+  const api = { where: 1, home: 1, state: 'idle', t: 0, near: 0, pads, labels, plane, whiteRoom: W, PAD1, PAD2, PAD3, PAD4, NKX, R, get locked() { return api.state !== 'idle'; }, go, dest: null, DEST, ISLE, ROOM2, fxAt };
   // back from the shop (Dave t220u 'when the player returns from the shop to the arcade have this view'): on the pad, facing into room 1,
   // camera low + close straight behind him. Pure st values, so the follow camera keeps it until the player moves or drags.
   api.ARRIVE = { face: 0.70, pitch: 0.18, dist: 2.6 };   // tuned in Playwright (phone) against ref/shop_return_view_t220.jpg
   function arrive() { const A = api.ARRIVE; st.face = A.face; monkey.rotation.y = A.face; st.yaw = A.face + Math.PI; st.pitch = A.pitch; st.dist = A.dist; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; api.arrivals = (api.arrivals || 0) + 1; }
-  api.arrive = arrive;
+  api.ARRIVE_NK = { face: Math.PI - 0.70, pitch: 0.18, dist: 2.6 };   // SW pad: same inward angle as ARRIVE, mirrored
+  function arriveNK() { const A = api.ARRIVE_NK; st.face = A.face; monkey.rotation.y = A.face; st.yaw = A.face + Math.PI; st.pitch = A.pitch; st.dist = A.dist; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; api.arrivals = (api.arrivals || 0) + 1; }
+  api.arrive = arrive; api.arriveNK = arriveNK;
   const stop = e => { e.stopPropagation(); e.preventDefault(); };
   btn.addEventListener('pointerdown', stop); btn.addEventListener('touchstart', stop, { passive: false });
   btn.addEventListener('pointerup', e => { stop(e); go(); }); btn.addEventListener('click', stop);
   nkBtn.addEventListener('pointerdown', stop); nkBtn.addEventListener('touchstart', stop, { passive: false });
   nkBtn.addEventListener('pointerup', e => { stop(e); go('nk'); }); nkBtn.addEventListener('click', stop);
   if (0) for (const b of []) { b.addEventListener('pointerdown', stop); b.addEventListener('touchstart', stop, { passive: false }); b.addEventListener('click', stop); b.addEventListener('pointerup', e => { stop(e); go(b.dataset.d); }); }
-  // go(): from room 1 -> 'shop' (default) | 'room2' | 'island'; from the shop always back to the room-1 pad ('arcade')
-  function go(dest) { if (api.state !== 'idle') return; api.dest = api.where !== 1 ? 'arcade' : dest === 'nk' ? 'nk' : 'shop'; api.state = 'walk'; api.t = 0; btn.classList.remove('on'); nkBtn.classList.remove('on'); btn.classList.remove('pair'); menu.classList.remove('on');
+  // go(): PAD1 / default -> shop; PAD4 or dest==='nk' -> Neon Knockout; shop / NK studio always return to their own arcade pad
+  function go(dest) { if (api.state !== 'idle') return;
+    if (api.where === 2) { api.dest = 'arcade'; api.home = 1; }
+    else if (api.where === 3) { api.dest = 'arcade'; api.home = 4; }
+    else if (dest === 'nk' || (dest !== 'shop' && api.nearPad === 4 && api.near < R + 0.35)) { api.dest = 'nk'; api.home = 4; }
+    else { api.dest = 'shop'; api.home = 1; }
+    api.state = 'walk'; api.t = 0; btn.classList.remove('on'); nkBtn.classList.remove('on'); btn.classList.remove('pair'); menu.classList.remove('on');
     if (api.dest === 'nk' && api.onNK) try { api.onNK(); } catch (e) {} }   // v16: main.js lazy-loads the studio during the ~3 s beam
   // other players' beams (mp.js): swirl + sparkles where they stand; out = beaming away, else arriving
   function fxAt(x, z, out) { swirlAt(x, z, out ? 2.8 : 2.0); for (let i = 0; i < 3; i++) emit(10, 2, 0.05, x, z); }
@@ -145,7 +167,9 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
       F.sw.scale.set(DS, 0.85, DS); F.sw.position.y = 0.98; F.rg.forEach(m => m.scale.setScalar(DS)); F.pts.scale.set(DS, 1, DS); api.previewDimmed = 1; }
     if (!F || !F.dim) requestAnimationFrame(dimPreview); })();
   let lsw = null;
-  const from = () => api.where === 1 ? PAD1 : api.where === 3 ? PAD3 : PAD2, to = () => api.dest === 'shop' ? PAD2 : api.dest === 'nk' ? PAD3 : api.dest === 'arcade' ? PAD1 : DEST[api.dest].pos, padOf = w => pads[w - 1];
+  const arcadePad = () => (api.home === 4 ? PAD4 : PAD1);
+  const from = () => api.where === 1 ? arcadePad() : api.where === 3 ? PAD3 : PAD2, to = () => api.dest === 'shop' ? PAD2 : api.dest === 'nk' ? PAD3 : api.dest === 'arcade' ? arcadePad() : DEST[api.dest].pos;
+  const padOf = w => w === 4 ? pads[3] : pads[w - 1];
   let arrPad = null;
   function emit(n, mode, h, cx, cz) {
     for (let k = 0; k < n; k++) { const i = (api.pi = ((api.pi || 0) + 1) % N), o = P[i], a = Math.random() * 6.283, r = (0.08 + Math.random() * 0.3) * DS;
@@ -161,22 +185,31 @@ export function setupTeleport({ scene, monkey, st, HALF, H, Z2 }) {
   // dematerialise run 6x faster and the arrival 3x (about 1.2 s pad to pad instead of ~5 s). Flat screens keep the full show.
   const VR_TP = { walk: 6, charge: 6, demat: 6, flash: 2, remat: 3 }; api.VR_TP = VR_TP;
   api.update = (dt, canShow) => {
-    const pd = from(), mp = monkey.position, d = Math.hypot(mp.x - pd.x, mp.z - pd.z); api.near = d;
-    if (api.state === 'idle') { const show = canShow && d < R + 0.35; btn.textContent = api.where === 1 ? 'SHOP' : 'ARCADE'; btn.classList.toggle('on', show); nkBtn.classList.toggle('on', show && api.where === 1); btn.classList.toggle('pair', show && api.where === 1); menu.classList.toggle('on', show && api.where === 1); power(padOf(api.where), 0, 0); }
+    const mp = monkey.position;
+    let pd = from();
+    if (api.state === 'idle' && api.where === 1) {
+      const d1 = Math.hypot(mp.x - PAD1.x, mp.z - PAD1.z), d4 = Math.hypot(mp.x - PAD4.x, mp.z - PAD4.z);
+      api.nearPad = d4 < d1 ? 4 : 1; pd = api.nearPad === 4 ? PAD4 : PAD1; api.home = api.nearPad;
+    } else if (api.where !== 1) { api.nearPad = 0; }
+    const d = Math.hypot(mp.x - pd.x, mp.z - pd.z); api.near = d;
+    if (api.state === 'idle') { const show = canShow && d < R + 0.35, atNK = api.where === 1 && api.nearPad === 4, atShop = api.where === 1 && api.nearPad === 1;
+      btn.textContent = api.where !== 1 ? 'ARCADE' : atNK ? 'NEON KNOCKOUT' : 'SHOP';
+      btn.classList.toggle('on', show); nkBtn.classList.remove('on'); btn.classList.remove('pair'); menu.classList.remove('on');
+      power(padOf(api.where === 1 ? (api.nearPad || 1) : api.where), 0, 0); }
     else {
       dt *= (window.__tpTimeScale || 1) * (st.vr ? (VR_TP[api.state] || 1) : 1); api.t += dt; const T = api.t;   // tests may speed the sequence up (slow software GL)
       if (api.state === 'walk') { const k = 1 - Math.exp(-dt * 6); mp.x += (pd.x - mp.x) * k; mp.z += (pd.z - mp.z) * k; st.vel.set(0, 0, 0);
         if (Math.hypot(mp.x - pd.x, mp.z - pd.z) < 0.03 || T > 1.2) { mp.x = pd.x; mp.z = pd.z; api.state = 'charge'; api.t = 0; clip(); vwoom(); lsw = swirlAt(pd.x, pd.z, 1.0 + 1.8 + 0.2); } }
-      else if (api.state === 'charge') { const p0 = padOf(api.where); chargeRings(p0, T, 1); power(p0, Math.min(1, T) * 0.35, T); emit(Math.round(dt * 60), 2, 0.05, mp.x, mp.z);   // rings light one by one over ~1 s
+      else if (api.state === 'charge') { const p0 = padOf(api.where === 1 ? (api.home || 1) : api.where); chargeRings(p0, T, 1); power(p0, Math.min(1, T) * 0.35, T); emit(Math.round(dt * 60), 2, 0.05, mp.x, mp.z);   // rings light one by one over ~1 s
         if (T >= 1.0) { api.state = 'demat'; api.t = 0; } }
       else if (api.state === 'demat') { const D = 1.8, f = Math.min(1, T / D), h = -0.05 + f * (MH + 0.1);
-        plane.normal.set(0, 1, 0); plane.constant = -h; const p0 = padOf(api.where); power(p0, Math.max(0.35, Math.min(1, T * 3)), T); chargeRings(p0, 9, 1); emit(Math.round(dt * 260), 0, h, mp.x, mp.z); emit(Math.round(dt * 70), 2, 0.05, mp.x, mp.z);
+        plane.normal.set(0, 1, 0); plane.constant = -h; const p0 = padOf(api.where === 1 ? (api.home || 1) : api.where); power(p0, Math.max(0.35, Math.min(1, T * 3)), T); chargeRings(p0, 9, 1); emit(Math.round(dt * 260), 0, h, mp.x, mp.z); emit(Math.round(dt * 70), 2, 0.05, mp.x, mp.z);
         if (f >= 1) { api.state = 'flash'; api.t = 0; } }
       else if (api.state === 'flash') { const D = 0.35; fl.style.opacity = String(Math.sin(Math.PI * Math.min(1, T / D)) * DB);
-        if (!api.cut) { power(padOf(api.where), 1 - T / D, T); chargeRings(padOf(api.where), 9, 1 - T / D); }
+        if (!api.cut) { const pOut = padOf(api.where === 1 ? (api.home || 1) : api.where); power(pOut, 1 - T / D, T); chargeRings(pOut, 9, 1 - T / D); }
         let held = false; if (T > D / 2 && !api.cut && api.holdCut && api.holdCut(api.dest)) { api.t = D / 2; api.held = (api.held || 0) + 1; held = true; }   // vrtest-v9: VR pre-warm still preparing the destination: wait at the cut
-        else if (T > D / 2 && !api.cut) { api.cut = 1; power(padOf(api.where), 0, 0); chargeRings(padOf(api.where), 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'nk' ? pads[2] : dd === 'arcade' ? pads[0] : null; st.camInit = false;
-          if (dd === 'arcade') arrive(); else if (dd === 'nk') { const f = Math.atan2(-NK_PAD.x, -NK_PAD.z); st.face = f; monkey.rotation.y = f; st.yaw = f + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; } else if (DD.pos) { st.face = DD.face; monkey.rotation.y = DD.face; st.yaw = DD.face + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; }
+        else if (T > D / 2 && !api.cut) { api.cut = 1; const pOut = padOf(api.where === 1 ? (api.home || 1) : api.where); power(pOut, 0, 0); chargeRings(pOut, 0, 0); const tp = to(), dd = api.dest, DD = DEST[dd]; mp.set(tp.x, 0, tp.z); api.where = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1; arrPad = dd === 'shop' ? pads[1] : dd === 'nk' ? pads[2] : dd === 'arcade' ? (api.home === 4 ? pads[3] : pads[0]) : null; st.camInit = false;
+          if (dd === 'arcade') { if (api.home === 4) arriveNK(); else arrive(); } else if (dd === 'nk') { const f = Math.atan2(-NK_PAD.x, -NK_PAD.z); st.face = f; monkey.rotation.y = f; st.yaw = f + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; } else if (DD.pos) { st.face = DD.face; monkey.rotation.y = DD.face; st.yaw = DD.face + Math.PI; st.pitch = 0.3; st.dist = 4.2; st.vel.set(0, 0, 0); st.speed = 0; st.lookT = st.t; }
           swirlAt(tp.x, tp.z, 2.0); plane.normal.set(0, -1, 0); plane.constant = -0.05; }
         if (!held && T >= D) { fl.style.opacity = '0'; api.cut = 0; api.state = 'remat'; api.t = 0; zapIn(); zap(false, 0.05); } }
       else if (api.state === 'remat') { const D = 1.5, f = Math.min(1, T / D), h = -0.05 + f * (MH + 0.1);

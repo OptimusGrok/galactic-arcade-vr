@@ -298,7 +298,7 @@ export function setupVR(A) {
   function vcTap() { const vc = window.__voice; if (!vc) return; const r = vc.tap();
     const show = () => { const st = vc.state; say(st === 'on' ? (vc.muted ? 'MIC MUTED' : 'MIC ON · PLAYERS IN VOICE HEAR YOU') : st === 'listen' ? (vc.err === 'NotAllowedError' ? 'MIC BLOCKED · LISTENING ONLY' : 'NO MIC · LISTENING ONLY') : (vc.msg || '').toUpperCase().slice(0, 40)); UI.key = ''; };
     if (r && r.then) { say('ASKING FOR THE MIC…'); r.then(show, show); } else show(); }
-  function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : undefined); S.beams++; return true; }
+  function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : dest === 'shop' || !dest ? 'shop' : dest); S.beams++; return true; }
   // v16 Neon Knockout studio (nk/nkgame.js, lazy): its gloves replace the controller models there; rays hide during a round
   const nkIn = () => !!(A.tp && A.tp.NKX != null && monkey.position.x < A.tp.NKX / 2);
   const nkRound = () => { const N = window.__nkGame; return !!(N && N.inStudio && N.state.mode === 'play'); };
@@ -511,12 +511,12 @@ export function setupVR(A) {
   function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
   const signs = [];
   function addSign(id, text, color, where, act, show) { const m = makeSign(text, color); m.name = 'vrSign_' + id; signs.push({ id, m, where, act, show }); return m; }
-  const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
+  const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 4 ? tp.PAD4 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
-  addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
+  addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), () => beam('shop'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD1);
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
-  // v16 (t399u): the room-1 pad also beams to the NEON KNOCKOUT studio (sign stacked above BEAM TO SHOP); the studio pad beams back
-  addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(1, 2.36), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD3);
+  // v17 (t494u): NEON KNOCKOUT has its own SW pad (PAD4); the original pad is shop only. Return from the studio is still on PAD3.
+  addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(4), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD4);
   // v19 (t411u, Dave: "can't play mini golf in VR"): the stairwell's energy shield only had a flat-screen PAY button. In the headset a sign
   // over the shield: trigger = pay 5 tickets (only if you have them) and the shield drops; then walk down the stairs with the stick.
   const golfA = () => A.golf || null;
@@ -1590,7 +1590,14 @@ export function setupVR(A) {
     const iv = setInterval(() => { if (hook()) clearInterval(iv); }, 500); }
   async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; if (dbg().nowarm) { PW.done = true; PW.ms = 0; return; } PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
     try { const first = A.tp.where || 1; PW.queue = buildJobs(first);
-      while (PW.queue.length) { let k = 0; if (PW.holdFor) { const h = PW.queue.findIndex(j => j.kind === 'vis' && j.area === PW.holdFor); if (h >= 0) k = h; }
+      while (PW.queue.length) {
+        const tp = A.tp, beaming = !!(tp && tp.state !== 'idle');
+        // v17 (t494u): during a beam, only the destination's jobs may run (shop pad pre-warms shop, NK pad pre-warms NK)
+        if (beaming && S.presenting) { const a = tp.dest === 'shop' ? 2 : tp.dest === 'nk' ? 3 : 1;
+          const h = PW.queue.findIndex(j => j.area === a);
+          if (h < 0) { await frame(); continue; }
+          const job = PW.queue.splice(h, 1)[0]; PW.cur = job; await runJob(job); if (job.gate) PW.gateMs = Math.round(performance.now() - t0); continue; }
+        let k = 0; if (PW.holdFor) { const h = PW.queue.findIndex(j => j.kind === 'vis' && j.area === PW.holdFor); if (h >= 0) k = h; }
         const job = PW.queue.splice(k, 1)[0]; PW.cur = job; await runJob(job); if (job.gate) PW.gateMs = Math.round(performance.now() - t0); }
       PW.programs = renderer.info.programs ? renderer.info.programs.length : 0; PW.done = true; }
     catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
