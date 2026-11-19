@@ -5,22 +5,22 @@
 (function () {
   var KEY = 'galacticarcade.player', MAXN = 12;
   // hats: 'cap' = Arcade's real pink cap (0xff4f9e, brim 0xd93a82; the old 🧢 emoji drew it blue), 'capblue' = a blue copy
-  var HATS = [['cap', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M6 22a14 14 0 0 1 28 0z" fill="#ff4f9e"/><path d="M30 20q8 0 9 3l-9 1z" fill="#d93a82"/><rect x="5" y="20" width="26" height="4" rx="2" fill="#d93a82"/><circle cx="20" cy="8" r="2" fill="#d93a82"/></svg>'], ['capblue', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M6 22a14 14 0 0 1 28 0z" fill="#2b7bff"/><path d="M30 20q8 0 9 3l-9 1z" fill="#1a4fc0"/><rect x="5" y="20" width="26" height="4" rx="2" fill="#1a4fc0"/><circle cx="20" cy="8" r="2" fill="#1a4fc0"/></svg>'], ['crown', '👑'], ['helmet', '🪐'], ['beanie', '🧶'], ['cowboy', '🤠'], ['party', '🥳'], ['pirate', '🏴\u200d☠️'], ['halo', '😇'], ['headphones', '🎧'], ['none', '✕']];
+  var HATS = [['cap', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M6 22a14 14 0 0 1 28 0z" fill="#ff4f9e"/><path d="M30 20q8 0 9 3l-9 1z" fill="#d93a82"/><rect x="5" y="20" width="26" height="4" rx="2" fill="#d93a82"/><circle cx="20" cy="8" r="2" fill="#d93a82"/></svg>'], ['capblue', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M8 20h24v3H8z" fill="#2b7bff"/><path d="M10 10h20v11H10z" fill="#2b7bff"/><path d="M12 10h16v8H12z" fill="#1a4fc0"/><path d="M6 21h28l2 4H4z" fill="#1a4fc0"/><rect x="17" y="12" width="6" height="5" fill="#2b7bff"/><circle cx="20" cy="9" r="2" fill="#1a4fc0"/></svg>'], ['crown', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M4 24h32v-8l-6 4-5-10-5 8-5-8-5 10-6-4z" fill="#ffc640" stroke="#c98a10" stroke-width="1"/><circle cx="8" cy="18" r="2" fill="#1ec87a"/><circle cx="20" cy="12" r="2.4" fill="#ff2b6a"/><circle cx="32" cy="18" r="2" fill="#2b7bff"/></svg>'], ['helmet', '<svg viewBox="0 0 40 30" width="32" height="24"><ellipse cx="20" cy="16" rx="14" ry="12" fill="#f2f4f8" stroke="#c9a227" stroke-width="1.5"/><path d="M8 16a12 10 0 0 0 24 0" fill="#9fdcff" opacity=".7"/><rect x="12" y="25" width="16" height="3" rx="1.5" fill="#c9a227"/><circle cx="30" cy="6" r="2.2" fill="#ff3cf0"/></svg>'], ['beanie', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M7 22a13 13 0 0 1 26 0v2H7z" fill="#16c2b2"/><rect x="6" y="20" width="28" height="6" rx="2" fill="#ff7a1a"/><circle cx="20" cy="8" r="4" fill="#ff7a1a"/><circle cx="17" cy="6" r="2" fill="#16c2b2"/></svg>'], ['cowboy', '<svg viewBox="0 0 40 30" width="32" height="24"><ellipse cx="20" cy="22" rx="18" ry="5" fill="#8b5a2b"/><path d="M12 22c0-10 16-10 16 0" fill="#8b5a2b" stroke="#2a1608" stroke-width="1.2"/><rect x="11" y="20" width="18" height="3" fill="#2a1608"/><path d="M28 12c4-6 2-8-1-6" stroke="#c81e2a" stroke-width="2" fill="none"/></svg>'], ['party', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M20 4l12 22H8z" fill="#ff3cf0"/><path d="M11 22h18M14 16h12M17 10h6" stroke="#ffe14a" stroke-width="2"/><circle cx="20" cy="3" r="3" fill="#ffe14a"/></svg>'], ['pirate', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M4 18l8-8 8 6 8-6 8 8-6 6H10z" fill="#15151a"/><path d="M4 18q16 6 32 0" stroke="#ffc640" stroke-width="1.5" fill="none"/><circle cx="20" cy="16" r="3" fill="#f4f4f0"/><path d="M17 16h6M20 13v6" stroke="#15151a" stroke-width="1.2"/></svg>'], ['halo', '<svg viewBox="0 0 40 30" width="32" height="24"><ellipse cx="20" cy="16" rx="14" ry="6" fill="none" stroke="#ffe680" stroke-width="3"/><ellipse cx="20" cy="16" rx="8" ry="3" fill="none" stroke="#ffd040" stroke-width="2"/></svg>'], ['headphones', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M8 18a12 12 0 0 1 24 0" fill="none" stroke="#202028" stroke-width="3"/><rect x="4" y="16" width="7" height="10" rx="3" fill="#202028"/><rect x="29" y="16" width="7" height="10" rx="3" fill="#202028"/><circle cx="7.5" cy="21" r="2" fill="#ff3cf0"/><circle cx="32.5" cy="21" r="2" fill="#ff3cf0"/></svg>'], ['none', '✕']];
   var HOOD = [['navy', 0x1d2452, 0x141a3a], ['red', 0xd42a2a, 0x7a1414], ['blue', 0x2b62e8, 0x173a8a], ['green', 0x2fae3a, 0x16601c], ['yellow', 0xf2c418, 0x9a7a08],
     ['purple', 0x7a2bd6, 0x46137f], ['pink', 0xff5fb4, 0xb02a72], ['orange', 0xff7a1a, 0xa8460a], ['teal', 0x13b8a8, 0x0a6b62], ['black', 0x202026, 0x0c0c10], ['white', 0xe8eaf0, 0xa9adb8]];
   var FUR = [['brown', 0x4e2a14, 0xd9a779], ['gold', 0xb7862a, 0xf3d79a], ['silver', 0x8d939c, 0xe4e7ec], ['black', 0x1c1a1c, 0x8a7a70], ['white', 0xeeeae2, 0xffe0cf], ['ginger', 0xc4561c, 0xf6c08a], ['pink', 0xe86aa8, 0xffd0e4], ['blue', 0x3a6ad8, 0xc8dcff]];
   var SHOE = [['red', 0x8a1e2c, 0xf1e8d6], ['blue', 0x1f4fbf, 0xeaf0ff], ['black', 0x1a1a1e, 0x4a4a52], ['white', 0xf2f2f4, 0xd03040], ['green', 0x1f9a3a, 0xe8ffe8], ['pink', 0xff5fb4, 0xffffff], ['gold', 0xd9a51c, 0x2a1a08], ['purple', 0x6a24c4, 0x00e5ff]];
-  var GLAS = [['none', '✕'], ['shades', '<svg viewBox="0 0 40 20" width="34" height="17"><path d="M2 5h36" stroke="#ccc" stroke-width="2"/><ellipse cx="11" cy="10" rx="9" ry="6" fill="#111" stroke="#ccc" stroke-width="1.5"/><ellipse cx="29" cy="10" rx="9" ry="6" fill="#111" stroke="#ccc" stroke-width="1.5"/></svg>'], ['round', '<svg viewBox="0 0 40 20" width="34" height="17"><circle cx="11" cy="10" r="7" fill="#cfeeff44" stroke="#ffc640" stroke-width="2.2"/><circle cx="29" cy="10" r="7" fill="#cfeeff44" stroke="#ffc640" stroke-width="2.2"/><path d="M18 9h4" stroke="#ffc640" stroke-width="2"/></svg>'], ['visor', '<svg viewBox="0 0 40 20" width="34" height="17"><rect x="2" y="4" width="36" height="12" rx="6" fill="#00e5ff" stroke="#fff" stroke-width="1.5"/></svg>']];
+  var GLAS = [['none', '✕'], ['shades', '<svg viewBox="0 0 40 20" width="34" height="17"><path d="M6 4h28" stroke="#111" stroke-width="2"/><path d="M4 8c0-4 6-6 8-2l4 6c1 2-1 4-4 4H8c-3 0-4-3-4-8z" fill="#111"/><path d="M36 8c0-4-6-6-8-2l-4 6c-1 2 1 4 4 4h4c3 0 4-3 4-8z" fill="#111"/><path d="M16 10h8" stroke="#111" stroke-width="2"/></svg>'], ['round', '<svg viewBox="0 0 40 20" width="34" height="17"><circle cx="11" cy="10" r="7" fill="#cfeeff44" stroke="#d4a017" stroke-width="2.2"/><circle cx="29" cy="10" r="7" fill="#cfeeff44" stroke="#d4a017" stroke-width="2.2"/><path d="M18 9h4" stroke="#d4a017" stroke-width="2"/><circle cx="16" cy="14" r="1.2" fill="#fff"/><circle cx="24" cy="14" r="1.2" fill="#fff"/></svg>'], ['visor', '<svg viewBox="0 0 40 20" width="34" height="17"><rect x="2" y="4" width="36" height="12" rx="6" fill="#00e5ff" stroke="#f2f4f8" stroke-width="1.5"/><path d="M10 8h2M16 8h2M22 8h2M28 8h2" stroke="#fff" stroke-width="1.4"/></svg>']];
   var BACK = [['none', '✕']], HAND = [['none', '✕']];
   // t746u alien SUIT COLOUR: [id, suit main, darker trim, zip lining, gloves]; grey = his original suit (free, default). Alien only.
   var SUIT = [['suitgrey', 0x5a636e, 0x3c434c, 0x6a3a9a, 0x8b959e]];   // t741u: HAND row (held items): the laser pistol
   // shop-only items (t606u): bought for tickets in the in-game wardrobe (shop's wardrobe corner), never listed on the start screen.
   // Each entry: [id, icon(, hex1, hex2 for hoodies)]; price per row in PRICE. Ownership: 'galacticarcade.wardrobeOwned' = ["hat:tophat", ...].
-  var NEW = { hat: [['tophat', '🎩'], ['wizard', '🧙'], ['viking', '🛡️'], ['chef', '👨\u200d🍳'], ['bunny', '🐰'], ['propeller', '🚁']],
-    glasses: [['monocle', '🧐'], ['heart', '💗'], ['star', '⭐'], ['3d', '<b style="font:900 13px Arial"><span style="color:#ff3030">3</span><span style="color:#30c8ff">D</span></b>'], ['mustache', '🥸'], ['mask', '🥷'], ['skull', '<svg viewBox="0 0 40 44" width="34" height="37"><path d="M20 2C9 2 3 10 3 19c0 6 3 10 7 12v6c0 2 2 4 4 4h12c2 0 4-2 4-4v-6c4-2 7-6 7-12C37 10 31 2 20 2z" fill="#efe5c9" stroke="#2a221c" stroke-width="2"/><path d="M9 18c1-4 5-6 9-4 1 3-1 8-5 8-3 0-4-2-4-4zM31 18c-1-4-5-6-9-4-1 3 1 8 5 8 3 0 4-2 4-4z" fill="#0c0910"/><path d="M20 23l-3 6h6z" fill="#0c0910"/><path d="M12 33h16M15 31v5M20 31v5M25 31v5" stroke="#2a221c" stroke-width="1.6"/></svg>']],
-    back: [['jetpack', '🚀'], ['cape', '🦸'], ['wings', '🪽'], ['batwings', '🦇']],
+  var NEW = { hat: [['tophat', '<svg viewBox="0 0 40 30" width="32" height="24"><ellipse cx="20" cy="24" rx="16" ry="4" fill="#14141a"/><rect x="12" y="6" width="16" height="16" rx="1" fill="#14141a"/><rect x="11" y="20" width="18" height="4" fill="#c81e2a"/></svg>'], ['wizard', '<svg viewBox="0 0 40 30" width="32" height="24"><ellipse cx="20" cy="24" rx="16" ry="3" fill="#3a2bb8"/><path d="M10 23 L20 2 L28 22" fill="#3a2bb8"/><path d="M24 6c6-2 6 6 1 5" fill="#241878"/><circle cx="16" cy="14" r="1.6" fill="#ffe14a"/><circle cx="22" cy="10" r="1.3" fill="#ffe14a"/></svg>'], ['viking', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M8 22a12 10 0 0 1 24 0v2H8z" fill="#9aa3ad"/><rect x="18" y="16" width="4" height="8" fill="#5a626a"/><path d="M8 16c-6-8-2-14 3-8" fill="#f0e6cc"/><path d="M32 16c6-8 2-14-3-8" fill="#f0e6cc"/><circle cx="10" cy="14" r="2" fill="#ffc640"/><circle cx="30" cy="14" r="2" fill="#ffc640"/></svg>'], ['chef', '<svg viewBox="0 0 40 30" width="32" height="24"><rect x="12" y="16" width="16" height="8" fill="#f4f4f0"/><circle cx="20" cy="10" r="8" fill="#f4f4f0"/><circle cx="13" cy="12" r="5" fill="#f4f4f0"/><circle cx="27" cy="12" r="5" fill="#f4f4f0"/><rect x="16" y="20" width="8" height="3" fill="#ffc640"/></svg>'], ['bunny', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M10 22q10-4 20 0" stroke="#ff5fb4" stroke-width="4" fill="none"/><ellipse cx="14" cy="10" rx="4" ry="11" fill="#f6f0f4" transform="rotate(-18 14 10)"/><ellipse cx="26" cy="12" rx="4" ry="11" fill="#f6f0f4" transform="rotate(40 26 12)"/><ellipse cx="14" cy="10" rx="2" ry="7" fill="#ff9cc8" transform="rotate(-18 14 10)"/><ellipse cx="26" cy="12" rx="2" ry="7" fill="#ff9cc8" transform="rotate(40 26 12)"/><path d="M16 22h8v3h-8z" fill="#ff2b8a"/></svg>'], ['propeller', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M8 20a12 10 0 0 1 24 0v3H8z" fill="#2b62e8"/><path d="M6 22h28l1 3H5z" fill="#f2c418"/><circle cx="20" cy="8" r="3" fill="#ffc640"/><rect x="6" y="7" width="28" height="3" rx="1" fill="#d42a2a" transform="rotate(20 20 8)"/></svg>']],
+    glasses: [['monocle', '<svg viewBox="0 0 40 20" width="34" height="17"><circle cx="13" cy="8" r="7" fill="#cfeeff55" stroke="#ffc640" stroke-width="2"/><path d="M18 13c4 6 8 8 10 6" stroke="#ffc640" stroke-width="1.5" fill="none"/></svg>'], ['heart', '<svg viewBox="0 0 40 20" width="34" height="17"><path d="M10 9c0-3 4-5 6-2 2-3 6-1 6 2 0 4-6 8-6 8s-6-4-6-8z" fill="#ff2b8a"/><path d="M22 9c0-3 4-5 6-2 2-3 6-1 6 2 0 4-6 8-6 8s-6-4-6-8z" fill="#ff2b8a"/><path d="M16 8h8" stroke="#ff2b8a" stroke-width="2"/></svg>'], ['star', '<svg viewBox="0 0 40 20" width="34" height="17"><path d="M11 2l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z" fill="#ffd21a"/><path d="M29 2l2 6h6l-5 4 2 6-5-4-5 4 2-6-5-4h6z" fill="#ffd21a"/></svg>'], ['3d', '<svg viewBox="0 0 40 20" width="34" height="17"><rect x="2" y="4" width="36" height="12" rx="2" fill="#f4f4f0" stroke="#202028" stroke-width="1"/><rect x="5" y="6" width="13" height="8" fill="#ff2020"/><rect x="22" y="6" width="13" height="8" fill="#20c0ff"/></svg>'], ['mustache', '<svg viewBox="0 0 40 20" width="34" height="17"><path d="M4 12c4-8 10-6 16-2 6-4 12-6 16 2-6 6-12 0-16 0s-10 6-16 0z" fill="#2a160a"/></svg>'], ['mask', '<svg viewBox="0 0 40 20" width="34" height="17"><rect x="3" y="4" width="34" height="12" rx="6" fill="#18181e"/><rect x="8" y="8" width="24" height="3" fill="#4a1020"/><path d="M4 16l-3 6M36 16l3 6" stroke="#18181e" stroke-width="2"/></svg>'], ['skull', '<svg viewBox="0 0 40 44" width="34" height="37"><path d="M20 2C9 2 3 10 3 19c0 6 3 10 7 12v6c0 2 2 4 4 4h12c2 0 4-2 4-4v-6c4-2 7-6 7-12C37 10 31 2 20 2z" fill="#efe5c9" stroke="#2a221c" stroke-width="2"/><path d="M9 18c1-4 5-6 9-4 1 3-1 8-5 8-3 0-4-2-4-4zM31 18c-1-4-5-6-9-4-1 3 1 8 5 8 3 0 4-2 4-4z" fill="#0c0910"/><path d="M20 23l-3 6h6z" fill="#0c0910"/><path d="M12 33h16M15 31v5M20 31v5M25 31v5" stroke="#2a221c" stroke-width="1.6"/></svg>']],
+    back: [['jetpack', '<svg viewBox="0 0 40 30" width="32" height="24"><rect x="16" y="6" width="8" height="14" rx="1" fill="#303038"/><rect x="8" y="8" width="8" height="14" rx="3" fill="#b8c0cc"/><rect x="24" y="8" width="8" height="14" rx="3" fill="#b8c0cc"/><path d="M10 22l4 8 2-8M24 22l4 8 2-8" fill="#ff9a1a"/></svg>'], ['cape', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M8 8q12 4 24 0L30 28H10z" fill="#d42a2a"/><path d="M8 8h24" stroke="#ffc640" stroke-width="3"/><circle cx="20" cy="8" r="3" fill="#ff2b6a"/></svg>'], ['wings', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M20 16c-8-2-16-10-16-2 6 2 10 8 16 8 6 0 10-6 16-8 0-8-8 0-16 2z" fill="#f8f8ff" stroke="#ffc640" stroke-width="1"/></svg>'], ['batwings', '<svg viewBox="0 0 40 30" width="32" height="24"><path d="M20 14L6 6l2 8-6 6 10-2-4 8 12-8 12 8-4-8 10 2-6-6 2-8z" fill="#2a1838"/></svg>']],
     suit: [['suitred', 0xb3222f, 0x6a121a, 0x2b1a3e, 0xd8d0c8], ['suitgold', 0xc9971f, 0x7a5a10, 0x6a3a9a, 0xe8e2d0], ['suitteal', 0x138a8a, 0x0b4f52, 0x6a3a9a, 0xa9c4c8], ['suitwhite', 0xdfe4ea, 0x9aa4b0, 0x6a3a9a, 0xf2f4f6], ['suitblack', 0x22252b, 0x101215, 0x8a3ad0, 0x3a3f47]],   // t746u: 5 alien suits, 5 tickets each
-    hand: [['pistol', '<svg viewBox="0 0 44 28" width="36" height="23"><rect x="4" y="5" width="26" height="10" rx="2" fill="#3a4558"/><rect x="26" y="7" width="9" height="6" fill="#1a2028"/><rect x="35" y="7.5" width="6" height="5" rx="1.5" fill="#48f2ff"/><rect x="8" y="2" width="12" height="4" fill="#247888"/><path d="M9 15h8l-2 11H7z" fill="#1a2028"/><circle cx="41" cy="10" r="3.4" fill="#48f2ff" opacity=".45"/></svg>']],
+    hand: [['pistol', '<svg viewBox="0 0 44 28" width="36" height="23"><rect x="4" y="5" width="26" height="10" rx="2" fill="#3a4558"/><rect x="26" y="7" width="9" height="6" fill="#1a2028"/><rect x="35" y="7.5" width="6" height="5" rx="1.5" fill="#48f2ff"/><rect x="8" y="2" width="12" height="4" fill="#247888"/><path d="M9 15h8l-2 11H7z" fill="#1a2028"/><circle cx="41" cy="10" r="3.4" fill="#48f2ff" opacity=".45"/><rect x="18" y="3" width="6" height="3" fill="#1a2028"/></svg>']],
     hoodie: [['galaxy', 0x2a1470, 0x160a40], ['lime', 0x86e02a, 0x4a8a10], ['maroon', 0x6e1430, 0x3c0818], ['sky', 0x6cc8ff, 0x2a7ab8]] };
   var PRICE = { hat: 5, glasses: 5, back: 5, hoodie: 5, hand: 5, suit: 5 }, OKEY = 'galacticarcade.wardrobeOwned', MIGKEY = 'galacticarcade.wardrobeMig';
   var BASE = { hat: HATS, glasses: GLAS, hoodie: HOOD, fur: FUR, shoes: SHOE }, OPTS = {};
@@ -61,7 +61,409 @@
     root.traverse(function (o) { if (o.isMesh && o.material && o.material.color) { var k = H[o.material.userData.gaOrig != null ? o.material.userData.gaOrig : o.material.color.getHex()]; if (k && m[k].indexOf(o.material) < 0) { o.material.userData.gaOrig = o.material.userData.gaOrig != null ? o.material.userData.gaOrig : o.material.color.getHex(); m[k].push(o.material); } } }); return m; }
   function capOf(root) { var c = null; root.traverse(function (o) { if (!c && o.isGroup && o.userData.gaCap) c = o; }); if (c) return c;
     root.traverse(function (o) { if (!c && o.isGroup && o.children.some(function (k) { return k.isMesh && k.material && k.material.color && k.material.color.getHex() === 0xff4f9e; })) c = o; }); if (c) c.userData.gaCap = 1; return c; }
-  function hatMeshes(T, cap) { var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
+  function hatMeshes(T, cap) { if (/[?&]oldacc=1\b/.test(location.search)) return hatMeshesV12(T, cap);
+    var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
+    head.children.filter(function (o) { return /^ga/.test(o.name); }).forEach(function (o) { head.remove(o); }); h = head.userData.gaHats = {};   // a clone() copies hat refs + meshes: rebuild its own
+    var AM = accMats(T);
+    // crown: jewelled gold circlet with velvet cap, filigree rim, fleur spikes and a front ruby in a bezel
+    var cr = h.crown = grp(T, head, 'gaCrown'); cr.position.set(0, 0.315, -0.005);
+    add(cr, new T.CylinderGeometry(0.118, 0.128, 0.05, 24), AM.velvet, 0, 0.028, 0);
+    add(cr, new T.CylinderGeometry(0.138, 0.128, 0.08, 28, 1, true), AM.goldDS, 0, 0.04, 0);
+    var rim = add(cr, new T.TorusGeometry(0.132, 0.014, 8, 28), AM.gold); rim.rotation.x = Math.PI / 2;
+    var fil = add(cr, new T.TorusGeometry(0.132, 0.006, 6, 28), AM.goldHi); fil.rotation.x = Math.PI / 2; fil.position.y = 0.07;
+    for (var i = 0; i < 8; i++) { var a = i / 8 * Math.PI * 2, s = Math.sin(a) * 0.13, c = Math.cos(a) * 0.13;
+      var fl = add(cr, new T.ConeGeometry(0.028, 0.09, 5), AM.gold, s, 0.12, c); fl.rotation.z = a;
+      add(cr, new T.SphereGeometry(0.014, 8, 6), AM.goldHi, s, 0.168, c);
+      add(cr, new T.OctahedronGeometry(0.012), i % 2 ? AM.emr : AM.sap, s * 0.92, 0.04, c * 0.92); }
+    add(cr, new T.CylinderGeometry(0.022, 0.028, 0.012, 10), AM.gold, 0, 0.045, 0.138);
+    add(cr, new T.SphereGeometry(0.02, 10, 8), AM.ruby, 0, 0.05, 0.15);
+    finish(cr);
+    // space helmet: solid white rear shell, gold-tinted front visor, bolted neck ring, side vents, antenna beacon
+    var hl = h.helmet = grp(T, head, 'gaHelmet'); hl.position.set(0, 0.15, 0.01);
+    add(hl, new T.SphereGeometry(0.305, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.62), AM.white, 0, 0, 0);
+    var vis = add(hl, new T.SphereGeometry(0.308, 22, 14, 0, Math.PI * 2, Math.PI * 0.42, Math.PI * 0.5), AM.helmGlass, 0, 0, 0); vis.renderOrder = 3;
+    var vf = add(hl, new T.TorusGeometry(0.26, 0.016, 8, 28, Math.PI * 1.15), AM.helmGold); vf.rotation.x = 0.15; vf.position.set(0, 0.02, 0.04);
+    var col = add(hl, new T.TorusGeometry(0.2, 0.045, 10, 24), AM.white); col.rotation.x = Math.PI / 2; col.position.y = -0.24;
+    for (var b = 0; b < 6; b++) { var ba = b / 6 * Math.PI * 2; add(hl, new T.CylinderGeometry(0.012, 0.012, 0.03, 6), AM.helmGold, Math.sin(ba) * 0.2, -0.24, Math.cos(ba) * 0.2); }
+    add(hl, new T.BoxGeometry(0.12, 0.04, 0.06), AM.white, 0.2, -0.08, 0);
+    add(hl, new T.BoxGeometry(0.04, 0.03, 0.08), AM.helmGold, -0.22, 0.02, 0);
+    var an = add(hl, new T.CylinderGeometry(0.008, 0.008, 0.14, 6), AM.white, 0.14, 0.32, -0.02); an.rotation.z = -0.4;
+    add(hl, new T.SphereGeometry(0.024, 10, 8), AM.glowP, 0.175, 0.39, -0.02);
+    add(hl, new T.BoxGeometry(0.16, 0.03, 0.01), AM.helmGold, 0, 0.18, -0.22);
+    finish(hl);
+    moreHats(T, head, h, AM);
+    // capblue: a structured navy/cyan trucker (front panel, mesh-look back, stitched brim, top button) — not a recolour of Arcade's pink cap.
+    // Direct-child mesh colours stay 0x2b7bff + 0x1a4fc0 (player_wardrobe.js t600).
+    var cb = h.capblue = grp(T, head, 'gaHat_capblue');
+    add(cb, new T.SphereGeometry(0.19, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), AM.capB, 0, 0.2, -0.01, 1, 1.02, 1.05);
+    add(cb, new T.BoxGeometry(0.16, 0.12, 0.04), AM.capBd, 0, 0.26, 0.155);
+    add(cb, new T.CylinderGeometry(0.34, 0.36, 0.018, 22), AM.capBd, 0, 0.205, 0.1, 1, 1, 0.72);
+    for (var st = -2; st <= 2; st++) add(cb, new T.BoxGeometry(0.28, 0.002, 0.008), AM.capB, 0, 0.216, 0.08 + st * 0.025);
+    add(cb, new T.SphereGeometry(0.028, 10, 8), AM.capBd, 0, 0.385, -0.01);
+    add(cb, new T.BoxGeometry(0.08, 0.03, 0.01), AM.capB, 0, 0.265, 0.175);
+    add(cb, new T.BoxGeometry(0.05, 0.02, 0.03), AM.capBd, 0, 0.2, -0.18);
+    finish(cb);
+    newItems(T, head, h, AM); return h; }
+  // head space: skull centre y 0.15 r 0.18 (top ~0.333), face +z, eyes y 0.165 z ~0.22, ears x +-0.2. Every hat sits ON/above the skull top.
+  function std(T, c, o) { return new T.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6 }, o || {})); }
+  function add(g, geo, m, x, y, z, sx, sy, sz) { var e = new g.T.Mesh(geo, m); e.position.set(x || 0, y || 0, z || 0); if (sx) e.scale.set(sx, sy, sz); g.add(e); return e; }
+  function grp(T, head, name, y) { var g = new T.Group(); g.name = name; g.position.y = y || 0; g.T = T; head.add(g); return g; }
+  function accMats(T) {
+    return {
+      gold: std(T, 0xffc640, { metalness: 1, roughness: 0.25, emissive: 0x402800, emissiveIntensity: 0.5 }), goldDS: std(T, 0xffc640, { metalness: 1, roughness: 0.25, emissive: 0x402800, emissiveIntensity: 0.5, side: T.DoubleSide }),
+      goldHi: std(T, 0xffe08a, { metalness: 1, roughness: 0.18, emissive: 0x503800, emissiveIntensity: 0.4 }),
+      ruby: std(T, 0xff2b6a, { roughness: 0.2, emissive: 0x500010 }),
+      emr: std(T, 0x1ec87a, { roughness: 0.18, metalness: 0.2, emissive: 0x003018 }),
+      sap: std(T, 0x2b7bff, { roughness: 0.18, metalness: 0.2, emissive: 0x001040 }),
+      velvet: std(T, 0x6a1020, { roughness: 0.9 }),
+      white: std(T, 0xf2f4f8, { roughness: 0.35, metalness: 0.3 }), whiteDS: std(T, 0xf2f4f8, { roughness: 0.35, metalness: 0.3, side: T.DoubleSide }),
+      helmGold: std(T, 0xc9a227, { metalness: 0.85, roughness: 0.3 }),
+      helmGlass: new T.MeshStandardMaterial({ color: 0x9fdcff, roughness: 0.05, metalness: 0.15, transparent: true, opacity: 0.42, emissive: 0x0a2a44, depthWrite: false, side: T.DoubleSide }),
+      capB: std(T, 0x2b7bff), capBd: std(T, 0x1a4fc0),
+      knit: std(T, 0x16c2b2, { roughness: 0.95 }), knit2: std(T, 0xff7a1a, { roughness: 0.95 }), knit2DS: std(T, 0xff7a1a, { roughness: 0.95, side: T.DoubleSide }), knitD: std(T, 0x0e7a72, { roughness: 0.95 }),
+      lea: std(T, 0x8b5a2b, { roughness: 0.7 }), leaD: std(T, 0x2a1608), leaL: std(T, 0xc4a06a, { roughness: 0.55 }),
+      pink: std(T, 0xff3cf0, { emissive: 0x400030 }), yel: std(T, 0xffe14a, { emissive: 0x302000 }),
+      blk: std(T, 0x16161c, { roughness: 0.5 }), blk2: std(T, 0x15151a, { roughness: 0.5 }),
+      wh: std(T, 0xf4f4f0, { roughness: 0.7 }), red: std(T, 0xc81e2a),
+      wz: std(T, 0x3a2bb8, { emissive: 0x0a0630 }), wzD: std(T, 0x241878, { emissive: 0x080420 }),
+      stl: std(T, 0x9aa3ad, { metalness: 0.8, roughness: 0.35 }), stlD: std(T, 0x5a626a, { metalness: 0.7, roughness: 0.4 }),
+      horn: std(T, 0xf0e6cc, { roughness: 0.6 }), furW: std(T, 0xf6f0f4, { roughness: 0.9 }), furP: std(T, 0xff9cc8, { roughness: 0.9 }),
+      strapP: std(T, 0xff5fb4), bow: std(T, 0xff2b8a, { roughness: 0.7 }),
+      pb: std(T, 0x2b62e8), py: std(T, 0xf2c418), pr: std(T, 0xd42a2a),
+      dk: std(T, 0x202028, { roughness: 0.35, metalness: 0.4 }), foam: std(T, 0x2a2a32, { roughness: 0.9 }),
+      fr: std(T, 0x111114), frDS: std(T, 0x111114, { side: T.DoubleSide }), ln: std(T, 0x07070c, { metalness: 0.7, roughness: 0.08, emissive: 0x1a0016 }),
+      rimG: std(T, 0xd4a017, { metalness: 0.9, roughness: 0.3 }),
+      glass: new T.MeshStandardMaterial({ color: 0xcfeeff, transparent: true, opacity: 0.3, roughness: 0.05, depthWrite: false }),
+      visor: new T.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x0090b0, emissiveIntensity: 0.9, transparent: true, opacity: 0.8, roughness: 0.1, metalness: 0.3, side: T.DoubleSide }),
+      glowP: new T.MeshBasicMaterial({ color: 0xff3cf0, toneMapped: false }),
+      glowY: new T.MeshBasicMaterial({ color: 0xffe680, toneMapped: false }),
+      glowYs: new T.MeshBasicMaterial({ color: 0xffd040, transparent: true, opacity: 0.25, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false }),
+      starM: new T.MeshBasicMaterial({ color: 0xffe14a, toneMapped: false }),
+      bone: std(T, 0xeee4ca, { roughness: 0.5 }), boneD: std(T, 0xcfc3a4, { roughness: 0.6 }), sock: std(T, 0x0c0910, { roughness: 0.95 }),
+      strap: std(T, 0x23212a, { roughness: 0.8 }), clip: std(T, 0x9aa0a8, { metalness: 0.6, roughness: 0.35 }),
+      edge: new T.MeshBasicMaterial({ color: 0x2a221c, side: T.BackSide }), sockB: new T.MeshBasicMaterial({ color: 0x0c0910, side: T.DoubleSide }),
+      jm: std(T, 0xb8c0cc, { metalness: 0.7, roughness: 0.35 }), jr: std(T, 0xd42a2a), jbox: std(T, 0x303038),
+      stripe: std(T, 0xf2c418, { roughness: 0.4 }),
+      cape: std(T, 0xd42a2a, { side: T.DoubleSide, roughness: 0.7 }), capeD: std(T, 0x8a1418, { side: T.DoubleSide, roughness: 0.7 }),
+      wing: std(T, 0xf8f8ff, { side: T.DoubleSide, emissive: 0x303040 }), wingG: std(T, 0xffe08a, { metalness: 0.6, roughness: 0.35 }),
+      bat: std(T, 0x2a1838, { side: T.DoubleSide, roughness: 0.6 }), batB: std(T, 0x3a2848, { roughness: 0.45, metalness: 0.2 }),
+      heart: std(T, 0xff2b8a, { emissive: 0x500020 }), heartL: new T.MeshStandardMaterial({ color: 0xff9cc8, transparent: true, opacity: 0.45, roughness: 0.1, depthWrite: false }),
+      starF: std(T, 0xffd21a, { emissive: 0x504000 }), starL: new T.MeshStandardMaterial({ color: 0xfff0a0, transparent: true, opacity: 0.4, roughness: 0.08, depthWrite: false }),
+      mu: std(T, 0x2a160a, { roughness: 0.9 }), muHi: std(T, 0x4a2a14, { roughness: 0.7 }),
+      mask: std(T, 0x18181e, { roughness: 0.8, side: T.DoubleSide }), maskR: std(T, 0x4a1020, { roughness: 0.8 }),
+      fw: std(T, 0xf4f4f0), red3d: new T.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.85 }),
+      cyan3d: new T.MeshBasicMaterial({ color: 0x20c0ff, transparent: true, opacity: 0.85 }),
+      metal: std(T, 0x3a4558, { metalness: 0.5, roughness: 0.4 }), dark: std(T, 0x1a2028, { roughness: 0.5 }),
+      accent: std(T, 0x247888, { metalness: 0.3, roughness: 0.4 }), glowC: new T.MeshBasicMaterial({ color: 0x48f2ff, toneMapped: false }),
+      feather: std(T, 0xc81e2a, { side: T.DoubleSide, roughness: 0.7 }),
+      silk: std(T, 0x14141a, { roughness: 0.28, metalness: 0.15 })
+    };
+  }
+  function mergeGeos(T, list) {
+    if (!list || !list.length) return null;
+    var pos = [], nrm = [], i, j, g, p, n;
+    for (i = 0; i < list.length; i++) {
+      g = list[i].index ? list[i].toNonIndexed() : list[i];
+      if (!g.attributes.normal) g.computeVertexNormals();
+      p = g.attributes.position; n = g.attributes.normal;
+      for (j = 0; j < p.count; j++) { pos.push(p.getX(j), p.getY(j), p.getZ(j)); nrm.push(n.getX(j), n.getY(j), n.getZ(j)); }
+    }
+    g = new T.BufferGeometry(); g.setAttribute('position', new T.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new T.Float32BufferAttribute(nrm, 3)); return g;
+  }
+  function finish(g, keep) {
+    keep = keep || {}; var T = g.T, by = new Map(), drop = [], inv = new T.Matrix4(), tmp = new T.Matrix4();
+    g.updateMatrixWorld(true); inv.copy(g.matrixWorld).invert();
+    g.traverse(function (o) {
+      if (!o.isMesh || o === g) return;
+      var n = o, skip = false; while (n && n !== g) { if (keep[n.name]) { skip = true; break; } n = n.parent; }
+      if (skip) return;
+      var list = by.get(o.material); if (!list) by.set(o.material, list = []);
+      var geo = o.geometry.clone(); geo.applyMatrix4(tmp.copy(inv).multiply(o.matrixWorld)); list.push(geo); drop.push(o);
+    });
+    drop.forEach(function (o) { if (o.parent) o.parent.remove(o); });
+    by.forEach(function (gs, mat) { var mg = mergeGeos(T, gs); if (mg) { var e = new T.Mesh(mg, mat); e.castShadow = false; e.receiveShadow = false; g.add(e); } });
+  }
+  function moreHats(T, head, h, AM) { var HALF = Math.PI / 2, g, m;
+    // beanie: ribbed teal knit, striped folded cuff, yarn pom-pom of clustered spheres
+    g = h.beanie = grp(T, head, 'gaHat_beanie');
+    add(g, new T.SphereGeometry(0.2, 20, 12, 0, Math.PI * 2, 0, HALF), AM.knit, 0, 0.2, -0.005, 1, 1.02, 1.04);
+    for (var r = 0; r < 10; r++) { var ra = r / 10 * Math.PI * 2; add(g, new T.BoxGeometry(0.018, 0.12, 0.01), AM.knitD, Math.sin(ra) * 0.195, 0.3, Math.cos(ra) * 0.2); }
+    m = add(g, new T.CylinderGeometry(0.208, 0.208, 0.07, 22, 1, true), AM.knit2DS, 0, 0.215, -0.005, 1, 1, 1.04);
+    add(g, new T.TorusGeometry(0.205, 0.01, 6, 22), AM.knitD, 0, 0.248, -0.005).rotation.x = HALF;
+    for (var p = 0; p < 9; p++) add(g, new T.SphereGeometry(0.028, 8, 6), p % 2 ? AM.knit2 : AM.knit, Math.sin(p * 2.3) * 0.03, 0.4 + Math.cos(p * 1.7) * 0.02, -0.005 + Math.sin(p) * 0.02);
+    finish(g);
+    // cowboy: pinched crown, curled brim, tooled band with conchos, red feather
+    g = h.cowboy = grp(T, head, 'gaHat_cowboy');
+    add(g, new T.CylinderGeometry(0.36, 0.38, 0.02, 28), AM.lea, 0, 0.29, 0, 1, 1, 0.82);
+    add(g, new T.TorusGeometry(0.36, 0.012, 6, 24), AM.leaD, 0, 0.3, 0, 1, 1, 0.82).rotation.x = HALF;
+    add(g, new T.CylinderGeometry(0.12, 0.155, 0.16, 20), AM.lea, 0, 0.385, 0, 0.85, 1, 1);
+    add(g, new T.SphereGeometry(0.13, 16, 8, 0, Math.PI * 2, 0, HALF), AM.lea, 0, 0.46, 0, 0.85, 0.35, 1);
+    add(g, new T.CylinderGeometry(0.155, 0.16, 0.035, 20, 1, true), AM.leaD, 0, 0.325, 0, 0.86, 1, 1.01);
+    for (var co = 0; co < 3; co++) add(g, new T.CylinderGeometry(0.018, 0.018, 0.01, 8), AM.gold, (co - 1) * 0.06, 0.325, 0.155);
+    m = add(g, new T.SphereGeometry(0.02, 8, 6), AM.feather, 0.16, 0.4, -0.02, 0.4, 3.2, 0.15); m.rotation.z = 0.5;
+    finish(g);
+    // party: striped cone, elastic strap, dotted tissue tuft
+    g = h.party = grp(T, head, 'gaHat_party'); g.rotation.z = -0.14;
+    add(g, new T.ConeGeometry(0.12, 0.34, 20), AM.pink, 0, 0.46, 0);
+    [0.34, 0.42, 0.5, 0.58].forEach(function (y, i) { var rr = 0.12 * (0.63 - y) / 0.34; m = add(g, new T.TorusGeometry(rr + 0.004, 0.01, 6, 18), i % 2 ? AM.yel : AM.fw, 0, y, 0); m.rotation.x = HALF; });
+    for (var d = 0; d < 8; d++) add(g, new T.SphereGeometry(0.012, 6, 5), AM.yel, Math.sin(d * 1.1) * 0.06, 0.38 + (d % 3) * 0.06, Math.cos(d * 1.1) * 0.06);
+    add(g, new T.SphereGeometry(0.036, 10, 8), AM.yel, 0, 0.64, 0);
+    for (var t = 0; t < 5; t++) add(g, new T.BoxGeometry(0.008, 0.07, 0.008), AM.pink, Math.sin(t * 1.26) * 0.03, 0.68, Math.cos(t * 1.26) * 0.03);
+    add(g, new T.TorusGeometry(0.17, 0.006, 5, 16, Math.PI), AM.fw, 0, 0.12, 0);
+    finish(g);
+    // pirate: tricorn with gold braid, cockade, skull plaque and a red plume
+    g = h.pirate = grp(T, head, 'gaHat_pirate', 0.29);
+    add(g, new T.SphereGeometry(0.17, 18, 10, 0, Math.PI * 2, 0, HALF), AM.blk2, 0, -0.01, 0, 1, 0.85, 1);
+    add(g, new T.SphereGeometry(0.2, 20, 12), AM.blk2, 0, 0.09, 0, 1.55, 0.55, 0.55);
+    [-0.7, 0, 0.7].forEach(function (a) { m = add(g, new T.BoxGeometry(0.28, 0.04, 0.08), AM.blk2, Math.sin(a) * 0.16, 0.1, Math.cos(a) * 0.12); m.rotation.y = a; m.rotation.x = -0.35; });
+    m = add(g, new T.TorusGeometry(0.2, 0.008, 6, 28), AM.gold, 0, 0.09, 0, 1.55, 0.55, 0.7); m.rotation.x = 0.2;
+    add(g, new T.SphereGeometry(0.03, 10, 8), AM.wh, 0, 0.12, 0.12, 1, 1, 0.5);
+    add(g, new T.BoxGeometry(0.08, 0.012, 0.008), AM.wh, 0, 0.1, 0.12);
+    add(g, new T.BoxGeometry(0.012, 0.08, 0.008), AM.wh, 0, 0.1, 0.12);
+    m = add(g, new T.SphereGeometry(0.018, 8, 6), AM.feather, 0.18, 0.18, -0.04, 0.35, 3.6, 0.14); m.rotation.z = 0.6;
+    finish(g);
+    // halo: double gold ring, soft additive glow, tiny floating motes
+    g = h.halo = grp(T, head, 'gaHat_halo', 0.47); g.rotation.x = -0.12;
+    m = add(g, new T.TorusGeometry(0.15, 0.016, 10, 36), AM.glowY); m.rotation.x = HALF;
+    m = add(g, new T.TorusGeometry(0.1, 0.01, 8, 28), AM.glowY); m.rotation.x = HALF; m.position.y = 0.02;
+    m = add(g, new T.TorusGeometry(0.15, 0.05, 8, 28), AM.glowYs); m.rotation.x = HALF;
+    for (var mo = 0; mo < 6; mo++) add(g, new T.OctahedronGeometry(0.012), AM.starM, Math.sin(mo) * 0.2, Math.cos(mo * 1.4) * 0.04, Math.cos(mo) * 0.2);
+    finish(g);
+    // headphones: cushioned headband, thick cups, LED ring, short cable
+    g = h.headphones = grp(T, head, 'gaHat_headphones');
+    add(g, new T.TorusGeometry(0.222, 0.018, 8, 28, Math.PI), AM.dk, 0, 0.15, 0);
+    add(g, new T.TorusGeometry(0.222, 0.028, 6, 20, Math.PI * 0.6), AM.foam, 0, 0.22, 0);
+    [-1, 1].forEach(function (sd) {
+      m = add(g, new T.CylinderGeometry(0.08, 0.08, 0.05, 18), AM.dk, 0.235 * sd, 0.15, 0); m.rotation.z = HALF;
+      m = add(g, new T.CylinderGeometry(0.07, 0.07, 0.03, 16), AM.foam, 0.21 * sd, 0.15, 0); m.rotation.z = HALF;
+      m = add(g, new T.TorusGeometry(0.062, 0.01, 6, 18), AM.glowP, 0.268 * sd, 0.15, 0); m.rotation.y = HALF;
+      add(g, new T.BoxGeometry(0.02, 0.02, 0.03), AM.gold, 0.255 * sd, 0.2, 0);
+    });
+    m = add(g, new T.CylinderGeometry(0.004, 0.004, 0.16, 5), AM.dk, 0.2, 0.02, 0.08); m.rotation.z = 0.6; m.rotation.x = 0.4;
+    finish(g);
+    // glasses (their own row)
+    var G = h.gl = {}, arms = function (g, mat, y, z) { y = y == null ? 0.18 : y; z = z == null ? 0.14 : z; [-1, 1].forEach(function (sd) { add(g, new T.BoxGeometry(0.012, 0.012, 0.2), mat, 0.158 * sd, y, z); add(g, new T.BoxGeometry(0.02, 0.016, 0.016), AM.dk, 0.158 * sd, y, z + 0.08); }); };
+    // shades: aviators — teardrop lenses, double bridge, brow bar
+    g = G.shades = grp(T, head, 'gaGl_shades');
+    [-1, 1].forEach(function (sd) { m = add(g, new T.SphereGeometry(0.055, 14, 10, 0, Math.PI * 2, 0.4, 1.6), AM.ln, 0.07 * sd, 0.165, 0.245, 1.15, 1.15, 0.35); m.rotation.x = 0.15; m.rotation.z = 0.15 * sd; });
+    add(g, new T.BoxGeometry(0.04, 0.01, 0.01), AM.fr, 0, 0.185, 0.245);
+    add(g, new T.BoxGeometry(0.04, 0.008, 0.008), AM.fr, 0, 0.175, 0.248);
+    add(g, new T.BoxGeometry(0.3, 0.01, 0.01), AM.fr, 0, 0.21, 0.243);
+    arms(g, AM.fr, 0.19, 0.14);
+    finish(g);
+    // round: wire-rim spectacles with nose pads and a slim gold bridge
+    g = G.round = grp(T, head, 'gaGl_round');
+    [-1, 1].forEach(function (sd) { add(g, new T.TorusGeometry(0.048, 0.007, 8, 24), AM.rimG, 0.068 * sd, 0.17, 0.245); add(g, new T.CircleGeometry(0.046, 20), AM.glass, 0.068 * sd, 0.17, 0.244);
+      add(g, new T.SphereGeometry(0.008, 8, 6), AM.fw, 0.03 * sd, 0.15, 0.25); });
+    add(g, new T.BoxGeometry(0.04, 0.007, 0.007), AM.rimG, 0, 0.175, 0.247);
+    arms(g, AM.rimG);
+    finish(g);
+    // visor: HUD ticks, side mounts, a data cable
+    g = G.visor = grp(T, head, 'gaGl_visor');
+    add(g, new T.CylinderGeometry(0.255, 0.255, 0.08, 28, 1, true, -0.95, 1.9), AM.visor, 0, 0.17, -0.01);
+    [-0.045, 0.045].forEach(function (y) { add(g, new T.CylinderGeometry(0.258, 0.258, 0.012, 28, 1, true, -0.95, 1.9), AM.whiteDS, 0, 0.17 + y, -0.01); });
+    [-1, 1].forEach(function (sd) { add(g, new T.SphereGeometry(0.034, 10, 8), AM.white, Math.sin(0.95) * 0.255 * sd, 0.17, Math.cos(0.95) * 0.255 - 0.01);
+      add(g, new T.BoxGeometry(0.02, 0.05, 0.02), AM.dk, 0.22 * sd, 0.17, -0.08); });
+    for (var ht = -2; ht <= 2; ht++) add(g, new T.BoxGeometry(0.008, 0.02, 0.002), AM.glowC, ht * 0.04, 0.19, 0.25);
+    add(g, new T.CylinderGeometry(0.212, 0.212, 0.03, 24, 1, true, 0.95, Math.PI * 2 - 1.9), AM.frDS, 0, 0.17, -0.01);
+    finish(g);
+  }
+  // ---------- shop-only items: unique multi-part meshes, shared materials, merged per item ----------
+  function newItems(T, head, h, AM) { var HALF = Math.PI / 2, g, m, G = h.gl;
+    // top hat: tapered silk, curved brim, satin band with a side bow
+    g = h.tophat = grp(T, head, 'gaHat_tophat');
+    add(g, new T.CylinderGeometry(0.27, 0.29, 0.02, 24), AM.silk, 0, 0.3, 0);
+    add(g, new T.TorusGeometry(0.28, 0.01, 6, 24), AM.blk, 0, 0.31, 0).rotation.x = HALF;
+    add(g, new T.CylinderGeometry(0.14, 0.155, 0.28, 20), AM.silk, 0, 0.45, 0);
+    add(g, new T.CylinderGeometry(0.145, 0.145, 0.04, 20, 1, true), AM.red, 0, 0.34, 0);
+    add(g, new T.BoxGeometry(0.06, 0.03, 0.02), AM.red, 0.155, 0.34, 0);
+    add(g, new T.BoxGeometry(0.03, 0.02, 0.02), AM.red, 0.19, 0.34, 0);
+    finish(g);
+    // wizard: bent-tip cone, starry charms, buckled brim
+    g = h.wizard = grp(T, head, 'gaHat_wizard'); g.rotation.z = 0.12;
+    add(g, new T.CylinderGeometry(0.31, 0.33, 0.02, 22), AM.wz, 0, 0.29, 0);
+    add(g, new T.ConeGeometry(0.17, 0.42, 16), AM.wz, 0, 0.5, 0);
+    var tip = add(g, new T.ConeGeometry(0.05, 0.14, 10), AM.wzD, 0.04, 0.72, 0); tip.rotation.z = 0.8;
+    add(g, new T.CylinderGeometry(0.18, 0.18, 0.03, 16, 1, true), AM.gold, 0, 0.32, 0);
+    add(g, new T.BoxGeometry(0.04, 0.04, 0.01), AM.gold, 0, 0.32, 0.185);
+    [[0.08, 0.48, 0.12], [-0.07, 0.62, 0.08], [0.03, 0.4, 0.15], [-0.04, 0.55, -0.1]].forEach(function (q, i) { add(g, i % 2 ? new T.OctahedronGeometry(0.028) : new T.SphereGeometry(0.02, 8, 6), AM.starM, q[0], q[1], q[2]); });
+    finish(g);
+    // viking: iron cap, nasal guard, rivets, curved horns with gold rings, fur trim
+    g = h.viking = grp(T, head, 'gaHat_viking');
+    add(g, new T.SphereGeometry(0.2, 18, 10, 0, Math.PI * 2, 0, HALF), AM.stl, 0, 0.21, 0, 1, 0.95, 1.04);
+    m = add(g, new T.TorusGeometry(0.2, 0.02, 8, 20), AM.gold, 0, 0.22, 0); m.rotation.x = HALF;
+    add(g, new T.BoxGeometry(0.03, 0.12, 0.02), AM.stlD, 0, 0.14, 0.2);
+    for (var rv = 0; rv < 8; rv++) add(g, new T.SphereGeometry(0.01, 6, 5), AM.stlD, Math.sin(rv / 8 * Math.PI * 2) * 0.2, 0.22, Math.cos(rv / 8 * Math.PI * 2) * 0.2);
+    [-1, 1].forEach(function (sd) {
+      m = add(g, new T.CylinderGeometry(0.028, 0.045, 0.16, 8), AM.horn, 0.22 * sd, 0.34, 0); m.rotation.z = -0.85 * sd;
+      m = add(g, new T.CylinderGeometry(0.018, 0.022, 0.14, 8), AM.horn, 0.32 * sd, 0.44, 0); m.rotation.z = -1.15 * sd;
+      add(g, new T.TorusGeometry(0.03, 0.006, 6, 10), AM.gold, 0.24 * sd, 0.36, 0).rotation.z = -0.85 * sd;
+      add(g, new T.SphereGeometry(0.04, 8, 6), AM.furW, 0.18 * sd, 0.22, 0.02, 1.1, 0.6, 0.8);
+    });
+    finish(g);
+    // chef: pleated toque, poufy top, nameplate band
+    g = h.chef = grp(T, head, 'gaHat_chef');
+    add(g, new T.CylinderGeometry(0.165, 0.16, 0.08, 18), AM.wh, 0, 0.32, 0);
+    add(g, new T.BoxGeometry(0.08, 0.03, 0.008), AM.gold, 0, 0.32, 0.165);
+    for (var pl = 0; pl < 12; pl++) add(g, new T.BoxGeometry(0.03, 0.16, 0.02), AM.wh, Math.sin(pl / 12 * Math.PI * 2) * 0.16, 0.42, Math.cos(pl / 12 * Math.PI * 2) * 0.16);
+    [[0, 0.54, 0, 0.14], [0.09, 0.5, 0.05, 0.1], [-0.09, 0.5, 0.05, 0.1], [0, 0.5, -0.1, 0.1], [0.05, 0.56, -0.05, 0.09]].forEach(function (q) { add(g, new T.SphereGeometry(q[3], 12, 8), AM.wh, q[0], q[1], q[2]); });
+    finish(g);
+    // bunny: fluffy band, one flopped ear, pink inners, a bow
+    g = h.bunny = grp(T, head, 'gaHat_bunny');
+    add(g, new T.TorusGeometry(0.2, 0.018, 8, 22, Math.PI), AM.strapP, 0, 0.15, 0);
+    add(g, new T.BoxGeometry(0.06, 0.04, 0.03), AM.bow, 0, 0.34, 0.02);
+    add(g, new T.BoxGeometry(0.04, 0.03, 0.02), AM.bow, 0.05, 0.34, 0.02);
+    add(g, new T.BoxGeometry(0.04, 0.03, 0.02), AM.bow, -0.05, 0.34, 0.02);
+    [-1, 1].forEach(function (sd) { var e = new T.Group(); e.position.set(0.09 * sd, 0.32, 0); e.rotation.z = (sd < 0 ? -0.2 : -0.85) * sd; e.rotation.x = sd > 0 ? 0.35 : 0; g.add(e); e.T = T;
+      add(e, new T.SphereGeometry(0.06, 10, 8), AM.furW, 0, 0.17, 0, 0.75, 2.6, 0.45); add(e, new T.SphereGeometry(0.035, 8, 6), AM.furP, 0, 0.17, 0.02, 0.75, 2.6, 0.4);
+      add(e, new T.SphereGeometry(0.02, 6, 5), AM.furW, 0, 0.02, 0, 0.8, 0.8, 0.6); });
+    finish(g);
+    // propeller: kid cap with a small brim (not the teal beanie), chromed hub, three blades
+    g = h.propeller = grp(T, head, 'gaHat_propeller');
+    add(g, new T.SphereGeometry(0.192, 18, 10, 0, Math.PI * 2, 0, HALF), AM.pb, 0, 0.2, -0.005, 1, 0.95, 1.04);
+    add(g, new T.CylinderGeometry(0.22, 0.24, 0.016, 20), AM.py, 0, 0.205, 0.08, 1, 1, 0.7);
+    add(g, new T.CylinderGeometry(0.014, 0.014, 0.1, 6), AM.py, 0, 0.43, 0);
+    var hub = new T.Group(); hub.name = 'gaProp'; hub.position.set(0, 0.48, 0); hub.T = T; g.add(hub);
+    add(hub, new T.CylinderGeometry(0.025, 0.025, 0.02, 10), AM.gold, 0, 0, 0);
+    for (var bl = 0; bl < 3; bl++) { m = add(hub, new T.BoxGeometry(0.2, 0.008, 0.04), AM.pr, 0.1, 0, 0); m.rotation.y = bl * Math.PI * 2 / 3; }
+    finish(g, { gaProp: 1 });
+    // glasses & face
+    var arms = function (g, mat) { [-1, 1].forEach(function (sd) { add(g, new T.BoxGeometry(0.012, 0.012, 0.2), mat, 0.158 * sd, 0.18, 0.14); add(g, new T.BoxGeometry(0.018, 0.014, 0.014), AM.dk, 0.158 * sd, 0.18, 0.22); }); };
+    g = G.monocle = grp(T, head, 'gaGl_monocle');
+    add(g, new T.TorusGeometry(0.05, 0.009, 8, 22), AM.gold, 0.068, 0.17, 0.245);
+    add(g, new T.CircleGeometry(0.048, 18), AM.glass, 0.068, 0.17, 0.244);
+    add(g, new T.TorusGeometry(0.012, 0.004, 6, 10), AM.gold, 0.068, 0.12, 0.245);
+    m = add(g, new T.CylinderGeometry(0.003, 0.003, 0.22, 5), AM.gold, 0.11, 0.06, 0.24); m.rotation.z = 0.35;
+    add(g, new T.SphereGeometry(0.01, 6, 5), AM.gold, 0.14, -0.04, 0.23);
+    finish(g);
+    // heart: beveled 3D heart frames, rose lenses, a tiny gem
+    g = G.heart = grp(T, head, 'gaGl_heart');
+    [-1, 1].forEach(function (sd) {
+      add(g, new T.SphereGeometry(0.028, 10, 8), AM.heart, 0.05 * sd, 0.185, 0.248);
+      add(g, new T.SphereGeometry(0.028, 10, 8), AM.heart, 0.085 * sd, 0.185, 0.248);
+      add(g, new T.ConeGeometry(0.04, 0.06, 8), AM.heart, 0.068 * sd, 0.155, 0.248);
+      add(g, new T.CircleGeometry(0.03, 12), AM.heartL, 0.068 * sd, 0.175, 0.255);
+    });
+    add(g, new T.BoxGeometry(0.04, 0.01, 0.01), AM.heart, 0, 0.19, 0.247);
+    add(g, new T.OctahedronGeometry(0.01), AM.ruby, 0, 0.175, 0.255);
+    arms(g, AM.heart);
+    finish(g);
+    // star: gold 5-point frames with amber lenses, studs
+    g = G.star = grp(T, head, 'gaGl_star');
+    var starShape = (function () { var sh = new T.Shape(); for (var i = 0; i < 10; i++) { var a = i / 10 * Math.PI * 2, r = i % 2 ? 0.022 : 0.052; sh[i ? 'lineTo' : 'moveTo'](Math.sin(a) * r, Math.cos(a) * r); } sh.closePath(); return sh; })();
+    var starEx = new T.ExtrudeGeometry(starShape, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.004, bevelSize: 0.003, bevelSegments: 1, curveSegments: 1 });
+    [-1, 1].forEach(function (sd) { add(g, starEx, AM.starF, 0.07 * sd, 0.172, 0.242, 1.15, 1.15, 1); add(g, new T.CircleGeometry(0.022, 10), AM.starL, 0.07 * sd, 0.172, 0.256); add(g, new T.SphereGeometry(0.008, 6, 5), AM.gold, 0.07 * sd, 0.21, 0.25); });
+    add(g, new T.BoxGeometry(0.04, 0.01, 0.01), AM.starF, 0, 0.19, 0.247);
+    arms(g, AM.starF);
+    finish(g);
+    // 3d: anaglyph cinema glasses — real frames, red / cyan lenses
+    g = G['3d'] = grp(T, head, 'gaGl_3d');
+    add(g, new T.BoxGeometry(0.3, 0.09, 0.016), AM.fw, 0, 0.172, 0.24);
+    add(g, new T.BoxGeometry(0.02, 0.09, 0.018), AM.dk, 0, 0.172, 0.245);
+    add(g, new T.BoxGeometry(0.1, 0.062, 0.004), AM.red3d, -0.07, 0.172, 0.25);
+    add(g, new T.BoxGeometry(0.1, 0.062, 0.004), AM.cyan3d, 0.07, 0.172, 0.25);
+    arms(g, AM.fw);
+    finish(g);
+    // mustache: sculpted handlebar with waxed curls
+    g = G.mustache = grp(T, head, 'gaGl_mustache');
+    [-1, 1].forEach(function (sd) {
+      m = add(g, new T.SphereGeometry(0.045, 10, 8), AM.mu, 0.04 * sd, 0.085, 0.27, 1.4, 0.5, 0.65); m.rotation.z = 0.25 * sd;
+      m = add(g, new T.SphereGeometry(0.028, 8, 6), AM.mu, 0.09 * sd, 0.07, 0.265, 1.1, 0.5, 0.6); m.rotation.z = 0.7 * sd;
+      m = add(g, new T.SphereGeometry(0.016, 8, 6), AM.muHi, 0.115 * sd, 0.09, 0.26, 0.8, 0.8, 0.8); m.rotation.z = 1.1 * sd;
+    });
+    finish(g);
+    // mask: wrapped ninja cloth, stitched eye slit, back ties
+    g = G.mask = grp(T, head, 'gaGl_mask');
+    add(g, new T.CylinderGeometry(0.205, 0.205, 0.08, 20, 1, true), AM.mask, 0, 0.17, 0);
+    add(g, new T.CylinderGeometry(0.2, 0.2, 0.03, 20, 1, true, -0.8, 1.6), AM.maskR, 0, 0.175, 0.01);
+    add(g, new T.BoxGeometry(0.16, 0.025, 0.02), AM.sock, 0, 0.175, 0.2);
+    [-1, 1].forEach(function (sd) { m = add(g, new T.BoxGeometry(0.03, 0.14, 0.01), AM.mask, 0.05 * sd, 0.15, -0.21); m.rotation.z = 0.4 * sd;
+      add(g, new T.BoxGeometry(0.05, 0.01, 0.01), AM.wh, 0.08 * sd, 0.2, 0.18); });
+    finish(g);
+    // t743u skull mask (Dave's mockup): keep the sculpted plate + named strap/clips for skFit
+    g = G.skull = grp(T, head, 'gaGl_skull');
+    var bone = AM.bone, boneD = AM.boneD, sock = AM.sock, edge = AM.edge, clip = AM.clip;
+    var CZ = 0.012, SZ = 1.14, R = 0.205, fz = function (x, y) { var dx = x, dy = y - 0.155, q = R * R - dx * dx - dy * dy; return CZ + (q > 0 ? Math.sqrt(q) : 0) * SZ; };
+    var shell = function (r, cy, cz, sz, p0, pl, t0, tl, mat, rows) { return add(g, new T.SphereGeometry(r, 28, rows || 16, p0, pl, t0, tl), mat, 0, cy, cz, 1, 1, sz); };
+    var outl = function (mesh) { var o = new T.Mesh(mesh.geometry, edge); o.position.copy(mesh.position); o.scale.copy(mesh.scale).multiplyScalar(1.035); o.renderOrder = -1; g.add(o); return o; };
+    var FRONT0 = Math.PI / 2 - 1.12, FRONTL = 2.24;
+    m = shell(R, 0.155, CZ, SZ, FRONT0, FRONTL, 0.5, 1.45, bone); outl(m);
+    var MY = 0.07, MZ = 0.128, MR = 0.136, MSY = 0.86, MSZ = 1.0, mz = function (x, y) { var ex = x / MR, ey = (y - MY) / (MR * MSY), q = 1 - ex * ex - ey * ey; return MZ + MR * MSZ * (q > 0 ? Math.sqrt(q) : 0); };
+    m = add(g, new T.SphereGeometry(MR, 24, 14, Math.PI / 2 - 1.35, 2.7, 0.75, 2.25), bone, 0, MY, MZ, 1, MSY, MSZ); outl(m);
+    [-1, 1].forEach(function (sd) {
+      m = add(g, new T.SphereGeometry(0.06, 14, 8), bone, 0.072 * sd, 0.226, fz(0.072, 0.226) - 0.016, 1.25, 0.38, 0.45); m.rotation.z = -0.22 * sd;
+      m = add(g, new T.SphereGeometry(0.056, 16, 12), sock, 0.073 * sd, 0.17, fz(0.073, 0.17) - 0.012, 1.1, 1.22, 0.5); m.rotation.z = 0.38 * sd;
+      m = add(g, new T.SphereGeometry(0.036, 12, 8), bone, 0.112 * sd, 0.118, fz(0.112, 0.118) - 0.024, 1.3, 0.7, 0.5);
+      add(g, new T.SphereGeometry(0.02, 8, 6), boneD, 0.135 * sd, 0.07, fz(0.135, 0.07) - 0.012, 0.8, 1.3, 0.5);
+      add(g, new T.BoxGeometry(0.02, 0.028, 0.034), clip, 0.176 * sd, 0.215, 0.07).name = 'gaSkClip';
+    });
+    add(g, new T.CylinderGeometry(0.175, 0.175, 0.026, 24, 1, true, 0.35, Math.PI * 2 - 0.7), new T.MeshStandardMaterial({ color: 0x23212a, roughness: 0.8, side: T.DoubleSide }), 0, 0.215, 0).name = 'gaSkStrap';
+    var nose = new T.Shape(); nose.moveTo(0, 0.026); nose.lineTo(0.017, -0.006); nose.quadraticCurveTo(0.012, -0.016, 0.002, -0.01); nose.lineTo(0, -0.012); nose.lineTo(-0.002, -0.01); nose.quadraticCurveTo(-0.012, -0.016, -0.017, -0.006); nose.closePath();
+    add(g, new T.ShapeGeometry(nose), AM.sockB, 0, 0.122, Math.max(fz(0, 0.122), mz(0, 0.122)) + 0.002);
+    var tz = function (x, y) { return mz(x, y) + 0.005; };
+    for (var ti = -3; ti <= 3; ti++) { var tx = ti * 0.0205, tt = add(g, new T.BoxGeometry(0.018, 0.022, 0.014), bone, tx, 0.0885, tz(tx, 0.0885) - 0.005); tt.rotation.y = tx * 4;
+      tt = add(g, new T.BoxGeometry(0.018, 0.02, 0.014), bone, tx, 0.0655, tz(tx, 0.0655) - 0.005); tt.rotation.y = tx * 4;
+      tt = add(g, new T.BoxGeometry(0.0215, 0.05, 0.01), sock, tx, 0.077, tz(tx, 0.077) - 0.009); tt.rotation.y = tx * 4;
+      tt = add(g, new T.BoxGeometry(0.0215, 0.0035, 0.012), sock, tx, 0.077, tz(tx, 0.077) + 0.0015); tt.rotation.y = tx * 4; }
+    add(g, new T.BoxGeometry(0.04, 0.002, 0.02), AM.boneD, 0.06, 0.2, fz(0.06, 0.2));
+    finish(g, { gaSkStrap: 1, gaSkClip: 1 });
+    // backs & extras: on the torso (head.parent.parent), behind the shoulders (-z)
+    var torso = head.parent && head.parent.parent || head; torso.children.filter(function (o) { return /^gaBk/.test(o.name); }).forEach(function (o) { torso.remove(o); });
+    var B = {}; Object.defineProperty(h, 'bk', { value: B, enumerable: false, configurable: true }); var bg = function (n) { var q = new T.Group(); q.name = 'gaBk_' + n; q.T = T; q.position.set(0, 0.3, -0.2); torso.add(q); return q; };
+    g = B.jetpack = bg('jetpack');
+    add(g, new T.BoxGeometry(0.16, 0.22, 0.06), AM.jbox, 0, 0, 0);
+    add(g, new T.BoxGeometry(0.1, 0.04, 0.04), AM.stripe, 0, 0.06, 0.04);
+    add(g, new T.CylinderGeometry(0.02, 0.02, 0.03, 8), AM.glowC, 0, 0.1, 0.04);
+    var flameM = function (c, op) { return new T.MeshBasicMaterial({ color: c, transparent: true, opacity: op, toneMapped: false, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide }); };
+    var shellM = flameM(0xff2a00, 0.62), outerM = flameM(0xff9a1a, 0.95), coreM = flameM(0xfff6c8, 1);
+    var shellGeo = new T.ConeGeometry(0.2, 0.82, 7), outerGeo = new T.ConeGeometry(0.11, 1.2, 7), coreGeo = new T.ConeGeometry(0.045, 0.78, 6);
+    [-1, 1].forEach(function (sd) {
+      add(g, new T.CylinderGeometry(0.07, 0.07, 0.3, 12), AM.jm, 0.08 * sd, 0, -0.05);
+      add(g, new T.TorusGeometry(0.072, 0.01, 6, 10), AM.stripe, 0.08 * sd, 0.06, -0.05).rotation.x = HALF;
+      add(g, new T.TorusGeometry(0.072, 0.01, 6, 10), AM.jr, 0.08 * sd, -0.04, -0.05).rotation.x = HALF;
+      add(g, new T.CylinderGeometry(0.03, 0.03, 0.08, 8), AM.stl, 0.08 * sd, 0.08, 0.02).rotation.x = 0.6;
+      add(g, new T.ConeGeometry(0.07, 0.08, 10), AM.jr, 0.08 * sd, 0.19, -0.05);
+      add(g, new T.BoxGeometry(0.04, 0.1, 0.02), AM.stlD, 0.14 * sd, 0.02, -0.05);
+      var th = new T.Group(); th.name = 'gaThruster'; th.position.set(0.08 * sd, -0.16, -0.05); th.visible = false; th.T = T; g.add(th);
+      [[shellGeo, shellM, 'gaFlameShell', 0.82], [outerGeo, outerM, 'gaFlameOuter', 1.2], [coreGeo, coreM, 'gaFlameCore', 0.78]].forEach(function (q) {
+        m = add(th, q[0], q[1], 0, -q[3] / 2, 0); m.rotation.x = Math.PI; m.name = q[2]; m.renderOrder = 3; });
+    });
+    finish(g, { gaThruster: 1 });
+    // cape: high collar, gold clasp with a gem, draped folds, gold hem
+    g = B.cape = bg('cape');
+    var cgeo = new T.PlaneGeometry(0.58, 1.02, 6, 8), cp = cgeo.attributes.position;
+    for (var ci = 0; ci < cp.count; ci++) { var cx = cp.getX(ci), cy = cp.getY(ci); cp.setZ(ci, Math.sin(cx * 7) * 0.035 + (cy < 0 ? -cy * 0.1 : 0) + Math.abs(cx) * 0.04); }
+    cgeo.computeVertexNormals();
+    m = add(g, cgeo, AM.cape, 0, -0.42, -0.06); m.rotation.x = 0.18;
+    add(g, new T.CylinderGeometry(0.16, 0.18, 0.08, 12, 1, true, -0.4, 0.8 + Math.PI), AM.capeD, 0, 0.08, 0.04);
+    add(g, new T.TorusGeometry(0.03, 0.012, 8, 12), AM.gold, 0, 0.06, 0.08);
+    add(g, new T.SphereGeometry(0.016, 8, 6), AM.ruby, 0, 0.06, 0.09);
+    add(g, new T.BoxGeometry(0.5, 0.02, 0.01), AM.gold, 0, -0.9, -0.02);
+    finish(g);
+    // angel wings: layered feathers, gold coverts at the base
+    g = B.wings = bg('wings');
+    [-1, 1].forEach(function (sd) {
+      var wg = new T.Group(); wg.position.set(0.05 * sd, 0.05, -0.04); wg.rotation.y = -0.5 * sd; wg.T = T; g.add(wg);
+      add(wg, new T.SphereGeometry(0.06, 8, 6), AM.wingG, 0, 0, 0, 1.2 * sd, 0.8, 0.8);
+      for (var f = 0; f < 7; f++) { var fy = 0.05 + f * 0.09, fl = 0.18 + f * 0.06; m = add(wg, new T.SphereGeometry(0.04, 8, 6), AM.wing, 0.08 * sd, fy, -f * 0.02, 2.4 * sd * (fl / 0.2), 0.7, 0.35); m.rotation.z = 0.15 * sd; }
+      for (var f2 = 0; f2 < 5; f2++) add(wg, new T.SphereGeometry(0.03, 7, 5), AM.fw, 0.04 * sd, 0.02 + f2 * 0.07, 0.01, 1.6 * sd, 0.6, 0.3);
+    });
+    finish(g);
+    // bat wings: finger bones, scalloped membrane, claw tips
+    g = B.batwings = bg('batwings');
+    [-1, 1].forEach(function (sd) {
+      var wg = new T.Group(); wg.position.set(0.04 * sd, 0.08, -0.04); wg.rotation.y = -0.55 * sd; wg.T = T; g.add(wg);
+      for (var k = 0; k < 4; k++) { var ka = -0.2 + k * 0.35; m = add(wg, new T.CylinderGeometry(0.01, 0.006, 0.42 + k * 0.04, 5), AM.batB, 0.16 * sd, 0.02 + k * 0.02, 0); m.rotation.z = ka * sd; m.rotation.x = -0.2;
+        add(wg, new T.ConeGeometry(0.012, 0.04, 5), AM.bone, Math.sin(ka) * 0.35 * sd, 0.02 + Math.cos(ka) * 0.02, -0.02); }
+      var mem = new T.Shape(); mem.moveTo(0, 0); mem.lineTo(0.42, 0.18); mem.quadraticCurveTo(0.36, 0.02, 0.38, -0.06); mem.quadraticCurveTo(0.28, 0.02, 0.26, -0.12); mem.quadraticCurveTo(0.16, 0.0, 0.14, -0.1); mem.lineTo(0, -0.04);
+      m = add(wg, new T.ShapeGeometry(mem, 3), AM.bat, 0, 0, 0, 1 * sd, 1, 1); m.rotation.y = 0.1 * sd;
+    });
+    finish(g);
+  }
+  // t741u laser pistol (HAND row): Sky Tower's blocky blaster, held in the monkey's right hand (main.js names it 'handR'); muzzle = 'gaPistolMuzzle'.
+  // The alien never holds it: his floating robot gets a red emitter ring instead ('gaBotGun') and fires the lasers (roomfire.js).
+  // vrtest-v16: v12 accessory builders for ?oldacc=1 (skip the detailed v13 meshes)
+  function hatMeshesV12(T, cap) { var head = cap.parent, h = head.userData.gaHats; if (h && h.crown && h.crown.parent === head) return h;
     head.children.filter(function (o) { return /^ga/.test(o.name); }).forEach(function (o) { head.remove(o); }); h = head.userData.gaHats = {};   // a clone() copies hat refs + meshes: rebuild its own
     var gold = new T.MeshStandardMaterial({ color: 0xffc640, metalness: 1, roughness: 0.25, emissive: 0x402800, emissiveIntensity: 0.5 }), gem = new T.MeshStandardMaterial({ color: 0xff2b6a, roughness: 0.2, emissive: 0x500010 });
     // crown: sits ON the head (head sphere top is ~0.33 above the head node), not inside it
@@ -79,14 +481,11 @@
     var vr = new T.Mesh(new T.TorusGeometry(0.31, 0.018, 8, 40), white); hl.add(vr);   // outline ring round the bubble, facing front
     var an = new T.Mesh(new T.CylinderGeometry(0.008, 0.008, 0.12, 6), white); an.position.set(0.12, 0.33, 0); an.rotation.z = -0.35; hl.add(an);
     var tip = new T.Mesh(new T.SphereGeometry(0.025, 10, 8), new T.MeshBasicMaterial({ color: 0xff3cf0, toneMapped: false })); tip.position.set(0.145, 0.39, 0); hl.add(tip);
-    head.add(hl); h.helmet = hl; moreHats(T, head, h);
+    head.add(hl); h.helmet = hl; moreHatsV12(T, head, h);
     var cb = cap.clone(true); cb.name = 'gaHat_capblue'; delete cb.userData.gaCap; cb.traverse(function (o) { if (o.isMesh && o.material) { var hx = o.material.color.getHex(); o.material = o.material.clone(); o.material.userData = {}; o.material.color.setHex(hx === 0xd93a82 ? 0x1a4fc0 : 0x2b7bff); } });
-    head.add(cb); h.capblue = cb; newItems(T, head, h); return h; }
+    head.add(cb); h.capblue = cb; newItemsV12(T, head, h); return h; }
   // head space: skull centre y 0.15 r 0.18 (top ~0.333), face +z, eyes y 0.165 z ~0.22, ears x +-0.2. Every hat sits ON/above the skull top.
-  function std(T, c, o) { return new T.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.6 }, o || {})); }
-  function add(g, geo, m, x, y, z, sx, sy, sz) { var e = new g.T.Mesh(geo, m); e.position.set(x || 0, y || 0, z || 0); if (sx) e.scale.set(sx, sy, sz); g.add(e); return e; }
-  function grp(T, head, name, y) { var g = new T.Group(); g.name = name; g.position.y = y || 0; g.T = T; head.add(g); return g; }
-  function moreHats(T, head, h) { var HALF = Math.PI / 2, g, m;
+  function moreHatsV12(T, head, h) { var HALF = Math.PI / 2, g, m;
     g = h.beanie = grp(T, head, 'gaHat_beanie'); var knit = std(T, 0x16c2b2, { roughness: 0.95 }), knit2 = std(T, 0xff7a1a, { roughness: 0.95 });
     add(g, new T.SphereGeometry(0.198, 26, 12, 0, Math.PI * 2, 0, HALF), knit, 0, 0.2, -0.005, 1, 1.0, 1.04);
     m = add(g, new T.CylinderGeometry(0.203, 0.203, 0.065, 26, 1, true), knit2, 0, 0.215, -0.005, 1, 1, 1.04); m.material.side = T.DoubleSide;
@@ -127,7 +526,7 @@
     [-1, 1].forEach(function (sd) { add(g, new T.SphereGeometry(0.034, 12, 10), wt, Math.sin(0.95) * 0.255 * sd, 0.17, Math.cos(0.95) * 0.255 - 0.01); });
     add(g, new T.CylinderGeometry(0.212, 0.212, 0.03, 28, 1, true, 0.95, Math.PI * 2 - 1.9), fr, 0, 0.17, -0.01).material.side = T.DoubleSide; }
   // ---------- shop-only items: low-poly (few segments, shared materials) ----------
-  function newItems(T, head, h) { var HALF = Math.PI / 2, g, m, G = h.gl;
+  function newItemsV12(T, head, h) { var HALF = Math.PI / 2, g, m, G = h.gl;
     var blk = std(T, 0x16161c, { roughness: 0.5 }), red = std(T, 0xc81e2a), wh = std(T, 0xf4f4f0, { roughness: 0.7 }), gd = std(T, 0xffc640, { metalness: 1, roughness: 0.3, emissive: 0x402800 });
     g = h.tophat = grp(T, head, 'gaHat_tophat'); add(g, new T.CylinderGeometry(0.27, 0.27, 0.02, 20), blk, 0, 0.3, 0); add(g, new T.CylinderGeometry(0.15, 0.15, 0.26, 20), blk, 0, 0.43, 0);
     add(g, new T.CylinderGeometry(0.153, 0.153, 0.045, 20, 1, true), red, 0, 0.33, 0);
@@ -209,6 +608,7 @@
   }
   // t741u laser pistol (HAND row): Sky Tower's blocky blaster, held in the monkey's right hand (main.js names it 'handR'); muzzle = 'gaPistolMuzzle'.
   // The alien never holds it: his floating robot gets a red emitter ring instead ('gaBotGun') and fires the lasers (roomfire.js).
+
   function pistolOf(T, root) { var hand = root.getObjectByName('handR'); if (!hand) return null; var g = hand.getObjectByName('gaPistol'); if (g) return g;
     g = new T.Group(); g.name = 'gaPistol'; g.T = T; var metal = std(T, 0x3a4558, { metalness: 0.5, roughness: 0.4 }), dark = std(T, 0x1a2028, { roughness: 0.5 }), accent = std(T, 0x247888, { metalness: 0.3, roughness: 0.4 }),
       glow = new T.MeshBasicMaterial({ color: 0x48f2ff, toneMapped: false });
@@ -217,6 +617,10 @@
     m = add(g, new T.CylinderGeometry(0.044, 0.044, 0.04, 8), accent, 0, 0.032, 0.4); m.rotation.x = Math.PI / 2;
     m = add(g, new T.CylinderGeometry(0.038, 0.042, 0.05, 8), glow, 0, 0.032, 0.6); m.rotation.x = Math.PI / 2; m.name = 'gaPistolMuzzle';
     add(g, new T.BoxGeometry(0.075, 0.16, 0.09), dark, 0, -0.09, 0.02); add(g, new T.BoxGeometry(0.045, 0.045, 0.07), dark, 0, -0.015, -0.07); add(g, new T.BoxGeometry(0.13, 0.04, 0.09), accent, 0, 0.105, 0.08);
+    add(g, new T.BoxGeometry(0.03, 0.03, 0.08), dark, 0, 0.1, 0.2); add(g, new T.BoxGeometry(0.02, 0.05, 0.02), dark, 0, -0.02, 0.06);
+    add(g, new T.BoxGeometry(0.09, 0.01, 0.07), accent, 0, -0.01, 0.13);
+    for (var gi = 0; gi < 4; gi++) add(g, new T.BoxGeometry(0.11, 0.008, 0.012), dark, 0, -0.04 - gi * 0.02, 0.02);
+    add(g, new T.BoxGeometry(0.04, 0.04, 0.03), glow, 0, 0.08, 0.0);
     g.position.set(0.02, -0.02, 0.06); g.rotation.set(0.78, 0, 0); g.visible = false; hand.add(g); return g; }
   function botGunOf(T, root) { var bot = root.getObjectByName('alienBot'); if (!bot) return null; var g = bot.getObjectByName('gaBotGun'); if (g) return g;
     g = new T.Group(); g.name = 'gaBotGun'; var red = new T.MeshBasicMaterial({ color: 0xff2a33, toneMapped: false }), dk = std(T, 0x2a2f38, { metalness: 0.6, roughness: 0.35 });
@@ -230,6 +634,26 @@
   function skFit(sk, root) { if (!sk || !sk.visible) return; var al = !!(root && root.userData && root.userData.char === 'alien'), f = al ? SKFIT.alien : SKFIT.monkey;   // t743u per-character fit
     sk.position.set(0, f.y, f.z); sk.scale.set(f.s, f.s * f.sy, f.s); sk.children.forEach(function (c) { if (c.name === 'gaSkStrap') c.scale.set(f.band, 1, f.band); if (c.name === 'gaSkClip') c.position.x = Math.sign(c.position.x) * 0.176 * f.band; }); }
   var SKFIT = { monkey: { y: 0, z: 0, s: 1, sy: 1, band: 1 }, alien: { y: 0.012, z: -0.02, s: 1.0, sy: 1.0, band: 1.1 } };
+
+  function spinProp(root, dt) { if (!root) return; var p = root.getObjectByName('gaProp'); if (p && p.parent && p.parent.visible) p.rotation.y += (dt || 0.016) * 8; }
+  function previewItem(k, v) {
+    var A = window.__arcade; if (!A || !A.monkey || !v || v === 'none') return null; var T = A.THREE, cap = capOf(A.monkey); if (!cap) return null;
+    var hats = hatMeshes(T, cap), src = null;
+    if (k === 'hat' && v === 'cap') src = cap; else if (k === 'hat') src = hats[v]; else if (k === 'glasses') src = hats.gl && hats.gl[v]; else if (k === 'back') src = hats.bk && hats.bk[v];
+    else if (k === 'hand' && v === 'pistol') src = pistolOf(T, A.monkey);
+    if (!src) return null; var was = src.visible; src.visible = true; var c = src.clone(true); src.visible = was; c.visible = true; c.position.set(0, 0, 0); c.rotation.set(0, 0, 0); c.scale.set(1, 1, 1); return c;
+  }
+  function accessoryStats() {
+    var A = window.__arcade, out = {}; if (!A || !A.monkey) return out; var T = A.THREE, cap = capOf(A.monkey); if (!cap) return out;
+    var h = hatMeshes(T, cap), count = function (o) { var tris = 0, meshes = 0, mats = []; if (!o) return null;
+      o.traverse(function (m) { if (!m.isMesh || !m.geometry) return; meshes++; if (mats.indexOf(m.material) < 0) mats.push(m.material);
+        var g = m.geometry; tris += g.index ? g.index.count / 3 : (g.attributes.position ? g.attributes.position.count / 3 : 0); });
+      return { tris: Math.round(tris), meshes: meshes, mats: mats.length }; };
+    out.cap = count(cap); ['capblue','crown','helmet','beanie','cowboy','party','pirate','halo','headphones','tophat','wizard','viking','chef','bunny','propeller'].forEach(function (k) { out[k] = count(h[k]); });
+    if (h.gl) Object.keys(h.gl).forEach(function (k) { out['glasses:' + k] = count(h.gl[k]); });
+    if (h.bk) Object.keys(h.bk).forEach(function (k) { out['back:' + k] = count(h.bk[k]); });
+    out['hand:pistol'] = count(pistolOf(T, A.monkey)); return out;
+  }
   function applyRoot(T, root, lk) { lk = lk || P; var cap = capOf(root); if (!cap) return; var h = hatMeshes(T, cap); cap.visible = lk.hat === 'cap';
     HAT3D.forEach(function (k) { h[k].visible = lk.hat === k; }); for (var g in h.gl) h.gl[g].visible = lk.glasses === g; skFit(h.gl.skull, root); for (var b in h.bk) h.bk[b].visible = lk.back === b;
     var bp = cap.parent.parent && cap.parent.parent.parent && cap.parent.parent.parent.getObjectByName('backpack'); if (bp) bp.visible = !lk.back || lk.back === 'none'; applyHand(T, root, lk); }   // Dave: a back item replaces Arcade's backpack (straps stay)
@@ -315,6 +739,7 @@
     var bot = prev.root.getObjectByName('alienBot'); if (bot) { var bt = now / 1000, y0 = bot.userData.baseY != null ? bot.userData.baseY : 0.52;
       bot.position.x = 0.64 + Math.sin(bt * 1.15) * 0.016; bot.position.y = y0 + Math.sin(bt * 2.35) * 0.035; bot.position.z = -0.16 + Math.cos(bt * 1.05) * 0.01;
       bot.rotation.y = 0; bot.rotation.z = Math.sin(bt * 1.9) * 0.05; }
+    spinProp(prev.root, dt); spinProp(window.__arcade && window.__arcade.monkey, dt);
     if (!TP.seen && wc.id === 'gaCv') { TP.seen = true; TP.gone = false; tpStart('in'); }   // first paint of the start screen: beam in
     tpRender(tpStep(dt)); }
   // ---------- start-screen teleport (same look as teleport.js: cyan swirl column, rising sparkles, feet-up dissolve, flash, zap/vwoom) ----------
@@ -542,15 +967,17 @@
     try { var ac = MU.ac = MU.ac || window.__unlockAC || new (window.AudioContext || window.webkitAudioContext)(); window.__unlockAC = ac; if (ac.state === 'suspended') ac.resume(); } catch (e) { return; }
     if (!MU.buf) { if (MU.loading) return; MU.loading = true;
       fetch(MU.url).then(function (r) { return r.arrayBuffer(); }).then(function (b) { return new Promise(function (ok, no) { MU.ac.decodeAudioData(b, ok, no); }); })
-        .then(function (buf) { MU.buf = buf; var n = Math.round(MU.N * buf.sampleRate / MU.SR), extra = buf.length - n; MU.lead = extra > 1000 ? Math.round(1105 * buf.sampleRate / MU.SR) : 0;   // LAME delay if the decoder kept it
+        .then(function (buf) { MU.loading = false; if (!musicWanted()) { MU.buf = null; return; }   // vrtest-v10 (Chief 0997b20): PLAY already happened; don't keep the start-screen buffer
+          MU.buf = buf; var n = Math.round(MU.N * buf.sampleRate / MU.SR), extra = buf.length - n; MU.lead = extra > 1000 ? Math.round(1105 * buf.sampleRate / MU.SR) : 0;   // LAME delay if the decoder kept it
           MU.loopStart = MU.lead / buf.sampleRate; MU.loopEnd = MU.loopStart + n / buf.sampleRate; MU.len = buf.length; MU.loading = false; musicGo(); })
         .catch(function (e) { MU.err = String(e); MU.loading = false; });
       return; }
     try { var ac2 = MU.ac, g = MU.g = ac2.createGain(), src = MU.src = ac2.createBufferSource(); g.gain.setValueAtTime(0, ac2.currentTime); g.gain.linearRampToValueAtTime(MU.VOL, ac2.currentTime + 0.8); g.connect(ac2.destination);
       src.buffer = MU.buf; src.loop = true; src.loopStart = MU.loopStart; src.loopEnd = MU.loopEnd; src.connect(g); src.start(0, MU.loopStart); MU.playing = true; MU.starts++; } catch (e) { MU.err = String(e); }
   }
-  function musicStop(fade) { if (!MU.playing) return; MU.playing = false; MU.stops++; var ac = MU.ac, g = MU.g, src = MU.src, f = fade == null ? 0.6 : fade; MU.src = MU.g = null;
+  function musicStop(fade) { if (!MU.playing && !MU.buf) return; if (MU.playing) { MU.playing = false; MU.stops++; var ac = MU.ac, g = MU.g, src = MU.src, f = fade == null ? 0.6 : fade; MU.src = MU.g = null;
     try { g.gain.cancelScheduledValues(ac.currentTime); g.gain.setValueAtTime(g.gain.value, ac.currentTime); g.gain.linearRampToValueAtTime(0, ac.currentTime + f); src.stop(ac.currentTime + f + 0.05); setTimeout(function () { try { g.disconnect(); } catch (e) {} }, (f + 0.2) * 1000); } catch (e) {} }
+    MU.buf = null; MU.len = 0; }   // vrtest-v10 (Chief 0997b20): free the ~12 MB start-screen buffer on PLAY / fade-out (the running source keeps it until its fade ends)
   setInterval(function () { if (MU.playing && !musicWanted()) musicStop(); }, 150);
   document.addEventListener('visibilitychange', function () { if (document.hidden) musicStop(0.2); });
   // ---------- input: runs before Arcade's start-screen swallower (registered first, same capture phase) ----------
@@ -610,5 +1037,6 @@
     var wrap = setInterval(function () { var U = window.__startUI; if (!U || !U.show || U.show.ga) return; clearInterval(wrap); var o = U.show; U.show = function () { untouch(); stHat = false; TP.seen = false; TP.st = 'idle'; TP.cb = null; var r = o.apply(this, arguments); tickets(); sync(); return r; }; U.show.ga = 1; }, 200); }
   var booted = false; function boot1() { if (booted) return; booted = true; boot(); }
   if (document.readyState === 'loading') { var mo = new MutationObserver(function () { if (document.getElementById('start')) { mo.disconnect(); boot1(); } }); mo.observe(document.documentElement, { childList: true, subtree: true }); document.addEventListener('DOMContentLoaded', boot1); } else boot1();   // build ours the moment #start is parsed
-  window.__gaPlayer = { KEY: KEY, get p() { return P; }, pick: pick, setChar: setChar, play: play, apply: apply, opts: BASE, allOpts: OPTS, priceOf: priceOf, isStart: isStart, isFree: isFree, get tag() { return tag; }, get prev() { return prev; }, music: MU, dress: dress, look: look, glasses: GLAS, wardrobe: W, tp: TP, NEW: NEW, PRICE: PRICE, owned: owned, has: has, buy: buy, tryOn: tryOn, balance: balance };
+  window.__GA_ACC_BUILD = 'v13detail';
+  window.__gaPlayer = { KEY: KEY, oldAcc: /[?&]oldacc=1\b/.test(location.search), accBuild: window.__GA_ACC_BUILD, get p() { return P; }, pick: pick, setChar: setChar, play: play, apply: apply, opts: BASE, allOpts: OPTS, priceOf: priceOf, isStart: isStart, isFree: isFree, get tag() { return tag; }, get prev() { return prev; }, music: MU, dress: dress, look: look, glasses: GLAS, wardrobe: W, tp: TP, NEW: NEW, PRICE: PRICE, owned: owned, has: has, buy: buy, tryOn: tryOn, balance: balance, previewItem: previewItem, accessoryStats: accessoryStats, nameOf: nameOf };
 })();

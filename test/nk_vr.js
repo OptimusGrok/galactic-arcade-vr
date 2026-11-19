@@ -1,4 +1,4 @@
-// v16 (t399u, Dave): NEON KNOCKOUT in the arcade's own XR session (no page reload). BEAM TO NEON KNOCKOUT sign on the room-1 pad,
+// v16 (t399u, Dave): NEON KNOCKOUT in the arcade's own XR session (no page reload). The SW pad's NEON KNOCKOUT label beams there,
 // the studio's gloves ride the arcade controllers (their models + rays hidden), punching the START / difficulty orbs, calibration from the
 // headset height, punches hit orbs, ducking under a bar by lowering the headset dodges it, results pay tickets, BEAM TO ARCADE goes back.
 const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
@@ -20,9 +20,13 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     await until(() => document.getElementById('vrBtn').classList.contains('on'), 20000); await until(() => window.__gaVR.prewarm.done, 180000);
     await page.click('#vrBtn'); await until(() => window.__gaVR.presenting && window.__gaVR.posed, 30000);
     const pad = await E(() => [window.__tp.PAD1.x, window.__tp.PAD1.z]);
+    const pad4 = await E(() => [window.__tp.PAD4.x, window.__tp.PAD4.z]);
     await place(pad[0] + 2.2, pad[1] + 2.2, Math.PI / 4);
-    const sg = await sign('beamNK'), sShop = await sign('beamShop');
-    chk(!!sg && !!sShop && sg[1] > sShop[1], 'room-1 pad: BEAM TO NEON KNOCKOUT sign above BEAM TO SHOP ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
+    const sShop = await sign('beamShop');
+    chk(!!sShop, 'SHOP pad label is the shop beam target ' + JSON.stringify(sShop && sShop.map(v => +v.toFixed(2))));
+    await place(pad4[0] + 2.2, pad4[1] - 2.2, 3 * Math.PI / 4);
+    const sg = await sign('beamNK');
+    chk(!!sg, 'NEON KNOCKOUT pad label is the beam target ' + JSON.stringify(sg && sg.map(v => +v.toFixed(2))));
     chk(await E(() => !!window.__nkGame && window.__gaVR.prewarm.done), 'v18: on a headset the studio is loaded + pre-warmed in the background before the first beam');
     await aimPress(sg);
     await until(() => window.__tp.where === 3 && window.__tp.state === 'idle' && window.__nkGame && window.__nkGame.inStudio, 90000); await H.frames(page, 8);
@@ -95,7 +99,7 @@ const { openVR, H, IWER_SRC, SETUP, HEADSET_FB } = require('./vrlib');
     v = await vis(); s = await E(() => ({ g: window.__nkGame.gloves.L.visible || window.__nkGame.gloves.R.visible, pres: window.__gaVR.presenting }));
     chk(s.pres && !s.g && v.models.every(m => m), 'back in the arcade (still in VR): gloves gone, controller models back ' + JSON.stringify(v));
     // v17: EXIT GAME mid-round -> back to the arcade, no tickets
-    await place(pad[0] + 2.2, pad[1] + 2.2, Math.PI / 4); await aimPress(await sign('beamNK'));
+    await place(pad4[0] + 2.2, pad4[1] - 2.2, 3 * Math.PI / 4); await aimPress(await sign('beamNK'));
     await until(() => window.__tp.where === 3 && window.__tp.state === 'idle' && window.__nkGame.inStudio, 90000); await H.frames(page, 8);
     await E(() => window.__nkGame.startRound()); await H.frames(page, 30);
     const tk1 = await E(() => window.__arcade.play.tickets.total);

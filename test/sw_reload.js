@@ -20,7 +20,7 @@ const { open } = require('./lib');
       window.__gaSwSoon = 1;   // register the delayed SW immediately after first frames
       if (n !== 1) return;
       const put = k => caches.open(k).then(c => c.put(new Request('/__ga_stale__'), new Response('old', { headers: { 'content-type': 'text/plain' } })));
-      return Promise.all(['galactic-arcade_vr-v0', 'galactic-arcade_vr-v1', 'galactic-arcade_vr-v2', 'galactic-arcade_vr-v3', 'galactic-arcade_vr-v4', 'galactic-arcade_vr-v5', 'galactic-arcade_vr-v6', 'galactic-arcade_vr-v7', 'galactic-arcade_vr-v8', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].map(put));
+      return Promise.all(['galactic-arcade_vr-v0', 'galactic-arcade_vr-v1', 'galactic-arcade_vr-v2', 'galactic-arcade_vr-v3', 'galactic-arcade_vr-v4', 'galactic-arcade_vr-v8', 'galactic-arcade_vr-v11', 'galactic-arcade_vr-v10', 'galactic-arcade_vr-v9', 'galactic-arcade_vr-v12', 'galactic-arcade_vr-v15', 'galactic-arcade_vr-v16', 'galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9', 'galactic-arcade_vrtest-v18'].map(put));
     },
   });
 
@@ -29,9 +29,9 @@ const { open } = require('./lib');
     const S = window.__start || {};
     return {
       loadN: Number(sessionStorage.getItem('gaLoadN') || 0),
-      flag: sessionStorage.getItem('gavrReloaded.galactic-arcade_vr-v26'),
-      stale: keys.filter(k => k.indexOf('galactic-arcade_vr-') === 0 && k !== 'galactic-arcade_vr-v26'),
-      live: ['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].filter(k => keys.includes(k)),
+      flag: sessionStorage.getItem('gavrReloaded.galactic-arcade_vr-v27'),
+      stale: keys.filter(k => k.indexOf('galactic-arcade_vr-') === 0 && k !== 'galactic-arcade_vr-v27'),
+      live: ['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9', 'galactic-arcade_vrtest-v18'].filter(k => keys.includes(k)),
       updating: document.documentElement.classList.contains('ga-updating'),
       checked: !!(window.__gaUpdate && window.__gaUpdate.checked),
       reloading: !!(window.__gaUpdate && window.__gaUpdate.reloading),
@@ -42,9 +42,9 @@ const { open } = require('./lib');
   });
   console.log('after boot', JSON.stringify(a));
   chk(a.loadN === 2, 'stale cache caused exactly one reload (loadN=' + a.loadN + ')');
-  chk(a.flag === '1', 'session guard gavrReloaded.galactic-arcade_vr-v26 is set');
+  chk(a.flag === '1', 'session guard gavrReloaded.galactic-arcade_vr-v27 is set');
   chk(a.stale.length === 0, 'old galactic-arcade_vr-* caches are gone (' + a.stale.join(',') + ')');
-  chk(a.live.length === 3, 'live + test caches untouched by the VR head script (' + a.live.join(',') + ')');
+  chk(a.live.length === 4, 'live, test and VR test-link (galactic-arcade_vrtest-v18) caches untouched by the VR head script (' + a.live.join(',') + ')');
   chk(!a.updating && a.checked && !a.reloading, 'start screen is no longer blocked after the reload');
   chk(a.startShown && !a.dismissed, 'still on the start screen (not kicked mid-play)');
   chk(a.frames > 3, 'room is drawing behind the start screen');
@@ -65,8 +65,8 @@ const { open } = require('./lib');
   await page.waitForTimeout(3000);
   const c = await page.evaluate(async () => ({ keys: await caches.keys(), scope: (await navigator.serviceWorker.getRegistration() || {}).scope || null, active: !!((await navigator.serviceWorker.getRegistration()) || {}).active }));
   console.log('after SW activate', JSON.stringify(c));
-  chk(c.active && c.keys.includes('galactic-arcade_vr-v26'), 'VR service worker active with its own cache galactic-arcade_vr-v26');
-  chk(['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9'].every(k => c.keys.includes(k)), 'sw.js activate + delayed SW path left the live / test caches alone');
+  chk(c.active && c.keys.includes('galactic-arcade_vr-v27'), 'VR service worker active with its own cache galactic-arcade_vr-v27');
+  chk(['galactic-arcade-v233', 'galactic-arcade-v199', 'galactic-arcade-test-v9', 'galactic-arcade_vrtest-v18'].every(k => c.keys.includes(k)), 'sw.js activate + delayed SW path left the live / test caches alone');
   chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors ' + errors.join(' | '));
   await close();
 

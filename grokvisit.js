@@ -129,7 +129,7 @@ export function setupGrokVisit({ scene, tp, play, monkey, camera, st } = {}) {
   // t736u: the only line. say() refuses anything that isn't HI so no stray speech can creep back in.
   function say(text, clipId) {
     if (text !== HI) return;
-    talkT = Math.max(1.2, text.length * 0.055); happyT = talkT + 1.0; api.said.push(text);
+    talkT = Math.max(1.2, text.length * 0.055); happyT = talkT + 1.0; api.said.push(text); if (api.said.length > 80) api.said.splice(0, api.said.length - 80);
     if (muted()) return;
     stopVoice();
     const ac = actx();
@@ -949,6 +949,8 @@ export function setupGrokVisit({ scene, tp, play, monkey, camera, st } = {}) {
   api.chat = chat;
 
   function tick(dt) {
+    if (window.__gaHoldAV) return;   // vrtest-v10: Grok waits (no walk-in, no timers) while the PREPARING VR card is up
+    if (performance.now() < (window.__gaRevealAt || 0) + 2500 && api.state === 'idle') return;   // ...and enters only a moment after the reveal
     if (api.chatting || resumeT > 0) phaseT -= dt;   // frozen while chatting
     t += dt; api.sessT += dt; phaseT += dt;
     // stragglers only (begin already kicked the full queue); never decode during walk

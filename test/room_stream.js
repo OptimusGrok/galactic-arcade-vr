@@ -1,0 +1,101 @@
+// t893u (ported to the VR test build): room-2 / shop heavy textures stream in on approach and evict after leaving.
+// VR test build: evicted maps are a shared 1x1 'streamPlaceholder' (never null, so no shader recompiles); Strike/Ghost screens are stills (no demo iframes).
+const { open } = require('./lib');
+
+(async () => {
+  const o = await open({ w: 844, h: 390 });
+  const { page, errors, close } = o;
+  let ok = true;
+  const chk = (c, m, x) => { console.log((c ? 'PASS ' : 'FAIL ') + m, x != null ? JSON.stringify(x) : ''); if (!c) ok = false; };
+
+  await page.evaluate(() => { window.__gaStreamHold = 800; });
+
+  const snap = () => page.evaluate(() => {
+    const A = window.__arcade, S = window.__gaStream || {}, shop = window.__shop;
+    const find = name => { let m = null; if (A.scene) A.scene.traverse(o => { if (o.name === name) m = o; }); return m; };
+    const tex = name => {
+      const m = find(name), map = m && m.material && m.material.map;
+      const img = map && (map.image || (map.source && map.source.data));
+      return { hasMap: !!map && map.name !== 'streamPlaceholder', ph: !!map && map.name === 'streamPlaceholder', w: (img && (img.width || img.videoWidth)) || 0, h: (img && (img.height || img.videoHeight)) || 0 };
+    };
+    const ds = A.dsCab && A.dsCab.getObjectByName('screen');
+    const dsMap = ds && ds.material && ds.material.map;
+    const dsImg = dsMap && (dsMap.image || (dsMap.source && dsMap.source.data));
+    const mir = A.room2 && A.room2.userData && A.room2.userData.mirror;
+    const rt = mir && mir.getRenderTarget && mir.getRenderTarget();
+    const iframe = d => ({ ready: !!(d && d.ready), connected: !!(d && d.iframe && d.iframe.isConnected), src: (d && d.iframe && (d.iframe.getAttribute('src') || d.iframe.src || '')) || '' });
+    return {
+      stream: { shop: S.shop, room2: S.room2, strikeDemo: S.strikeDemo, ghostDemo: S.ghostDemo, wantShop: S.wantShop, wantRoom2: S.wantRoom2 },
+      shopGpu: !!(shop && shop.gpu && shop.gpu.on),
+      r2Gpu: !!(A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu && A.dsCab.userData.gpu.on),
+      mural: tex('muralLeft'), shelf: tex('shelfBoxes'), labels: tex('priceLabels'), title: tex('muralTitle'),
+      ds: { hasMap: !!dsMap && dsMap.name !== 'streamPlaceholder', w: (dsImg && dsImg.width) || 0, gpu: !!(A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu && A.dsCab.userData.gpu.on) },
+      mirror2: rt ? { w: rt.width, h: rt.height } : null,
+      strike: iframe(A.demo), ghost: iframe(A.ghostDemo),
+      pos: { x: +A.monkey.position.x.toFixed(2), z: +A.monkey.position.z.toFixed(2) }
+    };
+  });
+
+  const put = (x, z, wait = 400) => page.evaluate(([x, z]) => {
+    const A = window.__arcade; A.monkey.position.set(x, 0, z); A.st.vel.set(0, 0, 0);
+  }, [x, z]).then(() => page.waitForTimeout(wait))
+    // vrtest-v2: uploads go one per frame, so wait until both stream queues are empty
+    .then(() => page.waitForFunction(() => { const A = window.__arcade, sh = window.__shop, d = A.dsCab && A.dsCab.userData && A.dsCab.userData.gpu;
+      return !(sh && sh.gpu && sh.gpu.queue.length) && !(d && d.queue.length); }, null, { timeout: 30000 })).then(() => page.waitForTimeout(200));
+
+  // shop idle-loads after the first frames, then should evict at spawn (0, 5)
+  await page.evaluate(() => window.__arcade.loadShop()); await page.waitForTimeout(1500);
+  let r = await snap();
+  console.log('spawn', JSON.stringify(r));
+  chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap && !r.title.hasMap, 'at spawn, shop heavy textures are evicted (placeholder colours)', { shop: r.stream.shop, mural: r.mural, shelf: r.shelf, title: r.title });
+  chk(!r.r2Gpu && r.stream.room2 === 'off' && !r.ds.hasMap && r.mirror2 && r.mirror2.w <= 1, 'at spawn, room 2 / Dead Signal GPU is evicted', { room2: r.stream.room2, ds: r.ds, mirror2: r.mirror2 });
+  chk(!r.strike.connected && !r.ghost.connected, 'Strike / Ghost screens are stills (no demo iframes)', { strike: r.strike, ghost: r.ghost });
+  chk(r.mural.ph && r.shelf.ph, 'evicted maps are the 1x1 placeholder (material keeps its map slot: no shader change)', { mural: r.mural, shelf: r.shelf });
+
+  // approach the hallway / north door: room 2 should load early
+  await put(0, -10, 800);
+  r = await snap();
+  console.log('hallway', JSON.stringify(r));
+  chk(r.stream.wantRoom2 && r.r2Gpu && r.ds.hasMap && r.ds.w >= 256 && r.mirror2 && r.mirror2.w > 1, 'near the doorway, room 2 / Dead Signal textures are on the GPU', { stream: r.stream, ds: r.ds, mirror2: r.mirror2 });
+
+  // back to the south of room 1, wait the hold, evict room 2
+  await put(0, 8, 800);
+  await page.waitForFunction(() => window.__gaStream.room2 === 'off', null, { timeout: 8000 }).catch(() => {});
+  r = await snap();
+  console.log('back-south', JSON.stringify(r));
+  chk(!r.r2Gpu && r.stream.room2 === 'off' && !r.ds.hasMap && r.mirror2 && r.mirror2.w <= 1, 'after leaving room 2 and waiting, those textures evict again', { stream: r.stream, ds: r.ds, mirror2: r.mirror2 });
+
+  // approach the teleporter pad: shop murals / shelves / labels load early
+  await put(-9, -9, 800);
+  await page.waitForFunction(() => window.__gaStream.shop === 'on' && !window.__gaStream.queued, null, { timeout: 8000 }).catch(() => {});   // test-v1: maps are uploaded 2 per frame
+  r = await snap();
+  console.log('near-pad', JSON.stringify(r));
+  chk(r.stream.wantShop && r.shopGpu && r.mural.hasMap && r.mural.w >= 512 && r.shelf.hasMap && r.labels.hasMap, 'near the teleporter, shop murals and shelf/price canvases are on the GPU', { stream: r.stream, mural: r.mural, shelf: r.shelf, labels: r.labels, title: r.title });
+
+  // walk back to spawn (clear of the pad and the room-2 doorway) and evict
+  await put(0, 5, 800);
+  await page.waitForFunction(() => window.__gaStream.shop === 'off', null, { timeout: 8000 }).catch(() => {});   // SwiftShader frames are slow right after the shop's uploads
+  r = await snap();
+  console.log('far-se', JSON.stringify(r));
+  chk(!r.shopGpu && r.stream.shop === 'off' && !r.mural.hasMap && !r.shelf.hasMap, 'after leaving the shop pad and waiting, shop textures evict to placeholders', { stream: r.stream, mural: r.mural, shelf: r.shelf });
+
+  // room 2 centre: Dead Signal art on the GPU; no programs compiled by any stream in/out
+  const z2 = await page.evaluate(() => window.__arcade.Z2);
+  await put(0, z2, 1500);
+  r = await snap();
+  console.log('room2', JSON.stringify(r));
+  chk(r.r2Gpu && r.ds.hasMap, 'in room 2, Dead Signal art is on the GPU', r.ds);
+  // two identical full cycles (SwiftShader is slow, so generous waits); the second must compile nothing new
+  const cyc = async () => { await put(0, 8, 2500); await put(-9, -9, 2500); await put(0, 5, 3000); await put(0, -10, 2500); await put(0, 8, 3000); };
+  const keys = () => page.evaluate(() => window.__arcade.renderer.info.programs.map(p => p.cacheKey));
+  await cyc(); const k1 = await keys(); await cyc(); const k2 = await keys();
+  const pr = k1.length, pr2 = k2.length, fresh = k2.filter(k => !k1.includes(k)).length;
+  const st = await page.evaluate(() => window.__gaStream);
+  chk(fresh === 0, 'a full evict / reload cycle of shop + room 2 compiled no new shader programs (' + pr + ' -> ' + pr2 + ', new ' + fresh + ')', st);
+  chk(st.ups >= 6 && st.evicts >= 6, 'streaming actually cycled (ups ' + st.ups + ', evicts ' + st.evicts + ')');
+
+  chk(errors.filter(e => !/Failed to load|supabase|net::/i.test(e)).length === 0, 'no page errors', errors);
+  await close();
+  console.log(ok ? 'ALL OK' : 'SOME FAIL');
+  process.exit(ok ? 0 : 1);
+})().catch(e => { console.error(e); process.exit(1); });

@@ -4,11 +4,11 @@
 // THE QUEST FOR THE SUN CROWN, teal-capped Pip jumping over coins, chomper pipes and a sunset. Purple control panel with a red ball
 // joystick, JUMP and RUN buttons; brushed steel coin door with two red slots and an INSERT COIN plate. Screen: a silent attract loop.
 import * as THREE from 'three';
-import { cabWH, flagTex, capLoadedTexture } from './tier.js';
+import { cabWH, flagTex, finishCanvasTex, capLoadedTexture, capCabSideTexture } from './tier.js';
 import { SPROFILE, SW, segFrame, segPlane, bar, sideGeo, mergeGeos } from './strikecab.js';
-const L = new THREE.TextureLoader();
-const load = (url, flip) => { const t = L.load(url, tex => capLoadedTexture(tex, THREE)); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); if (flip) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; } return t; };
-const canvasTex = (w, h, paint) => { const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } paint(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t; };
+import { loadPicture } from './texload.js';
+const load = (url, flip) => loadPicture(THREE, url, { side: /_side\./.test(url) });
+const canvasTex = (w, h, paint) => { const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } paint(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); return t; };
 const PIP = ['...TTTT...', '..TTTTTTT.', '..SSSSS...', '.SSKSSKS..', '..SSSSS...', '.BBTTTTBB.', '.S.BBBB.S.', '...B..B...', '..NN..NN..'];
 const COL = { T: '#1fb5a8', S: '#f2b47a', K: '#1a1020', B: '#2a5bd8', N: '#6a3a1a' };
 const pxc = (g, rows, x, y, s) => rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (COL[r[i]]) { g.fillStyle = COL[r[i]]; g.fillRect(x + i * s, y + j * s, s, s); } });
@@ -37,8 +37,9 @@ export function buildPipCabinet() {
   const gloss = new THREE.MeshPhysicalMaterial({ color: 0x060608, roughness: 0.18, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 });
   const shape = new THREE.Shape(SPROFILE.map(([x, y]) => new THREE.Vector2(x, y)));
   add(new THREE.ExtrudeGeometry(shape, { depth: SW, bevelEnabled: false }).translate(0, 0, -SW / 2), gloss, 'body');
-  const sideMat = flip => { const t = load('tex/spq_side.jpg', flip); return new THREE.MeshPhysicalMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.22, roughness: 0.3, clearcoat: 0.8 }); };
-  add(sideGeo(1), sideMat(false), 'sidePanelL'); add(sideGeo(-1), sideMat(true), 'sidePanelR');
+  const sideT = load('tex/spq_side.jpg');
+  const sideMat = new THREE.MeshPhysicalMaterial({ map: sideT, emissive: 0xffffff, emissiveMap: sideT, emissiveIntensity: 0.22, roughness: 0.3, clearcoat: 0.8 });
+  add(sideGeo(1), sideMat, 'sidePanelL'); add(sideGeo(-1), sideMat, 'sidePanelR');
   const tm = []; for (const z of [-SW / 2 - 0.008, SW / 2 + 0.008]) for (let i = 1; i < SPROFILE.length - 1; i++) { const a = SPROFILE[i], b = SPROFILE[i + 1]; tm.push(bar(new THREE.Vector3(a[0], a[1], z), new THREE.Vector3(b[0], b[1], z), 0.03)); }
   add(mergeGeos(tm), gloss, 'trim');   // glossy black edge (no neon on the body)
   const mq = load('tex/spq_marquee.jpg');

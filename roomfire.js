@@ -10,7 +10,7 @@
 // is on. Multiplayer: own shots go out as a 'zap' broadcast (mp.js), remote ones draw here.
 (function () {
   'use strict';
-  var COOL = 0.28, AIM_T = 0.5, RAISE_RATE = 16, LOWER_RATE = 7, SPEED = 24, LIFE = 0.46, FADE = 0.16, ZAP_GAP = 0.1, MAX = 14, CHARGE_T = 4, BEAM_T = 3, BEAM_LEN = 28;
+  var COOL = 0.28, AIM_T = 0.5, RAISE_RATE = 16, LOWER_RATE = 7, SPEED = 24, LIFE = 0.46, FADE = 0.16, ZAP_GAP = 0.1, MAX = 24, CHARGE_T = 4, BEAM_T = 3, BEAM_LEN = 28;
   var REST = { shx: -0.12, shy: 0.04, shz: 0.26, elx: 0.22, elz: 0.06, gx: 0.78, gy: 0 }, AIMP = { shx: -1.40, shy: 0, shz: 0.20, elx: -0.08, elz: 0, gx: 1.48, gy: -0.25 };
   var RF = window.__roomFire = { shots: 0, remote: 0, zaps: 0, zapCyan: 0, zapRed: 0, zapMuted: 0, held: false, cool: 0, aim: 0, aimT: 0, flash: 0, lasers: [], shown: false, last: null,
     charge: 0, chargeSpent: false, beam: null, beamT: 0, CHARGE_T: CHARGE_T, BEAM_T: BEAM_T,
@@ -90,16 +90,37 @@
   function zap(hue) { if (muted()) { RF.zapMuted++; return false; } if (!ctx()) return false; var t = ac.currentTime; if (t - lastZap < ZAP_GAP) return false; lastZap = t; RF.zaps++;
     try { if (hue === 'red') { RF.zapRed++; osc('sine', 780, t, 0.14, 0.16, 240); osc('triangle', 520, t, 0.16, 0.1, 190); burst(t, 0.05, 0.045, 900); }
       else { RF.zapCyan++; osc('square', 1680, t, 0.09, 0.11, 620); osc('triangle', 1240, t, 0.07, 0.06, 480); burst(t, 0.035, 0.05, 2800); } } catch (e) {} return true; }
-  // ---------- bolts ----------
-  var geo = null, glowGeo = null;
-  function mat(hue) { var T = A().THREE; return new T.MeshBasicMaterial({ color: hue === 'red' ? 0xff2a33 : 0x48f2ff, transparent: true, opacity: 1, toneMapped: false, depthWrite: false }); }
-  function spawn(o, d, hue, remote) { var a = A(); if (!a || !a.scene) return null; var T = a.THREE; geo = geo || new T.BoxGeometry(0.07, 0.07, 0.85); glowGeo = glowGeo || new T.BoxGeometry(0.17, 0.17, 1.05);
+  function zapKind(kind, hue) {
+    if (!kind || kind === 'classic') return zap(hue);
+    if (muted()) { RF.zapMuted++; return false; } if (!ctx()) return false; var t = ac.currentTime, gap = kind === 'pulse' ? 0.04 : 0.08;
+    if (t - lastZap < gap) return false; lastZap = t; RF.zaps++;
+    try {
+      if (kind === 'pulse') { osc('square', 2400, t, 0.04, 0.07, 1100); osc('triangle', 1800, t, 0.035, 0.04, 800); burst(t, 0.018, 0.03, 3500); }
+      else if (kind === 'scatter') { osc('sawtooth', 420, t, 0.14, 0.15, 140); osc('square', 880, t, 0.1, 0.08, 280); burst(t, 0.08, 0.09, 500); }
+      else if (kind === 'charge') { osc('sine', 160, t, 0.24, 0.22, 55); osc('triangle', 520, t, 0.2, 0.12, 110); burst(t, 0.12, 0.12, 350); }
+      else if (kind === 'beam') { osc('sawtooth', 640, t, 0.18, 0.1, 260); osc('sine', 1280, t, 0.22, 0.07, 380); }
+      else return zap(hue);
+    } catch (e) {} return true; }
+  RF.zapKind = zapKind;
+  // ---------- bolts (pooled meshes, shared geometries, cloned colour templates so fade opacity is per-bolt) ----------
+  var geo = null, glowGeo = null, POOL = [], TEMPL = {};
+  function hexOf(hue, hex) { return hex != null ? hex : (hue === 'red' ? 0xff2a33 : 0x48f2ff); }
+  function templ(hex) { var T = A().THREE, k = 'c' + hex; if (!TEMPL[k]) { TEMPL[k] = { core: new T.MeshBasicMaterial({ color: hex, transparent: true, opacity: 1, toneMapped: false, depthWrite: false }), glow: new T.MeshBasicMaterial({ color: hex, transparent: true, opacity: 0.32, toneMapped: false, depthWrite: false, blending: T.AdditiveBlending }) }; } return TEMPL[k]; }
+  function mat(hue) { return templ(hexOf(hue)).core.clone(); }   // tests / older callers
+  function tint(hex, glow) { var t = templ(hex), m = (glow ? t.glow : t.core).clone(); m.color.setHex(hex); return m; }
+  function alloc(T, hex) {
+    var m = POOL.pop();
+    if (m) { m.material.color.setHex(hex); m.material.opacity = 1; if (m.children[0]) { m.children[0].material.color.setHex(hex); m.children[0].material.opacity = 0.32; } m.scale.set(1, 1, 1); m.visible = true; return m; }
+    m = new T.Mesh(geo, tint(hex, false)); m.name = 'roomLaser'; m.renderOrder = 4; m.frustumCulled = false;
+    var gl = new T.Mesh(glowGeo, tint(hex, true)); gl.name = 'roomLaserGlow'; gl.frustumCulled = false; gl.renderOrder = 5; m.add(gl); return m; }
+  function spawn(o, d, hue, remote) { var a = A(); if (!a || !a.scene) return null; var T = a.THREE, k = (arguments[4] || 0), hex = arguments[5] != null ? arguments[5] : hexOf(hue); geo = geo || new T.BoxGeometry(0.07, 0.07, 0.85); glowGeo = glowGeo || new T.BoxGeometry(0.17, 0.17, 1.05);
     while (RF.lasers.length >= MAX) kill(RF.lasers[0]);
-    var m = new T.Mesh(geo, mat(hue)); m.name = 'roomLaser'; m.position.set(o[0], o[1], o[2]); m.lookAt(o[0] + d[0], o[1] + d[1], o[2] + d[2]); m.renderOrder = 4; m.frustumCulled = false;
-    var gm = mat(hue); gm.opacity = 0.32; gm.blending = T.AdditiveBlending; var gl = new T.Mesh(glowGeo, gm); gl.name = 'roomLaserGlow'; gl.frustumCulled = false; gl.renderOrder = 5; m.add(gl); a.scene.add(m);
-    var k = (arguments[4] || 0); if (k > 0) { var sc = 1 + k * 3, zc = 1 + k * 1.5; m.scale.set(sc, sc, zc); }
-    var L = { mesh: m, dir: new T.Vector3(d[0], d[1], d[2]).normalize(), o: o.slice(), life: LIFE, hue: hue, remote: !!remote, k: k }; RF.lasers.push(L); if (remote) RF.remote++; return L; }
-  function kill(L) { var i = RF.lasers.indexOf(L); if (i >= 0) RF.lasers.splice(i, 1); if (L.mesh.parent) L.mesh.parent.remove(L.mesh); L.mesh.material.dispose(); L.mesh.children.forEach(function (c) { c.material.dispose(); }); }
+    var m = alloc(T, hex); m.position.set(o[0], o[1], o[2]); m.lookAt(o[0] + d[0], o[1] + d[1], o[2] + d[2]); a.scene.add(m);
+    if (k > 0) { var sc = 1 + k * 3, zc = 1 + k * 1.5; m.scale.set(sc, sc, zc); }
+    var life = arguments[6] != null ? arguments[6] : LIFE;
+    var L = { mesh: m, dir: new T.Vector3(d[0], d[1], d[2]).normalize(), o: o.slice(), life: life, hue: hue, remote: !!remote, k: k, hex: hex }; RF.lasers.push(L); if (remote) RF.remote++; return L; }
+  function kill(L) { var i = RF.lasers.indexOf(L); if (i >= 0) RF.lasers.splice(i, 1); if (L.mesh.parent) L.mesh.parent.remove(L.mesh); L.mesh.visible = false; POOL.push(L.mesh); }
+  RF.boltMats = function () { return TEMPL; }; RF.boltPool = function () { return POOL.length; };
   var chOsc = null, chOsc2 = null, chFilt = null, chGain = null;
   function stopChargeSnd() {
     if (!chGain && !chOsc) { RF.chargeOn = false; RF.chargeHz = 0; return; }
@@ -253,15 +274,18 @@
     return out;
   }
   function fire(opts) { opts = opts || {}; var a = A(); if (!a || !a.monkey || !RF.shown) return null;
-    if (RF.beam) return null;
-    if (!opts.fromRelease && RF.cool > 0) return null; RF.cool = COOL;
+    if (RF.beam && !opts.ignoreBeam) return null;
+    if (!opts.fromRelease && !opts.force && RF.cool > 0) return null;
+    if (!opts.noCool) RF.cool = opts.cool != null ? opts.cool : COOL;
     if (!opts.fromRelease) RF.chargeSpent = true;
-    var T = a.THREE, mk = a.monkey, u = mk.userData || {}, alien = u.char === 'alien', f = a.st ? a.st.face : mk.rotation.y, d = [Math.sin(f), 0.02, Math.cos(f)], p = new T.Vector3(), hue;
+    var T = a.THREE, mk = a.monkey, u = mk.userData || {}, alien = u.char === 'alien', f = a.st ? a.st.face : mk.rotation.y, d = opts.d ? opts.d.slice() : [Math.sin(f), 0.02, Math.cos(f)], p = new T.Vector3(), hue;
     if (window.__neonPlayer && window.__neonPlayer.idle) window.__neonPlayer.idle.t = 0;   // shooting is not standing idle: no pockets / phone
     if (alien) { hue = 'red'; RF.flash = 0.16; if (u.bot) { u.bot.rotation.set(-0.18, 0, 0); } mk.updateMatrixWorld(true); var eye = mk.getObjectByName('botEye') || u.bot; if (eye) eye.getWorldPosition(p); else p.set(mk.position.x, mk.position.y + 1.6, mk.position.z); }
     else { hue = 'cyan'; RF.aimT = AIM_T; var mp0 = muzzlePos(); if (mp0) p.copy(mp0); else p.set(mk.position.x, mk.position.y + 1.1, mk.position.z); }   // t815u: bolt from the aimed muzzle; the arm swings up to it
-    p.x += d[0] * (alien ? 0.1 : 0.04); p.z += d[2] * (alien ? 0.1 : 0.04);
-    var o = [p.x, p.y, p.z], k = Math.max(0, Math.min(0.999, opts.k || 0)), L = spawn(o, d, hue, false, k); RF.shots++; RF.last = { o: o, d: d, hue: hue, char: alien ? 'alien' : 'monkey', t: performance.now(), k: k }; zap(hue);
+    if (opts.o) { p.set(opts.o[0], opts.o[1], opts.o[2]); }
+    else { p.x += d[0] * (alien ? 0.1 : 0.04); p.z += d[2] * (alien ? 0.1 : 0.04); }
+    var o = [p.x, p.y, p.z], k = Math.max(0, Math.min(0.999, opts.k || 0)), L = spawn(o, d, hue, false, k, opts.color, opts.life); RF.shots++; RF.last = { o: o, d: d, hue: hue, char: alien ? 'alien' : 'monkey', t: performance.now(), k: k, kind: opts.kind || 'classic' };
+    if (!opts.silent) { if (opts.kind && opts.kind !== 'classic') zapKind(opts.kind, hue); else zap(hue); }
     try { if (window.__mp && window.__mp.zap) window.__mp.zap(o, d, hue, k); } catch (e) {}
     return L; }
   var L_ = function (x, y, k) { return x + (y - x) * k; };
@@ -310,5 +334,6 @@
     if (p.zapPend && p.gunAim > 0.95) { p.zapPend = false; p.zapAt = now; }
     pose(u, p.gunAim, true); return p.gunAim; };
   RF.muzzlePos = muzzlePos;
+  RF.startChargeSnd = startChargeSnd; RF.stopChargeSnd = stopChargeSnd; RF.tickChargeSnd = tickChargeSnd;
   RF.laserSnap = laserSnap; RF.syncPeer = syncPeer; RF.clearPeer = clearPeer; RF.remoteState = remoteState;
 })();

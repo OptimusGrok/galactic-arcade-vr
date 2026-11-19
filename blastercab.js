@@ -3,10 +3,11 @@
 // pixel alien, red ball joystick and a red FIRE button, coin door with two red slots. Screen: a cheap attract loop with INSERT CREDIT.
 // All art is drawn on canvases here (no image files).
 import * as THREE from 'three';
-import { cabWH, flagTex, capLoadedTexture } from './tier.js';
+import { cabWH, flagTex, finishCanvasTex, capLoadedTexture, capCabSideTexture } from './tier.js';
 import { SPROFILE, SW, segFrame, segPlane, bar, sideGeo, mergeGeos } from './strikecab.js';
+import { bakedOr } from './texload.js';
 const canvasTex = (w, h, paint, flip) => { const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } paint(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); if (flip) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; } return t; };
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; if (flip) { t.wrapS = THREE.RepeatWrapping; t.repeat.x = -1; t.offset.x = 1; } finishCanvasTex(t, THREE); return t; };
 const SHIP = ['....#....', '...###...', '...#.#...', '..#####..', '.###.###.', '#########', '##.#.#.##'];
 const ALIEN = ['..#.....#..', '...#...#...', '..#######..', '.##.###.##.', '###########', '#.#######.#', '#.#.....#.#', '...##.##...'];
 const FRT = ['......########......', '...##############...', '..##.##.##.##.##.##.', '####################', '##..############..##', '....##..####..##....', '......##....##......'];
@@ -21,12 +22,25 @@ function sideArt(g, w, h) {   // u = x / 1.04 (front edge at the right), v = y /
 }
 function marqueeArt(g, w, h) {
   g.fillStyle = '#05030c'; g.fillRect(0, 0, w, h); stars(g, w, h, 120);
-  for (let i = 0; i < 6; i++) { g.fillStyle = ['#ff2a6a', '#2ae5ff', '#ff5a1a'][i % 3]; g.fillRect(i < 3 ? 14 : w - 150, 30 + (i % 3) * 22, 136, 3); }
+  // Accent bars stay in the side margins and scale with the canvas (cabScale shrinks this on mid/low phones).
+  const barW = Math.max(16, Math.round(w * 0.10)), barH = Math.max(1, Math.round(h * 0.018)), barY = Math.round(h * 0.18);
+  for (let i = 0; i < 6; i++) { g.fillStyle = ['#ff2a6a', '#2ae5ff', '#ff5a1a'][i % 3]; g.fillRect(i < 3 ? Math.round(w * 0.03) : w - barW - Math.round(w * 0.03), barY + (i % 3) * Math.round(h * 0.14), barW, barH); }
   const F = { B: ['1110', '1001', '1110', '1001', '1110'], L: ['1000', '1000', '1000', '1000', '1111'], A: ['0110', '1001', '1111', '1001', '1001'], S: ['0111', '1000', '0110', '0001', '1110'], T: ['1111', '0110', '0110', '0110', '0110'], E: ['1111', '1000', '1110', '1000', '1111'], R: ['1110', '1001', '1110', '1010', '1001'] };
-  const word = 'BLASTER', s = 13, cw = 5 * s, x0 = (w - word.length * cw + s) / 2, y0 = 18;
-  g.save(); g.shadowColor = '#ffb000'; g.shadowBlur = 16;
-  [...word].forEach((ch, k) => F[ch].forEach((r, j) => { for (let i = 0; i < 4; i++) if (r[i] === '1') { g.fillStyle = j < 2 ? '#fff26a' : '#ffc21a'; g.fillRect(x0 + k * cw + i * s + (4 - j) * 2, y0 + j * s, s - 1, s - 1); } }));
-  g.restore(); g.font = 'bold 30px "Courier New", monospace'; g.textAlign = 'center'; g.fillStyle = '#bfe9ff'; g.shadowColor = '#2ae5ff'; g.shadowBlur = 8; g.fillText('1984', w / 2, h - 14);
+  // t928u: size the painted BLASTER title to THIS canvas. cabWH may be 512, 384 or 256; a fixed pixel 's'
+  // overflowed on low-tier phones (Dave saw LASTE with 1984 over the letters). Neon wall sign is unchanged.
+  const word = 'BLASTER';
+  const maxW = w * 0.64, maxH = h * 0.42;   // comfortable side margins; leave the lower third for 1984
+  const s = Math.max(2, Math.floor(Math.min(maxW / (word.length * 5 - 1), maxH / 5)));
+  const cw = 5 * s, wordW = word.length * cw - s, skew = s * 0.12;
+  const x0 = (w - wordW) / 2, y0 = Math.round(h * 0.12);
+  g.save(); g.shadowColor = '#ffb000'; g.shadowBlur = Math.max(4, s);
+  [...word].forEach((ch, k) => F[ch].forEach((r, j) => { for (let i = 0; i < 4; i++) if (r[i] === '1') { g.fillStyle = j < 2 ? '#fff26a' : '#ffc21a'; g.fillRect(x0 + k * cw + i * s + (4 - j) * skew, y0 + j * s, Math.max(1, s - 1), Math.max(1, s - 1)); } }));
+  g.restore();
+  const yearPx = Math.max(8, Math.round(h * 0.15));
+  const yearY = Math.min(h - Math.round(h * 0.10), y0 + 5 * s + Math.round(h * 0.22));
+  g.font = 'bold ' + yearPx + 'px "Courier New", monospace'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+  g.fillStyle = '#bfe9ff'; g.shadowColor = '#2ae5ff'; g.shadowBlur = Math.max(4, Math.round(yearPx * 0.3)); g.fillText('1984', w / 2, yearY);
+  g.shadowBlur = 0;
 }
 function attract(W, H) {
   const c = document.createElement('canvas'); { const sz = cabWH(W, H); c.width = sz[0]; c.height = sz[1]; } const g = c.getContext('2d'); if (c.width !== W || c.height !== H) g.scale(c.width / W, c.height / H);
@@ -51,11 +65,12 @@ export function buildBlasterCabinet() {
   const gloss = new THREE.MeshPhysicalMaterial({ color: 0x060608, roughness: 0.18, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 });
   const shape = new THREE.Shape(SPROFILE.map(([x, y]) => new THREE.Vector2(x, y)));
   add(new THREE.ExtrudeGeometry(shape, { depth: SW, bevelEnabled: false }).translate(0, 0, -SW / 2), gloss, 'body');
-  const sideMat = flip => { const t = canvasTex(512, 1024, sideArt, flip); return new THREE.MeshPhysicalMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.28, roughness: 0.25, clearcoat: 0.8 }); };
-  add(sideGeo(1), sideMat(false), 'sidePanelL'); add(sideGeo(-1), sideMat(true), 'sidePanelR');
+  const sideT = capCabSideTexture(canvasTex(512, 1024, sideArt), THREE);
+  const sideMat = new THREE.MeshPhysicalMaterial({ map: sideT, emissive: 0xffffff, emissiveMap: sideT, emissiveIntensity: 0.28, roughness: 0.25, clearcoat: 0.8 });
+  add(sideGeo(1), sideMat, 'sidePanelL'); add(sideGeo(-1), sideMat, 'sidePanelR');
   const tm = []; for (const z of [-SW / 2 - 0.008, SW / 2 + 0.008]) for (let i = 1; i < SPROFILE.length - 1; i++) { const a = SPROFILE[i], b = SPROFILE[i + 1]; tm.push(bar(new THREE.Vector3(a[0], a[1], z), new THREE.Vector3(b[0], b[1], z), 0.03)); }
   add(mergeGeos(tm), gloss, 'trim');   // glossy black edge (no neon on the body)
-  const mq = canvasTex(512, 160, marqueeArt);
+  const mq = bakedOr(THREE, 'tex/marquee_blasterCabinet_512x160.png', () => canvasTex(512, 160, marqueeArt));
   add(segPlane(SPROFILE[7], SPROFILE[8], SW - 0.06, 0.004, 0.86), new THREE.MeshStandardMaterial({ map: mq, emissive: 0xffffff, emissiveMap: mq, emissiveIntensity: 0.6, roughness: 0.3 }), 'marquee');
   add(segPlane(SPROFILE[5], SPROFILE[6], SW - 0.04, 0.003), new THREE.MeshStandardMaterial({ color: 0x08060c, roughness: 0.35, metalness: 0.3 }), 'bezel');
   const sf = segFrame(SPROFILE[5], SPROFILE[6]), sh = sf.L * 0.84, sw = Math.min(SW - 0.14, sh * 4 / 3);

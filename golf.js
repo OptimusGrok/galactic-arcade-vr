@@ -63,7 +63,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const lights = [];
   for (const h of holes) { const l = new THREE.PointLight(0xffffff, 7, 11, 1.3); l.position.set(h.cx, FY + 3.2, h.cz); lights.push(l); grp.add(l); }
   { const l = new THREE.PointLight(0xff4fd8, 4, 9, 1.4); l.position.set(XS + 2, FY + 2.6, (Z0 + WZ1) / 2); lights.push(l); grp.add(l); const f2 = new THREE.PointLight(0x7fe8ff, 3, 8, 1.4); f2.position.set(X0 + RUN * 0.5, -1.4, ZM); lights.push(f2); grp.add(f2); }
-  const setLights = on => { if (S.lightsOn === on) return; S.lightsOn = on; for (const l of lights) l.visible = on; };
+  const setLights = on => { S.lightsOn = on; for (const l of lights) l.visible = on; };   // vrtest-v8: enforced every frame (a warm-up stage left them on in the arcade = an unwarmed 28-light set)
   S.lightsOn = null; setLights(false);
   const toW = (h, x, z) => [h.cx + x, h.cz + z];
   function placeBall(h) { const b = h.ball; h.mesh.visible = !b.sunk; h.mesh.position.set(h.cx + b.x, FY + Math.max(b.y - BALL_R + BALL_R * 1.55, BALL_R * 0.85) + 0.08, h.cz + b.z); }
@@ -78,7 +78,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const lamp = new THREE.PointLight(0xff4fd8, 3, 6, 1.6); lamp.position.set(BX1 - 1.2, FY + 1.6, (Z0 + WZ1) / 2); grp.add(lamp);
   // sign over the top of the stairs
   const signT = canvasTex(512, 160, (g, w, h) => { g.clearRect(0, 0, w, h); g.textAlign = 'center'; g.font = '900 58px Arial Black, Impact, sans-serif'; g.shadowColor = '#2de8ff'; g.shadowBlur = 22;
-    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 72); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 72); g.font = '800 40px Courier New, monospace'; g.fillStyle = '#ffe08a'; g.shadowColor = '#ffb000'; g.fillText('5 🎟 PER VISIT', w / 2, 132); });
+    g.lineWidth = 6; g.strokeStyle = '#2de8ff'; g.strokeText('MINI GOLF ⬇', w / 2, 100); g.fillStyle = '#fff'; g.fillText('MINI GOLF ⬇', w / 2, 100); });   // vrtest-v5 (t458u): golf is free, the old '5 🎟 PER VISIT' line is gone
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 0.81), new THREE.MeshBasicMaterial({ map: signT, transparent: true, depthWrite: false, toneMapped: false })); sign.position.set(X0 + 1.6, 2.9, Z0 + 0.05); sign.name = 'golfSign'; grp.add(sign);
   // ---- the energy shield across the top step (hex field, like room 2's old shield, cyan) ----
   const U = { uT: { value: 0 }, uHit: { value: -9 }, uOff: { value: 0 } }, SH = 2.4;
@@ -113,7 +113,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
 #gfToast{position:fixed;left:50%;top:38%;transform:translate(-50%,-50%);z-index:12;font:900 clamp(20px,6vw,30px)/1.15 'Courier New',monospace;color:#fff;text-align:center;text-shadow:0 0 14px #ff2bd6;pointer-events:none;opacity:0;transition:opacity .3s}#gfToast.on{opacity:1}`;
   document.head.appendChild(css);
   const pop = document.createElement('div'); pop.id = 'gfPop';
-  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">5 TICKETS PER VISIT · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 TICKETS</button><div id="gfHint"></div>';
+  pop.innerHTML = '<div id="gfT">⛳ MINI GOLF</div><div id="gfSub">FREE · HOLE IN ONE +5 · 2 SHOTS +4 · 3 SHOTS +3</div><button id="gfBtn" type="button">PAY 5 TICKETS</button><div id="gfHint"></div>';
   document.body.appendChild(pop);
   const btn = pop.querySelector('#gfBtn'), hint = pop.querySelector('#gfHint'), coarse = matchMedia('(pointer:coarse)').matches;
   const swallow = e => e.stopPropagation(); pop.addEventListener('pointerdown', swallow); pop.addEventListener('touchstart', swallow, { passive: true });
@@ -149,8 +149,8 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     }
     prev.copy(p);
   }
-  function enterVisit() { S.below = true; S.entries++; arm(); S.paid = {}; S.visit = (S.visit || 0) + 1; holes.forEach(resetHole); }
-  function leaveVisit() { S.below = false; stopAim(); setLights(false); }
+  function enterVisit() { S.below = true; S.entries++; arm(); S.paid = {}; S.visit = (S.visit || 0) + 1; holes.forEach(resetHole); gearOn(); }
+  function leaveVisit() { S.below = false; stopAim(); setLights(false); gearOff(); }
   // walkable boxes below: the stairs, the walkway along the south wall, and each hole's green (the monkey walks onto the green to putt)
   const AREAS = [{ x0: X0 - 0.3, x1: XS + 0.3, z0: Z0, z1: Z1 }, { x0: XS - 0.4, x1: BX1 - 0.3, z0: Z0, z1: WZ1 }, ...holes.map(h => h.area)];
   function collideBelow(p, R) {
@@ -187,7 +187,44 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   const aimLine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.02, 1), new THREE.MeshBasicMaterial({ color: 0x2de8ff, toneMapped: false, transparent: true, opacity: 0.85 })); aimLine.visible = false; room.add(aimLine);
   const putter = new THREE.Group(); { const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.95, 6), new THREE.MeshStandardMaterial({ color: 0xc0c8d8, metalness: 0.8, roughness: 0.3 }));
     shaft.position.y = -0.475; putter.add(shaft); const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0xff2bd6, emissive: 0x80104c })); head.position.set(0, -0.95, 0); putter.add(head); }
-  putter.visible = false; putter.name = 'golfPutter'; room.add(putter);
+  putter.visible = false; putter.name = 'golfPutter'; room.add(putter);   // vrtest-v2: never shown any more (it was placed at the ball every frame, so it rode along with the rolling ball)
+  // ---- vrtest-v2 (Dave t449u): in the mini golf room you HOLD a putter in your right hand; gun, jetpack and held prizes are put away and come back
+  // when you leave. Flat: the putter sits in the avatar's 'handR' (it swings with the putt animation). Headset: one on the right controller
+  // (first person; hidden from the mirror like the controllers) and one in the avatar's 'handR' (what the mirror shows). The ball rolls on its own.
+  function makePutter(name) { const g = new THREE.Group(); g.name = name;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.86, 6), new THREE.MeshStandardMaterial({ color: 0xc0c8d8, metalness: 0.8, roughness: 0.3 })); shaft.position.y = -0.47; g.add(shaft);
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.017, 0.16, 8), new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.8 })); grip.position.y = -0.04; g.add(grip);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.045, 0.05), new THREE.MeshStandardMaterial({ color: 0xff2bd6, emissive: 0x80104c })); head.position.set(0.05, -0.92, 0); g.add(head);
+    g.userData.L = 0.945; return g; }
+  const GG = S.gear = { on: false, stash: null, avatar: null, vrHand: null, ons: 0, offs: 0 };
+  const STASH = 'ga.golfStash';
+  function gearOn() { if (GG.on) return; GG.on = true; GG.ons++;
+    const PL = window.__gaPlayer, p = PL && PL.p, sh = window.__shop, held = sh && sh.held;
+    GG.stash = { hand: p ? p.hand : 'none', back: p ? p.back : 'none', held: held ? { R: held.R || null, L: held.L || null } : { R: null, L: null } };
+    try { sessionStorage.setItem(STASH, JSON.stringify(GG.stash)); } catch (e) {}
+    try { if (p && (p.hand !== 'none' || p.back !== 'none')) { p.hand = 'none'; p.back = 'none'; PL.apply(); } } catch (e) {}   // not saved: the save keeps your gear
+    try { if (sh && (GG.stash.held.R || GG.stash.held.L)) sh.unhold(); } catch (e) {}
+    attachPutter(); }
+  function gearOff() { if (!GG.on) return; GG.on = false; GG.offs++; detachPutter();
+    const PL = window.__gaPlayer, p = PL && PL.p, sh = window.__shop, s = GG.stash; GG.stash = null;
+    try { if (p && s && p.hand === 'none' && p.back === 'none' && (s.hand !== 'none' || s.back !== 'none')) { p.hand = s.hand; p.back = s.back; PL.apply(); } } catch (e) {}
+    try { if (sh && s && (s.held.R || s.held.L)) { const h = sh.held; if (!h.R && !h.L) sh.hold({ R: s.held.R, L: s.held.L }); } } catch (e) {}
+    try { sessionStorage.removeItem(STASH); } catch (e) {} }
+  // a reload while down in the golf room: give the prizes back (your hand / back gear was never saved as off)
+  try { const s = JSON.parse(sessionStorage.getItem(STASH) || 'null'); if (s && s.held && (s.held.R || s.held.L)) setTimeout(() => { try { const sh = window.__shop; if (sh && !sh.held.R && !sh.held.L) sh.hold(s.held); } catch (e) {} sessionStorage.removeItem(STASH); }, 4000); } catch (e) {}
+  function attachPutter() { const hand = monkey.getObjectByName('handR'); if (hand) { if (!GG.avatar) GG.avatar = makePutter('golfPutterHeld'); hand.add(GG.avatar); GG.avatar.position.set(0, -0.02, 0); GG.avatar.rotation.set(0, 0, 0); GG.avatar.visible = true; } }
+  function detachPutter() { if (GG.avatar && GG.avatar.parent) GG.avatar.parent.remove(GG.avatar); if (GG.vrHand && GG.vrHand.parent) GG.vrHand.parent.remove(GG.vrHand); }
+  const _hp = new THREE.Vector3(), _hs = new THREE.Vector3();
+  function gearFrame(swing) { if (!GG.on) return;
+    let hand = monkey.getObjectByName('handR');
+    if (hand && GG.avatar && GG.avatar.parent !== hand) { hand.add(GG.avatar); GG.avatar.position.set(0, -0.02, 0); }   // character swap rebuilt the hands
+    if (hand && GG.avatar) { hand.updateWorldMatrix(true, false); hand.getWorldPosition(_hp); hand.getWorldScale(_hs);   // head just above the floor whatever the avatar's size
+      const want = Math.max(0.3, _hp.y - FY - 0.03); GG.avatar.scale.set(1 / (_hs.x || 1), want / GG.avatar.userData.L / (_hs.y || 1), 1 / (_hs.z || 1));
+      GG.avatar.rotation.set(swing || 0, 0, 0); }
+    const V = window.__gaVR, c = V && V.presenting && V.ctrlFor ? V.ctrlFor('right') : null;
+    if (c) { if (!GG.vrHand) { GG.vrHand = makePutter('golfPutterVR'); GG.vrHand.rotation.x = Math.PI / 2 - 0.35; GG.vrHand.position.set(0, -0.01, 0.02); }   // shaft along the pointing ray, a bit downward
+      if (GG.vrHand.parent !== c) c.add(GG.vrHand); }
+    else if (GG.vrHand && GG.vrHand.parent) GG.vrHand.parent.remove(GG.vrHand); }
   const ballW = h => h.mesh.position;
   function nearBall() { if (!S.below || S.aiming) return null; const p = monkey.position; let best = null, bd = 1.25;
     for (const h of holes) { if (h.ball.sunk) continue; const b = ballW(h), d = Math.hypot(b.x - p.x, b.z - p.z); if (d < bd) { bd = d; best = h; } } return best; }
@@ -231,6 +268,9 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   // test / helper hooks
   function sink() { const h = holes[S.cur]; if (!h || h.ball.sunk) return false; h.ball.sunk = true; S.rolling = false; placeBall(h); finishHole(h, true); return true; }
   function goTee(i) { const h = holes[i], [x, z] = toW(h, h.H.tee.x, h.H.tee.z - 0.6); monkey.position.set(x, FY + 0.08, z); st.vel.set(0, 0, 0); prev.copy(monkey.position); }
+  // vrtest-v6 (t464u) debug URL flags so the Quest can bisect the shop freezes: ?nogolfroom=1 keeps the basement hidden until you are down
+  // there, ?nogolflamps=1 keeps the 5 stair lamps off until you are down there (vr.js reads ?nomirror=1 ?nogrok=1 ?nowarm=1 the same way).
+  function dbg() { if (!window.__gaDbg) { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q); window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil') }; } return window.__gaDbg; }
   function update(dt) {
     U.uT.value += dt; if (performance.now() - lastCut > 1000) { lastCut = performance.now(); cutFloor(); }
     if (offT >= 0) { const k = (performance.now() - offT) / 900; U.uOff.value = Math.min(1, k); if (k >= 1) { shield.visible = false; offT = -1; } }
@@ -238,7 +278,7 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     if (near !== S.popShown) { S.popShown = near; pop.classList.toggle('on', near); }
     if (near) refresh(); S.near = near;
     const cam = camera ? camera.position : p, show = S.below || (cam.x > X0 - 8 && cam.x < BX1 + 2 && cam.z < 6 && cam.z > -6);
-    room.visible = show; setLights(S.below || (p.x > X0 - 3 && p.x < X1 && p.z < Z1 + 2));
+    const D = dbg(); room.visible = show && !(D.nogolfroom && !S.below); setLights(S.below || (!D.nogolflamps && p.x > X0 - 3 && p.x < X1 && p.z < Z1 + 2));
     if (show) for (const h of holes) for (const m of h.H.movers) m.update(dt);
     if (S.below && S.rolling) { const h = holes[S.cur]; let t = Math.min(dt, 0.05); while (t > 1e-6) { const s = Math.min(t, 1 / 120); stepHole(h, s); t -= s; } }
     const nb = nearBall(); puttBtn.style.display = nb && play.mode === 'walk' ? 'block' : 'none';
@@ -248,9 +288,10 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
     if (S.aiming) { const h = holes[S.cur], b = ballW(h); powI.style.height = (S.power * 100) + '%'; tip.style.display = S.rolling ? 'none' : 'block';
       aimLine.visible = !S.rolling && !h.ball.sunk; const len = 0.4 + S.power * 2.2; aimLine.scale.z = len; aimLine.rotation.y = S.aim;
       aimLine.position.set(b.x + Math.sin(S.aim) * len / 2, FY + 0.1, b.z + Math.cos(S.aim) * len / 2); aimLine.material.color.setHSL(0.52 - S.power * 0.38, 1, 0.55);
-      putter.visible = true; const f = S.aim, px = b.x - Math.sin(f) * 0.12 - Math.cos(f) * 0.0, pz = b.z - Math.cos(f) * 0.12;
-      let sw = -S.power * 0.6; if (swingT >= 0) { swingT += dt; sw = swingT < 0.12 ? -0.6 + swingT * 8 : 0.35 * Math.max(0, 1 - (swingT - 0.12) * 3); if (swingT > 0.6) swingT = -1; }
-      putter.position.set(px - Math.cos(f) * 0.32, FY + 1.02, pz + Math.sin(f) * 0.32); putter.rotation.set(0, f, 0); putter.rotateZ(0.3); putter.rotateX(-sw); }
+      putter.visible = false;   // vrtest-v2: the putter is in your hand (gearFrame), it no longer sits at / follows the ball
+      let sw = S.vr ? 0 : -S.power * 0.6; if (swingT >= 0) { swingT += dt; sw = swingT < 0.12 ? -0.6 + swingT * 8 : 0.35 * Math.max(0, 1 - (swingT - 0.12) * 3); if (swingT > 0.6) swingT = -1; } S.swing = sw; }
+    else S.swing = 0;
+    gearFrame(S.vr ? 0 : -(S.swing || 0));
   }
   // aiming camera: behind the ball looking down the aim view (⟲ ⟳ rotate it); called from main.js frame() after its own camera
   const cT = new THREE.Vector3(), cP = new THREE.Vector3();
@@ -260,5 +301,13 @@ export function setupGolf({ scene, play, st, monkey, WX, camera }) {
   function ballSnap() { if (!S.below) return undefined; const h = holes[S.cur]; if (!h || h.ball.sunk || (!S.aiming && !S.rolling)) return undefined; const b = ballW(h); return [Math.round(b.x * 100) / 100, Math.round(b.y * 100) / 100, Math.round(b.z * 100) / 100]; }
   Object.assign(S, { update, block, collideBelow, ground, camBlock, camClamp, cam, unlock, arm, refresh, pop, shield, group: grp, room, holes, payout: golfPayout, entry: { x: X0 - 1.0, z: ZM },
     startAim, stopAim, strike, sink, goTee, nearBall, ballSnap, enterVisit, AREAS, vrNear, vrAim, vrStrike, ballAt });
+  // vrtest-v5 (Dave t458u, shop freezes near Grok's counter / toward the golf): the basement (3 holes, 3 point lights each) shows from
+  // 8 m out and the 5 golf lamps switch on from 3 m out; each changes the shop's lit-light count, so three built a new program for EVERY lit
+  // material in view in one frame (~150 programs, 1.7-2.7 s at 4x CPU in the emulator). vr.js pre-warms these light sets in the background;
+  // warmStage(show, lit) stages one and returns the undo.
+  S.warmStage = (show, lit) => { const rv = room.visible, lv = lights.map(l => l.visible); room.visible = show; for (const l of lights) l.visible = lit;
+    return () => { room.visible = rv; lights.forEach((l, i) => { l.visible = lv[i]; }); }; };
+  S.lampsOff = () => { for (const l of lights) l.visible = false; };   // vrtest-v9: vr.js keeps the stair lamps out of the light list unless the shop is drawn
+  S.warmSpot = () => ({ x: X0 - 1.2, z: ZM });
   cutFloor(); return S;
 }

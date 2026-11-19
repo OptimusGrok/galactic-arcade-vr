@@ -2,9 +2,11 @@
 // ENTER VR on the arcade floor -> the headset is the camera at real-world scale (1 unit = 1 m; cabinets are life size).
 //   LEFT STICK   smooth walk where you look (same wall / cabinet collision as the flat game)
 //   RIGHT STICK  left/right = smooth turn; the further you push, the faster (deadzone 0.15, x^2 curve, max 90 deg/s) (t350u)
+//   R STICK CLICK  (button 3) holographic laser fire-type menu above the right controller; stick moves the highlight, A selects, click again closes (t489u)
+//   L STICK CLICK  hide / show the left-wrist HUD (battery, time, player count)
 //   TRIGGER      point at a cabinet = play it; point at the floor = teleport there; point at a sign / menu button = press it
 //   Y / B        MENU: BEAM TO SHOP / ARCADE (teleporter), BUY TICKETS (ticket exchange), PRIZE SHOP, NEON BRICKS
-//   signs        BUY TICKETS over the kiosk, BEAM TO SHOP / ARCADE over each teleporter pad, PRIZE SHOP over the shop counter,
+//   signs        BUY TICKETS over the kiosk, SHOP / NEON KNOCKOUT pad labels (press to beam), BEAM TO ARCADE over the shop / studio pads, PRIZE SHOP over the shop counter,
 //                NEON BRICKS by the window game (point at the window + trigger = play; sticks move, A/X/trigger rotate, B/Y drop, hold grip = leave)
 //   in a game    the cabinet's game shows on a big screen in front of you. A/X = insert tickets / start, then the
 //                game's buttons (sticks = arrows, A/X = fire / primary, B/Y = secondary or CONTINUE, trigger = fire or tap
@@ -15,6 +17,7 @@ import * as THREE from 'three';
 import { createVRChess } from './vrchess.js';   // v17 immersive VR chess
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
+import { loadPicture } from './texload.js';   // vrtest-v4: prebuilt icon sheet (KTX2 / webp)
 
 const NAMES = { strike: 'STRIKE', ghost: 'GHOST 256', monkey: 'MONKEY CROSSING', berserker: 'BERSERKER', orc: 'ORC ATTACK', cyber: 'CYBERCITY', blaster: 'BLASTER', pip: 'SUPER PIP QUEST', bb: 'BURROW BUSTER', rockfall: 'ROCKFALL RUSH', skytower: 'SKY TOWER', nova: 'NOVA TETHER', claw: 'CLAW MACHINE', roadster: 'MARS ROADSTER', ds: 'DEAD SIGNAL' };
 const SIGN_MAX = 30, TURN_DZ = 0.15, TURN_MAX = Math.PI / 2, SPEED = 2.2, RAY_MAX = 12, GRIP_EXIT_S = 0.6;
@@ -74,6 +77,12 @@ export function setupVR(A) {
     } catch (e) { console.warn('ENTER VR failed', e); S.lastError = String(e); }
   }
   S.enter = enter; S.exit = () => { try { session && session.end(); } catch (e) {} };
+  // vrtest-v5 (Dave t462u): Y menu -> BACK TO TITLE SCREEN -> YES: end the XR session (three's sessionend releases held input, the
+  // animation loop, avatar hands, game page pumping) and then do exactly what the flat HOME button does (play.home.go: leave any cabinet
+  // game / demo, keys up, __startUI.show), so PLAY / PLAY ON SCREEN work again from the start screen.
+  function toTitleFlat() { S.toTitles = (S.toTitles || 0) + 1; try { if (play.home && play.home.go) play.home.go(); else if (window.__startUI && window.__startUI.show) window.__startUI.show(); } catch (e) { S.lastError = String(e); } }
+  function backToTitle() { uiClose(); if (S.presenting && session) { S.toTitle = true; try { releaseAll(); } catch (e) {} try { session.end(); } catch (e) { S.toTitle = false; toTitleFlat(); } } else toTitleFlat(); }
+  S.backToTitle = backToTitle;
 
   // ---------- controllers: ray + simple built-in model (Quest models load from the WebXR input-profile CDN when online) ----------
   const ctrls = [], grips = [];
@@ -101,7 +110,7 @@ export function setupVR(A) {
   function panel(w, h, cw, ch) { const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch; const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, toneMapped: false, depthTest: false, depthWrite: false }));
     m.renderOrder = 1001; m.userData = { cv, g: cv.getContext('2d'), tex, txt: '' }; return m; }
-  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : '') + (opts.bat ? '|bat' + opts.bat.pct + (opts.bat.charging ? 'c' : '') : ''); if (m.userData.txt === key) return; m.userData.txt = key;
+  function drawPanel(m, lines, opts = {}) { const key = lines.join('|') + (opts.bar ? '|bar' + Math.round(opts.bar.v * 50) + opts.bar.low : '') + (opts.bat ? '|bat' + opts.bat.pct + (opts.bat.charging ? 'c' : '') : '') + (opts.status ? '|st' + opts.status : ''); if (m.userData.txt === key) return; m.userData.txt = key;
     const { cv, g, tex } = m.userData, W = cv.width, H0 = cv.height, H = opts.bar ? Math.round(H0 * 0.72) : H0; g.clearRect(0, 0, W, H0);
     if (opts.bar) { const b = opts.bar, y = H + 2, bh = H0 - H - 8, x = 150, bw = W - x - 16;   // t358u: jetpack ENERGY bar under the text
       g.fillStyle = 'rgba(20,8,4,0.9)'; g.strokeStyle = '#ffb060'; g.lineWidth = 4; g.beginPath(); g.roundRect ? g.roundRect(4, y, W - 8, bh, bh * 0.3) : g.rect(4, y, W - 8, bh); g.fill(); g.stroke();
@@ -109,12 +118,16 @@ export function setupVR(A) {
       const gr = g.createLinearGradient(x, 0, x + bw, 0); gr.addColorStop(0, '#ff3b1a'); gr.addColorStop(0.55, '#ffb020'); gr.addColorStop(1, '#ffe080');
       g.fillStyle = 'rgba(255,255,255,0.08)'; g.fillRect(x, y + 8, bw, bh - 16); g.fillStyle = b.low ? '#ff3030' : gr; g.fillRect(x, y + 8, Math.max(0, Math.min(1, b.v)) * bw, bh - 16); }
     g.fillStyle = 'rgba(10,6,24,0.86)'; g.strokeStyle = opts.border || '#3ff3ff'; g.lineWidth = Math.max(3, H * 0.03); g.beginPath(); g.roundRect ? g.roundRect(4, 4, W - 8, H - 8, H * 0.12) : g.rect(4, 4, W - 8, H - 8); g.fill(); g.stroke();
-    const n = lines.length, lh = (H - 16) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
-    let bw = 0; if (opts.bat) { const B = opts.bat, lh0 = (H - 16) / lines.length, bh = lh0 * 0.5, bwid = bh * 2, x = W - 24 - bwid - 92, y = 8 + lh0 * 0.5 - bh / 2, col = B.charging ? '#7dff9a' : B.pct <= 20 ? '#ff4040' : '#e8f6ff';   // battery icon + %, top right
+    // vrtest-v5 (t460u): optional status strip on top (controller batteries · local time · players), drawn small above the lines
+    const y0 = opts.status ? Math.round(H * 0.24) : 0;
+    if (opts.status) { g.fillStyle = 'rgba(63,243,255,0.14)'; g.fillRect(12, 10, W - 24, y0 - 6); g.fillStyle = '#9fe8ff'; g.font = '900 ' + Math.round(y0 * 0.5) + 'px "Arial Black", Arial, sans-serif';
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(opts.status, W / 2, 8 + y0 / 2, W - 36); }
+    const n = lines.length, lh = (H - 16 - y0) / n; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let bw = 0; if (opts.bat) { const B = opts.bat, lh0 = lh, bh = lh0 * 0.5, bwid = bh * 2, x = W - 24 - bwid - 92, y = 8 + y0 + lh0 * 0.5 - bh / 2, col = B.charging ? '#7dff9a' : B.pct <= 20 ? '#ff4040' : '#e8f6ff';   // battery icon + %, top right
       g.strokeStyle = col; g.lineWidth = 4; g.strokeRect(x, y, bwid, bh); g.fillStyle = col; g.fillRect(x + bwid, y + bh * 0.3, 6, bh * 0.4); g.fillRect(x + 4, y + 4, Math.max(0, (bwid - 8) * B.pct / 100), bh - 8);
       if (B.charging) { g.fillStyle = '#ffe14a'; g.strokeStyle = '#1a1030'; g.lineWidth = 2; const cx = x + bwid / 2, cy = y + bh / 2; g.beginPath(); g.moveTo(cx + 4, cy - bh * 0.62); g.lineTo(cx - 9, cy + 3); g.lineTo(cx - 1, cy + 3); g.lineTo(cx - 5, cy + bh * 0.62); g.lineTo(cx + 9, cy - 3); g.lineTo(cx + 1, cy - 3); g.closePath(); g.fill(); g.stroke(); }
       g.fillStyle = col; g.font = '900 ' + Math.round(bh * 0.95) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(B.pct + '%', x + bwid + 14, y + bh / 2 + 1, 84); g.textAlign = 'center'; bw = bwid + 120; }
-    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, i === 0 && bw ? (W - bw) / 2 : W / 2, 8 + lh * (i + 0.5), i === 0 && bw ? W - 24 - bw : W - 24); });
+    lines.forEach((t, i) => { g.fillStyle = i === 0 ? (opts.c0 || '#ffe14a') : '#e8f6ff'; g.font = '900 ' + Math.round(lh * (i === 0 ? 0.62 : 0.5)) + 'px "Arial Black", Arial, sans-serif'; g.fillText(t, i === 0 && bw ? (W - bw) / 2 : W / 2, 8 + y0 + lh * (i + 0.5), i === 0 && bw ? W - 24 - bw : W - 24); });
     tex.needsUpdate = true; }
   // t361u: headset battery on the left-controller display (navigator.getBattery, live via its events). Hidden when the browser has no Battery API.
   const BAT = { supported: false, level: null, charging: false, tried: false, updates: 0 };
@@ -122,7 +135,50 @@ export function setupVR(A) {
       const up = () => { BAT.level = typeof b.level === 'number' ? b.level : null; BAT.charging = !!b.charging; BAT.updates++; }; up(); for (const ev of ['levelchange', 'chargingchange']) try { b.addEventListener(ev, up); } catch (e) {} }).catch(() => {}); } catch (e) {} }
   S.battery = () => ({ supported: BAT.supported, level: BAT.level, charging: BAT.charging, updates: BAT.updates, shown: !!(hud.userData.txt && /\|bat/.test(hud.userData.txt)) });
   const HUD_TILT = new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.9, 0, 0));
-  const hud = panel(0.2, 0.09, 512, 230); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
+  // vrtest-v5 (t460u): controller batteries, local time and player count on the same display. WebXR has no standard controller battery;
+  // we read one only if the browser exposes it on the input source / gamepad (none known on the Quest Browser), else show '--'.
+  function ctrlBattery(hand) { try { const ss = renderer.xr.getSession && renderer.xr.getSession(); if (!ss) return null;
+      for (const src of ss.inputSources) { if (src.handedness !== hand) continue; const gp = src.gamepad || {}, b = src.battery || gp.battery || null;
+        let v = b && typeof b.level === 'number' ? b.level : typeof gp.batteryLevel === 'number' ? gp.batteryLevel : typeof src.batteryLevel === 'number' ? src.batteryLevel : null;
+        if (v == null) for (const obj of [src, src.gamepad]) { if (!obj || v != null) continue; for (let p = obj; p && p !== Object.prototype && v == null; p = Object.getPrototypeOf(p)) for (const k of Object.getOwnPropertyNames(p)) { if (!/batt/i.test(k)) continue; let x; try { x = obj[k]; } catch (e) { continue; } if (typeof x === 'number') { v = x; break; } if (x && typeof x.level === 'number') { v = x.level; break; } } }
+        return v == null ? null : Math.round(v <= 1 ? v * 100 : v); } } catch (e) {} return null; }
+  const ST = { t: -1, txt: '', l: null, r: null, players: 1, time: '', builds: 0 };
+  function hudStatus(now) { if (now - ST.t < 1000 && ST.txt) return ST.txt; ST.t = now;   // at most once a second; drawPanel redraws only if the text changed
+    ST.l = ctrlBattery('left'); ST.r = ctrlBattery('right'); const mp = window.__mp; ST.players = mp && mp.state === 'on' ? (mp.count || 1) : 1;
+    const d = new Date(); ST.time = d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0');
+    ST.txt = 'L ' + (ST.l == null ? '--' : ST.l + '%') + '  R ' + (ST.r == null ? '--' : ST.r + '%') + '  ·  ' + ST.time + '  ·  ' + ST.players + (ST.players === 1 ? ' PLAYER' : ' PLAYERS'); ST.builds++; return ST.txt; }
+  S.hudStatus = () => Object.assign({}, ST, { drawn: !!(hud.userData.txt && hud.userData.txt.indexOf('|st' + ST.txt) >= 0) });
+  const hud = panel(0.2, 0.118, 512, 302);
+  // vrtest-v6 (Dave t465u): ?padinfo=1 = a debug board above the left-controller display listing every property (own + prototype chain,
+  // values for plain fields) of each XRInputSource and its Gamepad, plus navigator.getGamepads() outside XR, so a headset build can show
+  // whatever the browser really exposes (no standard controller battery exists in WebXR / the Gamepad API; we look anyway: any field whose
+  // name contains 'batt' is picked up by ctrlBattery's scan below and shown on the status line).
+  const PADINFO = /[?&]padinfo=1\b/.test(location.search);
+  const padBoard = PADINFO ? panel(0.42, 0.42, 1024, 1024) : null; if (padBoard) { padBoard.name = 'vrPadInfo'; padBoard.visible = false; scene.add(padBoard); }
+  function propsOf(o, depth) { const out = []; if (!o || typeof o !== 'object') return out; const seen = new Set(); let p = o, lvl = 0;
+    while (p && p !== Object.prototype && lvl < 6) { const cn = (p.constructor && p.constructor.name) || '?';
+      for (const k of Object.getOwnPropertyNames(p)) { if (seen.has(k) || k === 'constructor') continue; seen.add(k); let v; try { v = o[k]; } catch (e) { v = '!' + e.name; }
+        const t = typeof v, sv = t === 'function' ? '()' : v === null ? 'null' : t === 'object' ? (Array.isArray(v) || (v && typeof v.length === 'number') ? '[' + v.length + ']' : '{' + ((v && v.constructor && v.constructor.name) || 'obj') + '}') : String(v).slice(0, 24);
+        out.push((lvl ? cn + '.' : '') + k + '=' + sv); }
+      p = Object.getPrototypeOf(p); lvl++; }
+    return out; }
+  const PI_ = { t: -1e9, lines: [], key: '' };
+  function battScan(o) { const r = []; for (const line of propsOf(o)) if (/batt|power|charge/i.test(line)) r.push(line); return r; }
+  function padInfoUpdate(now) { if (!padBoard) return; padBoard.visible = !!(S.presenting && !S.hudHidden); if (!padBoard.visible) return;
+    padBoard.position.set(0, 0.3, 0).applyQuaternion(hud.quaternion).add(hud.position); padBoard.quaternion.copy(hud.quaternion);
+    if (now - PI_.t < 2000) return; PI_.t = now; const L = ['PADINFO  ' + navigator.userAgent.slice(0, 90)];
+    try { const ss = renderer.xr.getSession(); for (const src of (ss && ss.inputSources) || []) { L.push('== ' + src.handedness + ' ' + src.targetRayMode + ' profiles=' + (src.profiles || []).join(','));
+        L.push('src: ' + propsOf(src).join('  ')); if (src.gamepad) { L.push('pad: ' + propsOf(src.gamepad).join('  ')); const h = src.gamepad.hapticActuators; if (h && h[0]) L.push('haptic[0]: ' + propsOf(h[0]).join('  ')); }
+        const b = battScan(src).concat(src.gamepad ? battScan(src.gamepad) : []); L.push('battery-like: ' + (b.length ? b.join('  ') : 'none')); } } catch (e) { L.push('err ' + e); }
+    try { const gp = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : []; L.push('navigator.getGamepads(): ' + gp.length + ' ' + gp.map(g => g.id + ' ' + propsOf(g).filter(x => /batt|power|charge|hand|pose/i.test(x)).join(' ')).join(' | ')); } catch (e) {}
+    L.push('navigator: getBattery=' + !!navigator.getBattery + ' hid=' + !!navigator.hid + ' bluetooth=' + !!navigator.bluetooth + ' usb=' + !!navigator.usb + ' headset bat=' + (BAT.level != null ? Math.round(BAT.level * 100) + '%' : '--'));
+    const key = L.join('\n'); if (key === PI_.key) return; PI_.key = key; PI_.lines = L; try { console.log('[padinfo]\n' + key); } catch (e) {}
+    const { cv, g, tex } = padBoard.userData; g.clearRect(0, 0, 1024, 1024); g.fillStyle = 'rgba(6,4,18,0.92)'; g.fillRect(0, 0, 1024, 1024); g.strokeStyle = '#ffde00'; g.lineWidth = 6; g.strokeRect(3, 3, 1018, 1018);
+    g.fillStyle = '#e8f6ff'; g.font = '20px monospace'; g.textAlign = 'left'; g.textBaseline = 'top'; let y = 10;
+    for (const line of L) { let rest = line; g.fillStyle = /^==/.test(line) ? '#ffde00' : /^battery-like: (?!none)/.test(line) ? '#7dff9a' : '#e8f6ff';
+      while (rest.length && y < 1000) { g.fillText(rest.slice(0, 84), 10, y); rest = rest.slice(84); y += 22; } }
+    tex.needsUpdate = true; }
+  S.padInfo = () => ({ on: PADINFO, lines: PI_.lines }); hud.name = 'vrHud'; hud.visible = false; scene.add(hud);   // follows the left controller: the in-world ticket display
 
   // ---------- the game screen (shown while a cabinet game runs) ----------
   const scr = new THREE.Group(); scr.name = 'vrGameScreen'; scr.visible = false; scene.add(scr);
@@ -192,13 +248,13 @@ export function setupVR(A) {
     const sx = ax.length >= 4 ? ax[2] : (ax[0] || 0), sy = ax.length >= 4 ? ax[3] : (ax[1] || 0);
     const leg = !!(gp && gp.mapping !== 'xr-standard' && gp.buttons.length < 6);   // v24: a non xr-standard pad (old Oculus layout: 3 = A / X, 4 = B / Y)
     const cur = { trig: b(0), grip: b(1), a: leg ? b(3) : b(4), b: leg ? b(4) : b(5), stick: b(3), x: Math.abs(sx) > 0.08 ? sx : 0, y: Math.abs(sy) > 0.08 ? sy : 0, src };
-    for (const k of ['trig', 'grip', 'a', 'b']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
+    for (const k of ['trig', 'grip', 'a', 'b', 'stick']) cur[k + 'Down'] = cur[k] && !(prev && prev[k]);
     return cur; }
-  function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null;
+  function poll() { const L = IN.left, R = IN.right; IN.left = IN.right = null; if (S.blurred) { S.blurPolls = (S.blurPolls || 0) + 1; return; }   // vrtest-v5: system overlay up: no input
     const ss = session && session.inputSources; if (!ss) return;
     for (const src of ss) { if (!src.gamepad || (src.handedness !== 'left' && src.handedness !== 'right')) continue; IN[src.handedness] = readPad(src, src.handedness === 'left' ? L : R); } }
   function ctrlFor(hand) { for (const c of ctrls) if (c.userData.hand === hand) return c; return null; }
-  function pulse(src, k = 0.5, ms = 30) { try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.pulse) h.pulse(k, ms); } catch (e) {} }
+  function pulse(src, k = 0.5, ms = 30) { if (S.blurred) return; try { const h = src && src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.pulse) h.pulse(k, ms); } catch (e) {} }
   function rayOf(c) { c.updateMatrixWorld(true); _o.setFromMatrixPosition(c.matrixWorld); if (GF.on && c === GF.ctrl) _o.copy(GF.o); c.getWorldQuaternion(_q); _d.set(0, 0, -1).applyQuaternion(_q).normalize(); _ray.set(_o, _d); return _ray; }
 
   // ---------- rig: the player's place in the arcade = an offset reference space ----------
@@ -242,7 +298,7 @@ export function setupVR(A) {
   function vcTap() { const vc = window.__voice; if (!vc) return; const r = vc.tap();
     const show = () => { const st = vc.state; say(st === 'on' ? (vc.muted ? 'MIC MUTED' : 'MIC ON · PLAYERS IN VOICE HEAR YOU') : st === 'listen' ? (vc.err === 'NotAllowedError' ? 'MIC BLOCKED · LISTENING ONLY' : 'NO MIC · LISTENING ONLY') : (vc.msg || '').toUpperCase().slice(0, 40)); UI.key = ''; };
     if (r && r.then) { say('ASKING FOR THE MIC…'); r.then(show, show); } else show(); }
-  function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : undefined); S.beams++; return true; }
+  function beam(dest) { const tp = A.tp; if (!tp || tp.state !== 'idle' || play.mode !== 'walk') return false; uiClose(); tp.go(dest === 'nk' ? 'nk' : dest === 'shop' || !dest ? 'shop' : dest); S.beams++; return true; }
   // v16 Neon Knockout studio (nk/nkgame.js, lazy): its gloves replace the controller models there; rays hide during a round
   const nkIn = () => !!(A.tp && A.tp.NKX != null && monkey.position.x < A.tp.NKX / 2);
   const nkRound = () => { const N = window.__nkGame; return !!(N && N.inStudio && N.state.mode === 'play'); };
@@ -260,7 +316,7 @@ export function setupVR(A) {
   function collect() { const K = kiosk(); if (!K || !K.pending || K.dispK < 1) return false; const n = K.pending;
     K.setState({ bal: K.C.bal, at: K.C.at, pending: 0 }); play.addTickets(n); K.pocketed = (K.pocketed || 0) + n; S.collected += n; say('+' + n + ' TICKETS COLLECTED'); return true; }
   function nbStart() { const n = nbApi(); if (!n || n.playing || play.mode !== 'walk' || (A.tp && A.tp.locked)) return false; uiClose(); n.start(); if (n.playing) { S.nbStarts++; try { n.setZoomAmt(0); } catch (e) {} } return n.playing; }
-  S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on })); }, beam, collect, nbStart,
+  S.ui = { open: k => uiOpen(k), close: uiClose, nb: () => nbApi(), tp: () => A.tp, shop: () => A.shop, get kind() { return UI.open; }, get btns() { return UI.btns.map(b => ({ id: b.id, label: b.label, on: b.on, art: b.art || null, pix: b.pix || null })); }, beam, collect, nbStart,
     // world point of a button (tests aim the ray at it)
     btnWorld(id) { const b = UI.btns.find(q => q.id === id); if (!b) return null; uiM.updateMatrixWorld(true); const p = new THREE.Vector3(((b.x + b.w / 2) / 1024 - 0.5) * 1.0, (0.5 - (b.y + b.h / 2) / 768) * 0.75, 0); return uiM.localToWorld(p).toArray(); } };
   // v12 (t388u): picture tiles for the backpack (prizes + accessories)
@@ -274,6 +330,7 @@ export function setupVR(A) {
   const floorNow = () => ROOM_FLOORS[Math.floor(performance.now() / 5000) % ROOM_FLOORS.length];
   S.menuFloor = () => floorNow()[0]; S.menuArt = {};
   function uiSpec() {
+    if (UI.open === 'shop' || UI.open === 'pack' || UI.open === 'ward') { try { const sh = window.__shop || (A.shop); if (sh && sh.queueIcons) sh.queueIcons(); } catch (e) {} }
     const B = [], add = (id, label, x, y, w, h, on, act) => B.push({ id, label, x, y, w, h, on: on !== false, act });
     let title = '', sub = '', body = '';
     add('close', 'X', 900, 22, 100, 90, true, uiClose);
@@ -287,8 +344,10 @@ export function setupVR(A) {
     else if (UI.open === 'shop') { const sh = A.shop; title = 'GROK PRIZE SHOP';
       if (!sh) sub = 'THE SHOP IS LOADING'; else { const b = sh.balance(), per = 4, items = (sh.ITEMS || []).concat(sh.NK_SHOP ? sh.NK_SHOP() : []), pages = Math.max(1, Math.ceil(items.length / per)); UI.page = Math.min(UI.page, pages - 1);
         sub = 'YOU HAVE ' + b + ' TICKETS  ·  PAGE ' + (UI.page + 1) + '/' + pages;
-        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => it.nk ? add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + (it.on ? 'WEARING' : it.owned ? 'OWNED · WEAR' : it.price), 40, 190 + i * 112, 944, 96, it.owned || b >= it.price, () => { if (sh.buyGlove(it.nk)) { S.shopBuys++; say((it.owned ? 'WEARING: ' : 'GOT IT: ') + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); })   // v16 Neon Knockout gloves
-          : add('item_' + it.id, it.name.toUpperCase() + '  ·  ' + it.price, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); }));
+        items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const lab = it.nk ? it.name.toUpperCase() + '  ·  ' + (it.on ? 'WEARING' : it.owned ? 'OWNED · WEAR' : it.price + ' TICKETS') : it.name.toUpperCase() + '  ·  ' + it.price + ' TICKETS';
+          it.nk ? add('item_' + it.id, lab, 40, 190 + i * 112, 944, 96, it.owned || b >= it.price, () => { if (sh.buyGlove(it.nk)) { S.shopBuys++; say((it.owned ? 'WEARING: ' : 'GOT IT: ') + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); })
+          : add('item_' + it.id, lab, 40, 190 + i * 112, 944, 96, b >= it.price, () => { if (sh.buy(it.id)) { S.shopBuys++; say('GOT IT: ' + it.name.toUpperCase()); } else say('NEED ' + it.price + ' TICKETS · YOU HAVE ' + sh.balance()); });
+          B[B.length - 1].art = 'shopRow'; B[B.length - 1].pix = it.nk ? 'nk_' + it.nk : it.id; });
         add('prev', '<', 40, 640, 150, 96, UI.page > 0, () => { UI.page--; }); add('next', '>', 834, 640, 150, 96, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'ward') { const gp = window.__gaPlayer; title = 'MONKEY BACKPACK';
       packTabs(add, 'ward');
@@ -303,7 +362,7 @@ export function setupVR(A) {
           add('w_' + k + '_' + v, nm(v) + (on ? ' · ON' : own ? '' : ' · ' + pr + ' T'), 40 + i * 240, 380, 224, 210, own || bal >= pr, () => {
             if (own) { gp.pick(k, v); S.wardPicks++; say(v === 'none' ? 'REMOVED' : 'WEARING ' + nm(v)); }
             else { gp.tryOn(k, v); if (gp.buy()) { S.wardBuys++; S.wardPicks++; say('BOUGHT · WEARING ' + nm(v)); } else { if (gp.wardrobe) gp.wardrobe.try = null; say('NEED ' + pr + ' TICKETS'); } } });
-          B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); B[B.length - 1].sel = on; });
+          B[B.length - 1].ic = v === 'none' ? '\u2716' : (WARD_IC[k] || '\u2728'); if (v !== 'none') B[B.length - 1].pix = k + ':' + v; B[B.length - 1].sel = on; });
         if (L.some(a => a[0] === 'none')) add('remove', 'REMOVE ' + k.toUpperCase(), 230, 610, 564, 80, gp.p[k] !== 'none', () => { gp.pick(k, 'none'); S.wardPicks++; say('REMOVED'); });
         add('prev', '<', 40, 610, 170, 80, UI.page > 0, () => { UI.page--; }); add('next', '>', 814, 610, 170, 80, UI.page < pages - 1, () => { UI.page++; }); } }
     else if (UI.open === 'chat') { title = 'CHAT WITH GROK'; const C = chatApi();   // v23 (Dave t432u): preset questions only (no TYPE keyboard, no TALK)
@@ -323,7 +382,7 @@ export function setupVR(A) {
         sub = 'RIGHT: ' + (h.R ? nm(h.R) : '-') + '   ·   LEFT: ' + (h.L ? nm(h.L) : '-');
         if (!items.length) UI.msg = UI.msg || 'NO PRIZES YET · BUY AT THE GROK SHOP OR WIN THE CLAW';
         items.slice(UI.page * per, UI.page * per + per).forEach((it, i) => { const sl = h.R === it.id ? 'R' : h.L === it.id ? 'L' : '';
-          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? ' · ' + sl : ''), 40 + (i % 4) * 240, 250 + Math.floor(i / 4) * 175, 224, 160, true, () => packTap(sh, it)); B[B.length - 1].ic = prizeIcon(it); B[B.length - 1].sel = !!sl; });
+          add('p_' + it.id, it.name + (it.n > 1 ? ' x' + it.n : '') + (sl ? ' · ' + sl : ''), 40 + (i % 4) * 240, 250 + Math.floor(i / 4) * 175, 224, 160, true, () => packTap(sh, it)); B[B.length - 1].ic = prizeIcon(it); B[B.length - 1].pix = it.id; B[B.length - 1].sel = !!sl; });
         add('away_R', 'PUT R AWAY', 40, 610, 300, 70, !!h.R, () => { sh.unhold('R'); S.packUnequips = (S.packUnequips || 0) + 1; say('RIGHT HAND EMPTY'); });
         add('away_L', 'PUT L AWAY', 362, 610, 300, 70, !!h.L, () => { sh.unhold('L'); S.packUnequips = (S.packUnequips || 0) + 1; say('LEFT HAND EMPTY'); });
         add('away', 'PUT BOTH AWAY', 684, 610, 300, 70, !!(h.R || h.L), () => { sh.unhold(); S.packUnequips = (S.packUnequips || 0) + 1; say('HANDS EMPTY'); });
@@ -334,13 +393,17 @@ export function setupVR(A) {
       const L = tb === 'floor' ? roomFloors() : ROOM_WALLS, cur = roomNow(tb);
       L.forEach(([v, nm], i) => add((tb === 'floor' ? 'fl_' : 'wl_') + v, nm + (cur === v ? '  ·  ON' : ''), 40 + (i % 2) * 484, 265 + Math.floor(i / 2) * 95, 460, 85, true, () => roomPick(tb, v, nm)));
       add('rback', 'BACK', 230, 640, 564, 96, true, () => uiOpen('menu')); }
+    else if (UI.open === 'toTitle') { title = 'BACK TO TITLE SCREEN?'; const P = play, inGame = P.mode === 'game' && P.sub === 'play';
+      sub = (inGame ? 'THE CURRENT GAME WILL END · ' : '') + 'LEAVES VR · TICKETS + PRIZES ARE KEPT';
+      add('ttYes', 'YES', 162, 260, 330, 160, true, backToTitle); add('ttNo', 'NO', 532, 260, 330, 160, true, () => uiOpen('menu')); }
     else if (UI.open === 'menu') { const tp = A.tp, inShop = tp && tp.where === 2; title = 'MENU'; { const w = wallet(); sub = '$' + w.cash + ' CASH   ·   ' + w.tickets + ' TICKETS'; }
       // v12 (t388u): the monkey BACKPACK (prizes + accessories inside) and a FLOOR + WALLS square that shows a different floor every 5 s;
       // no BEAM (the pad signs beam) / BUY TICKETS (the ticket machine + its sign) / CLOSE: just the X (or GRIP)
       add('pack', 'BACKPACK', 70, 180, 420, 350, true, () => { UI.packTab = 'prizes'; uiOpen('pack'); }); B[B.length - 1].art = 'pack';
       add('room', 'FLOOR + WALLS', 534, 180, 420, 350, !!window.__setFloor, () => { UI.roomTab = UI.roomTab || 'floor'; uiOpen('room'); }); B[B.length - 1].art = 'floor';
       // v15 (t398u): background music only (music.js 'neonarcade.music', the same switch as the flat Options MUSIC button); game sounds + voice chat stay
-      { const mu = window.__music, on = !mu || mu.on !== false; add('music', on ? 'MUTE MUSIC' : 'MUSIC ON', 70, 546, 884, 58, !!(mu && mu.setOn), () => { mu.setOn(!(mu.on !== false)); say(mu.on ? 'MUSIC ON' : 'MUSIC MUTED · GAME SOUNDS + VOICE STAY ON'); UI.key = ''; });
+      add('toTitle', 'BACK TO TITLE SCREEN', 524, 546, 430, 58, true, () => uiOpen('toTitle'));   // vrtest-v5 (Dave t462u)
+      { const mu = window.__music, on = !mu || mu.on !== false; add('music', on ? 'MUTE MUSIC' : 'MUSIC ON', 70, 546, 430, 58, !!(mu && mu.setOn), () => { mu.setOn(!(mu.on !== false)); say(mu.on ? 'MUSIC ON' : 'MUSIC MUTED · GAME SOUNDS + VOICE STAY ON'); UI.key = ''; });
         if (!on) B[B.length - 1].sel = true; }
       // v14 (t396u): voice chat. MIC ON asks for the mic (only on this tap), then the same button mutes / unmutes; ✕ VC leaves voice
       const vc = window.__voice, vin = !!(vc && vc.state !== 'off');
@@ -397,7 +460,7 @@ export function setupVR(A) {
   S.chat = { start: chatStart, ask: chatAsk, get q() { return UI.chatQ || ''; }, get a() { return UI.chatA || ''; }, qs: CHAT_QS };
   function wrapText(g, text, maxW) { const out = []; for (const para of String(text || '').split('\n')) { let line = ''; for (const w of para.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } out.push(line); } return out; }
   function uiDraw() { const sp = uiSpec(); UI.btns = sp.B; const msg = UI.msgT > 0 ? UI.msg : '';
-    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(','); if (key === UI.key) return; UI.key = key;
+    const key = sp.title + '|' + sp.sub + '|' + (sp.body || '') + '|' + msg + '|' + UI.hover + '|' + (UI.open === 'menu' ? floorNow()[0] : '') + '|' + sp.B.map(b => b.id + b.label + b.on + (b.sel ? 's' : '')).join(',') + '|ir' + ((window.__shop && window.__shop.iconRev) || 0); if (key === UI.key) return; UI.key = key;
     const { cv, g, tex } = uiM.userData; g.clearRect(0, 0, 1024, 768);
     g.fillStyle = 'rgba(10,6,24,0.92)'; g.strokeStyle = '#3ff3ff'; g.lineWidth = 8; g.beginPath(); g.roundRect ? g.roundRect(4, 4, 1016, 760, 40) : g.rect(4, 4, 1016, 760); g.fill(); g.stroke();
     g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe14a'; g.font = '900 64px "Arial Black", Arial, sans-serif'; g.fillText(sp.title, UI.open === 'pack' ? 500 : 470, 70, UI.open === 'pack' ? 740 : 820);
@@ -415,9 +478,18 @@ export function setupVR(A) {
   // v12 (t388u): picture tiles: the real monkey backpack art (inventory.js's #bPack canvas), the cycling floor, or a big emoji + name
   function tileArt(g, b) { const pad = 18, lh = Math.max(26, Math.min(44, b.h * 0.13)), ih = b.h - lh - pad * 2.2, cx = b.x + b.w / 2;
     g.save(); g.beginPath(); g.rect(b.x + 6, b.y + 6, b.w - 12, b.h - 12); g.clip();
+    if (b.art === 'shopRow') {
+      const ts = Math.min(80, b.h - 16), tx = b.x + 12, ty = b.y + (b.h - ts) / 2;
+      g.fillStyle = 'rgba(8,12,24,0.55)'; g.beginPath(); g.roundRect ? g.roundRect(tx, ty, ts, ts, 12) : g.rect(tx, ty, ts, ts); g.fill();
+      if (b.pix && window.__shop && window.__shop.iconBlit && window.__shop.iconBlit(g, b.pix, tx + 4, ty + 4, ts - 8, ts - 8)) S.menuArt.icons = (S.menuArt.icons || 0) + 1;
+      else if (b.ic) { g.font = '600 36px "Noto Color Emoji","Apple Color Emoji","Segoe UI Emoji",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#fff'; g.fillText(b.ic, tx + ts / 2, ty + ts / 2); }
+      g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(Math.min(40, b.h * 0.42)) + 'px "Arial Black", Arial, sans-serif'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(b.label, tx + ts + 16, b.y + b.h / 2 + 2, b.w - ts - 40); g.restore(); return;
+    }
     if (b.art === 'pack') { const pc = document.querySelector('#bPack canvas'), sz = Math.min(ih, b.w - pad * 2); if (pc && pc.width) g.drawImage(pc, cx - sz / 2, b.y + pad, sz, sz); else drawPackIcon(g, cx, b.y + pad + sz / 2, sz / 70); S.menuArt.pack = pc && pc.width ? 'bPack' : 'icon'; }
     else if (b.art === 'floor') { const [v, nm] = floorNow(), im = floorImg(v), w = b.w - pad * 2, h = ih; S.menuArt.floor = v; S.menuArt.floorImg = !!im; S.menuArt.floorDraws = (S.menuArt.floorDraws || 0) + 1; if (im) g.drawImage(im, b.x + pad, b.y + pad, w, h); else { g.fillStyle = '#222'; g.fillRect(b.x + pad, b.y + pad, w, h); }
       g.fillStyle = 'rgba(0,0,0,0.55)'; g.fillRect(b.x + pad, b.y + pad + h - 46, w, 46); g.fillStyle = '#ffe14a'; g.font = '900 28px "Arial Black", Arial, sans-serif'; g.fillText(nm, cx, b.y + pad + h - 22, w - 12); }
+    else if (b.pix && window.__shop && window.__shop.iconBlit && window.__shop.iconBlit(g, b.pix, b.x + pad, b.y + pad, b.w - pad * 2, ih)) { S.menuArt.icons = (S.menuArt.icons || 0) + 1; }
     else { g.font = Math.round(Math.min(ih, b.w * 0.6) * 0.8) + 'px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif'; g.fillStyle = '#fff'; g.globalAlpha = b.on ? 1 : 0.45; S.menuArt.icons = (S.menuArt.icons || 0) + 1; g.fillText(b.ic, cx, b.y + pad + ih / 2 + 4); g.globalAlpha = 1; }
     g.fillStyle = b.on ? '#ffffff' : '#9097a8'; g.font = '900 ' + Math.round(lh) + 'px "Arial Black", Arial, sans-serif'; g.fillText(b.label, cx, b.y + b.h - pad - lh / 2 + 2, b.w - 20); g.restore(); }
   function uiHit(ray) { if (!UI.open) return null; uiM.updateMatrixWorld(true);
@@ -439,12 +511,16 @@ export function setupVR(A) {
   function makeSign(text, color) { const m = panel(0.95, 0.24, 512, 128); m.renderOrder = 1000; m.material.depthTest = true; drawPanel(m, [text], { c0: color || '#ffe14a', border: color || '#3ff3ff' }); m.visible = false; scene.add(m); return m; }
   const signs = [];
   function addSign(id, text, color, where, act, show) { const m = makeSign(text, color); m.name = 'vrSign_' + id; signs.push({ id, m, where, act, show }); return m; }
-  const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
+  const padTop = (w, y = 2.05) => { const tp = A.tp; if (!tp) return null; const P = w === 1 ? tp.PAD1 : w === 4 ? tp.PAD4 : w === 3 ? tp.PAD3 : tp.PAD2; return P ? [P.x, y, P.z] : null; };
   addSign('tickets', 'BUY TICKETS', '#ffe14a', () => { const K = kiosk(); if (!K || !K.K) return null; const p = K.K.getWorldPosition(new THREE.Vector3()); return [p.x, 1.95, p.z]; }, () => uiOpen('tickets'), () => !!kiosk() && (!A.tp || A.tp.where === 1));
-  addSign('beamShop', 'BEAM TO SHOP', '#3ff3ff', () => padTop(1), beam, () => A.tp && A.tp.where === 1 && A.tp.state === 'idle');
   addSign('beamArcade', 'BEAM TO ARCADE', '#3ff3ff', () => padTop(2), beam, () => A.tp && A.tp.where === 2 && A.tp.state === 'idle');
-  // v16 (t399u): the room-1 pad also beams to the NEON KNOCKOUT studio (sign stacked above BEAM TO SHOP); the studio pad beams back
-  addSign('beamNK', 'BEAM TO NEON KNOCKOUT', '#18d8ff', () => padTop(1, 2.36), () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD3);
+  // v17 (t494u): NEON KNOCKOUT has its own SW pad (PAD4); the original pad is shop only. Return from the studio is still on PAD3.
+  // v18 (t500u): no extra 'BEAM TO SHOP' / 'BEAM TO NEON KNOCKOUT' signs above the pads — the existing SHOP /
+  // NEON KNOCKOUT labels are what you point at to beam (same position). BEAM TO ARCADE over the shop / studio pads stays.
+  function padLabel(name) { return (A.tp && A.tp.labels || []).find(o => o.name === name) || scene.getObjectByName(name) || null; }
+  function addPadLabelSign(id, name, act, show) { signs.push({ id, m: padLabel(name), name, act, show, keep: true, where: () => { const m = padLabel(name); return m ? [m.position.x, m.position.y, m.position.z] : null; } }); }
+  addPadLabelSign('beamShop', 'teleportLabel_SHOP', () => beam('shop'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD1);
+  addPadLabelSign('beamNK', 'teleportLabel_NEONKNOCKOUT', () => beam('nk'), () => A.tp && A.tp.where === 1 && A.tp.state === 'idle' && !!A.tp.PAD4);
   // v19 (t411u, Dave: "can't play mini golf in VR"): the stairwell's energy shield only had a flat-screen PAY button. In the headset a sign
   // over the shield: trigger = pay 5 tickets (only if you have them) and the shield drops; then walk down the stairs with the stick.
   const golfA = () => A.golf || null;
@@ -480,7 +556,7 @@ export function setupVR(A) {
   const MV = { twin: null, src: null, draw: null, renders: 0, skips: 0, far: 0 };
   function mirrorTwin() { const m = mirrorMesh(); if (!m || !m.parent) return null;
     if (MV.twin && MV.src === m) return MV.twin;
-    const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 1024 : 1536;
+    const gp = m.geometry && m.geometry.parameters, gw = (gp && gp.width) || 1, gh = (gp && gp.height) || 1, L = A.TIER && A.TIER.name === 'low' ? 768 : 1024;   // TEST v1 (VR memory): was 1536 / 1024
     const w = gh >= gw ? Math.round(L * gw / gh) : L, h = gh >= gw ? L : Math.round(L * gh / gw);
     const col = (m.material && m.material.uniforms && m.material.uniforms.color) ? m.material.uniforms.color.value.getHex() : 0xa8c4d4;
     const t = new Reflector(m.geometry, { textureWidth: w, textureHeight: h, color: col, multisample: 0 });
@@ -491,7 +567,87 @@ export function setupVR(A) {
   function mirrorVR(on) { const m = mirrorMesh(), t = on ? mirrorTwin() : MV.twin; if (t) t.visible = !!on;
     if (m) { if (on && t) { if (m.userData.vrLayers == null) m.userData.vrLayers = m.layers.mask; m.layers.set(31); }   // shop.js keeps toggling .visible, so hide it from every camera by layer
       else if (m.userData.vrLayers != null) { m.layers.mask = m.userData.vrLayers; m.userData.vrLayers = null; } } }
-  function mirrorFrame() { const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
+  // vrtest-v6 (t464u) debug URL flags for bisecting the shop freezes on the Quest (golf.js reads ?nogolfroom=1 ?nogolflamps=1):
+  // ?nomirror=1 no VR mirror at all (twin hidden + never re-rendered, shop's own mirror hidden), ?nogrok=1 hides Grok, ?nowarm=1 skips pre-warm.
+  function dbg() { const q = location.search, f = n => new RegExp('[?&]' + n + '=1\\b').test(q);
+    if (!window.__gaDbg) window.__gaDbg = { nomirror: f('nomirror'), nogolfroom: f('nogolfroom'), nogolflamps: f('nogolflamps'), nogrok: f('nogrok'), nowarm: f('nowarm'), golfold: /[?&]golflights=old\b/.test(q), noveil: f('noveil'), warmlog: f('warmlog') };
+    const D = window.__gaDbg; if (D.warmlog == null) D.warmlog = f('warmlog');   // golf.js may build __gaDbg first
+    if (D.oldacc == null) { D.oldacc = f('oldacc'); D.noatlas = f('noatlas'); D.nofiretypes = f('nofiretypes'); D.olddim = f('olddim'); D.beamlog = f('beamlog'); }
+    return D; }
+  S.dbg = dbg;
+  // vrtest-v16 (t492u): ?beamlog=1 — after each beam, a small panel in VR shows the worst frame in the
+  // 3 s around the cut, shader / texture / geometry uploads, and whether an atlas bake, pre-warm, a
+  // long task or an audio decode ran, plus the first objects drawn in that window. Dave can read it out.
+  const BL = { on: false, frames: [], ev: [], first: [], seen: new WeakSet(), lastT: 0, lastP: 0, lastTx: 0, lastG: 0, texMB: 0, active: null, report: null, panel: null, until: 0, hook: false, bakeHook: false };
+  function blOn() { return !!dbg().beamlog; }
+  function blEv(n) { if (!blOn()) return; BL.ev.push({ t: performance.now(), n }); if (BL.ev.length > 100) BL.ev.shift(); }
+  function blTickFrame(ms) {
+    if (!blOn() || !S.presenting) return;
+    const i = renderer.info, p = i.programs ? i.programs.length : 0, tx = i.memory.textures, g = i.memory.geometries;
+    const rec = { t: performance.now(), ms, dp: Math.max(0, p - (BL.lastP || p)), dtx: Math.max(0, tx - (BL.lastTx || tx)), dg: Math.max(0, g - (BL.lastG || g)) };
+    BL.lastP = p; BL.lastTx = tx; BL.lastG = g;
+    BL.frames.push(rec); const cut = rec.t - 4500; while (BL.frames.length && BL.frames[0].t < cut) BL.frames.shift();
+    if (BL.active) scene.traverseVisible(o => { if ((o.isMesh || o.isPoints || o.isLine) && !BL.seen.has(o)) { BL.seen.add(o); if (BL.first.length < 24) BL.first.push(o.name || o.type); } });
+  }
+  function blEnsure() {
+    if (BL.hook || !blOn()) return; BL.hook = true;
+    const r = renderer, o = r.render.bind(r);
+    r.render = function (s, c) { const out = o(s, c); if (r.xr.isPresenting && s === scene && !S.inMirror) { const n = performance.now(), ms = BL.lastT ? n - BL.lastT : 0; BL.lastT = n; if (ms) blTickFrame(ms); } return out; };
+    try { new PerformanceObserver(list => { for (const e of list.getEntries()) if (e.duration >= 50) blEv('long ' + Math.round(e.duration) + 'ms'); }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
+    try { const AC = window.AudioContext || window.webkitAudioContext; if (AC && AC.prototype.decodeAudioData && !AC.prototype.__gaBl) { const d0 = AC.prototype.decodeAudioData; AC.prototype.decodeAudioData = function () { blEv('audioDecode'); return d0.apply(this, arguments); }; AC.prototype.__gaBl = 1; } } catch (e) {}
+    try { const gl = r.getContext();
+      const add = (n, wf, hf) => { const f = gl[n]; if (typeof f !== 'function') return; gl[n] = function () { if (BL.active) { const w = (typeof arguments[wf] === 'number' && arguments[wf]) || 0, h = (typeof arguments[hf] === 'number' && arguments[hf]) || 0; BL.texMB += w && h ? w * h * 4 / (1024 * 1024) : 0.05; } return f.apply(this, arguments); }; };
+      add('texImage2D', 3, 4); add('texStorage2D', 3, 4); add('compressedTexImage2D', 3, 4); } catch (e) {}
+  }
+  function blHookBake() {
+    if (BL.bakeHook || !blOn()) return; const sh = window.__shop; if (!sh || !sh.bakeIcons) return; BL.bakeHook = true;
+    const orig = sh.bakeIcons.bind(sh); sh.bakeIcons = function () { const r = orig.apply(this, arguments); if (r && r.did) blEv('atlasBake ' + r.did + ' ' + Math.round(r.ms) + 'ms'); return r; };
+  }
+  function blDraw(rep) {
+    if (!BL.panel) { BL.panel = panel(0.5, 0.38, 1024, 780); BL.panel.name = 'vrBeamLog'; BL.panel.renderOrder = 2001; scene.add(BL.panel); }
+    const flags = [rep.atlas && 'ATLAS BAKE', rep.warm && 'PRE-WARM', rep.longTask && 'LONG TASK', rep.audio && 'AUDIO DECODE'].filter(Boolean);
+    const lines = ['BEAM ' + String(rep.dest || '?').toUpperCase(), 'WORST FRAME  ' + rep.worstMs + ' ms',
+      'SHADERS +' + rep.progs + '   TEX +' + rep.tex + (rep.texMB ? '  ' + rep.texMB + ' MB' : ''), 'GEOMETRY +' + rep.geo,
+      flags.length ? flags.join('  ') : 'no bake / warm / long task / audio', 'FIRST  ' + (rep.first.slice(0, 8).join(', ') || '(none)')];
+    drawPanel(BL.panel, lines, { border: '#ffde00', c0: '#ffde00' }); BL.panel.visible = true;
+  }
+  function blPlace() {
+    if (!BL.panel || !BL.panel.visible) return;
+    if (performance.now() > BL.until) { BL.panel.visible = false; return; }
+    if (!S.head && !camera) return; camera.updateMatrixWorld(true); camera.getWorldQuaternion(BL.panel.quaternion); camera.getWorldPosition(BL.panel.position);
+    BL.panel.position.add(_v.set(0, -0.06, -1.2).applyQuaternion(BL.panel.quaternion));
+  }
+  function blFinalize() {
+    const a = BL.active; if (!a) return;
+    const t0 = a.t0 - 500, t1 = a.t0 + 2500, fr = BL.frames.filter(f => f.t >= t0 && f.t <= t1);
+    const worst = fr.reduce((m, f) => f.ms > m.ms ? f : m, { ms: 0 });
+    const ev = BL.ev.filter(e => e.t >= t0 && e.t <= t1).map(e => e.n);
+    const sh = window.__shop && window.__shop.iconAtlas, bakeN = (sh && sh.bakeN) || 0, bakeMs = (sh && sh.bakeMs) || 0;
+    const rep = { dest: a.dest, worstMs: +((worst.ms) || 0).toFixed(1), frames: fr.length,
+      progs: fr.reduce((s, f) => s + f.dp, 0), tex: fr.reduce((s, f) => s + f.dtx, 0), texMB: +Math.max(0, BL.texMB - (a.texMB0 || 0)).toFixed(2),
+      geo: fr.reduce((s, f) => s + f.dg, 0), atlas: ev.some(n => n.indexOf('atlas') === 0) || bakeN > (a.bake0 || 0),
+      warm: ev.some(n => n.indexOf('warm') === 0) || !!(PW.busy && PW.startedAt && PW.startedAt <= t1 && (PW.startedAt + (PW.ms || 0) >= t0 || !PW.done)),
+      longTask: ev.some(n => n.indexOf('long ') === 0), audio: ev.some(n => n.indexOf('audio') === 0),
+      first: BL.first.slice(), ev: ev.slice(0, 16), bakeDelta: bakeN - (a.bake0 || 0), bakeMs: +(bakeMs - (a.bakeMs0 || 0)).toFixed(1) };
+    BL.report = rep; BL.active = null; BL.until = performance.now() + 14000; blDraw(rep);
+  }
+  function blStep() {
+    if (!blOn()) { if (BL.panel) BL.panel.visible = false; return; }
+    blEnsure(); blHookBake();
+    if (PW && PW.busy && PW.cur) { const k = 'warm ' + (PW.cur.area || '') + ':' + (PW.cur.kind || ''); if (BL._warm !== k) { BL._warm = k; blEv(k); } }
+    const tp = A.tp;
+    if (tp && tp.state !== 'idle' && !BL.active) {
+      BL.active = { t0: performance.now(), dest: tp.dest || (tp.where === 2 ? 'shop' : tp.where === 3 ? 'nk' : 'arcade'), bake0: (window.__shop && window.__shop.iconAtlas && window.__shop.iconAtlas.bakeN) || 0, bakeMs0: (window.__shop && window.__shop.iconAtlas && window.__shop.iconAtlas.bakeMs) || 0, texMB0: BL.texMB };
+      BL.first = [];
+    }
+    if (BL.active && !BL.active.idleAt && tp && tp.state === 'idle' && performance.now() - BL.active.t0 > 80) BL.active.idleAt = performance.now();
+    if (BL.active && performance.now() >= BL.active.t0 + 2500 && (!BL.active.idleAt || performance.now() >= BL.active.idleAt + 200)) blFinalize();
+    blPlace();
+  }
+  S.beamLog = () => BL.report; S.beamLogTick = blStep;
+
+  function mirrorFrame() { if (VEIL.on) return; if (dbg().nomirror) { const m = mirrorMesh(); if (MV.twin) MV.twin.visible = false; if (m) m.layers.set(31); return; }
+    const t = mirrorTwin(); if (!t || !S.head) return; if (!t.visible || mirrorMesh().layers.mask !== (1 << 31)) mirrorVR(true);
     t.getWorldPosition(_mp); t.getWorldDirection(_mn); camera.updateMatrixWorld(true); camera.getWorldPosition(_mc);
     const d = _mp.distanceTo(_mc); if (d > MIRROR_FAR || (_mn.x * (_mc.x - _mp.x) + _mn.y * (_mc.y - _mp.y) + _mn.z * (_mc.z - _mp.z)) <= 0) { MV.skips++; return; }
     if (!t.geometry.boundingSphere) t.geometry.computeBoundingSphere();
@@ -505,8 +661,9 @@ export function setupVR(A) {
     const fp = fpList(), was = fp.map(o => o.visible); for (const o of fp) o.visible = false; MV.fpHidden = fp.length;
     S.inMirror = true; pinScan(); pinLights(); try { MV.draw.call(t, renderer, scene, camera); MV.renders++; S.mirrorKicks++; } catch (e) { S.lastError = 'mirror ' + e; } S.inMirror = false; unpinLights();
     fp.forEach((o, i) => { o.visible = was[i]; }); monkey.visible = vis; }
-  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
+  const _fp = []; function fpList() { _fp.length = 0; for (const o of ctrls) _fp.push(o); for (const o of grips) _fp.push(o); _fp.push(dot, tpRing, hud, uiM); if (VL.glow) _fp.push(VL.glow); if (VL.beamMesh) _fp.push(VL.beamMesh); if (FM.group) _fp.push(FM.group); if (GF.gun) _fp.push(GF.gun, GF.hand, GF.ray); return _fp; }
   S.fpNames = () => fpList().map(o => o.name || o.type);
+  S.ctrlFor = ctrlFor;   // vrtest-v2: golf.js puts the held putter on the right controller
   // ---------- t360u: the avatar's arms + hands follow the real controllers (so the mirror shows you holding them) ----------
   // Cheap: per arm, the shoulder turns toward where the controller is relative to your real shoulder (scaled to the avatar), the elbow bends
   // when the hand is close to the body, the hand takes the grip's rotation, and a small controller model sits in each avatar hand.
@@ -666,9 +823,20 @@ export function setupVR(A) {
   // t869u / v11: this swap was restored (it had been removed in v10) so VR matches Dave's request for Arcade's painted art.
   const ICON_KEYS = ['strike', 'ghost', 'cyber', 'orc', 'pip', 'berserker', 'monkey', 'nova', 'blaster', 'bb', 'rockfall', 'skytower', 'roadster', 'claw'];
   const IC = { done: false, loaded: [], failed: [], cell: 0, claw: false, k: 0 };
+  // vrtest-v4 (t911u port): one prebuilt sheet (tex/icons_atlas.ktx2 / .webp, same 4x4 x 256 px layout) instead of 13 pictures drawn
+  // into a canvas; the canvas path below stays as the fallback if the sheet does not load in 8 s.
   function iconArt() { const icons = window.__neonIcons; if (!icons || !icons.material || !icons.material.map || IC.started) return; IC.started = true;
+    const old0 = icons.material.map; let settled = false;
+    const sheet = t => { if (settled) return; settled = true; t.anisotropy = old0.anisotropy || 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
+      try { renderer.initTexture(t); } catch (e) {}
+      icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8)); icons.material.needsUpdate = false;
+      try { old0.dispose(); } catch (e) {} IC.sheet = t.isCompressedTexture ? 'ktx2' : 'webp'; IC.cell = 256; IC.loaded = ICON_KEYS.filter(k => k !== 'claw'); IC.done = true; };
+    try { loadPicture(THREE, 'tex/icons_atlas.webp', { mips: false, onLoad: t => { if (t && (t.isCompressedTexture || (t.image && (t.image.width || 0) >= 512))) sheet(t); } }); } catch (e) {}
+    setTimeout(() => { if (!settled) { settled = true; iconCanvas(icons); } }, 8000);
+    clawFix(); }
+  function iconCanvas(icons) {
     const old = icons.material.map, oc = old.image, low = (A.TIER && A.TIER.name === 'low') || !oc || oc.width <= 512, S0 = oc ? oc.width / 4 : 256;
-    const C = IC.cell = low ? 256 : 512, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
+    const C = IC.cell = 256, cv = document.createElement('canvas'); cv.width = cv.height = C * 4; const g = cv.getContext('2d');
     if (oc) g.drawImage(oc, 0, 0, cv.width, cv.height);   // start from the old icons (fallback for any picture that fails)
     const info = {}; (icons.userData.icons || []).forEach(i => { info[i.key] = i; });
     const load = k => new Promise(res => { const im = new Image(); im.onload = () => res([k, im]); im.onerror = () => res([k, null]); im.src = 'tex/icons/' + k + '.webp'; });
@@ -678,14 +846,15 @@ export function setupVR(A) {
         // the quad shows the cell's inner square stretched to w x h: draw the picture at h/w of the height (or w/h of the width) so it looks square
         const r = q && q.w > 0 && q.h > 0 ? q.w / q.h : 1, dw = r >= 1 ? inner / r : inner, dh = r >= 1 ? inner : inner * r;
         g.clearRect(x, y, C, C); g.drawImage(im, x + pad + (inner - dw) / 2, y + pad + (inner - dh) / 2, dw, dh); IC.loaded.push(k); }
-      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4;
+      const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = old.anisotropy || 4; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;   // TEST v1: 256 px cells, 1024 atlas, no mips
       try { renderer.initTexture(t); } catch (e) {}
       icons.material.map = t; icons.material.color.setScalar(IC.k = Math.max(icons.material.color.r, 0.8));   // painted art: a bit brighter than the dim neon (0.55)
       icons.material.needsUpdate = false; old.dispose(); IC.done = true;
     } catch (e) { S.lastError = 'icons ' + e; IC.done = true; } });
     clawFix(); }
   function clawFix() { const claw = window.__neonClawIcon; if (!claw || !claw.material || !claw.material.map || IC.claw) return;
-    const ot = claw.material.map, src = ot.image; if (!src || !src.width) return;
+    const ot = claw.material.map, src = ot.image; if (ot.isCompressedTexture) { IC.claw = 'ktx2'; return; }   // vrtest-v10: baked KTX2 strip (Chief v256) is already compact; nothing to redraw
+    if (!src || !src.width) return;
     const cv = document.createElement('canvas'); cv.width = 2048; cv.height = 256; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = ot.anisotropy || 4; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     t.repeat.copy(ot.repeat); t.offset = ot.offset;   // shared Vector2: neonsigns.js's tick moves the frame, nothing is re-uploaded
@@ -736,7 +905,7 @@ export function setupVR(A) {
     () => { const v = window.__grokVisit, g = v && v.grok; if (!g || !g.visible || !v.state || v.state === 'idle' || v.state === 'done' || inChat() || !(chatApi() && chatApi().hooks.visitor)) return false; if (A.tp && A.tp.where !== 1) return false; const p = g.getWorldPosition(_v); return Math.hypot(p.x - monkey.position.x, p.z - monkey.position.z) < 10; });
   addSign('ward', 'ACCESSORIES', '#ff4fd8', () => { const m = mirrorMesh(); if (!m) return null; const p = m.getWorldPosition(new THREE.Vector3()); return [p.x, p.y + 1.35, p.z]; }, () => uiOpen('ward'), () => A.tp && A.tp.where === 2 && !!mirrorMesh() && !!window.__gaPlayer);
   addSign('nb', 'NEON BRICKS · PLAY', '#ff3fd2', () => { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()); return [p.x - 1.1, 1.75, (n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0)]; }, nbStart, () => { const n = nbApi(); return !!n && !n.playing && (!A.tp || A.tp.where === 1); });
-  S.signs = () => signs.filter(g => g.m.visible).map(g => ({ id: g.id, at: g.m.position.toArray() }));
+  S.signs = () => signs.filter(g => g.m && g.m.visible && (!g.keep || (S.presenting && g.show()))).map(g => ({ id: g.id, at: g.m.position.toArray() }));
   const _sph = new THREE.Sphere(); let kioskBox = null;
   function nbBox() { const n = nbApi(); if (!n || !n.grp) return null; const p = n.grp.getWorldPosition(new THREE.Vector3()), z = n.grp.parent ? n.grp.parent.getWorldPosition(new THREE.Vector3()).z : 0;
     return new THREE.Box3(new THREE.Vector3(p.x - 0.55, 0.4, z - 1.95), new THREE.Vector3(p.x + 0.4, 7.8, z + 1.95)); }
@@ -746,7 +915,10 @@ export function setupVR(A) {
   // Once Grok sits, the real chess page (chess-play/: same pieces, battles, robot arm) is painted by its own window.__chessVR painter onto a
   // panel over the table; ray + trigger press / drag / release go into that page at the same spot. GRIP (short press) = stand up.
   const chessT = () => window.__chessTable || null, CHW = 1180, CHH = 720, CPW = 1.36, CPH = CPW * CHH / CHW;
-  const chessM = panel(CPW, CPH, CHW, CHH); chessM.name = 'vrChess'; chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
+  const chessM = panel(CPW, CPH, 1, 1); chessM.name = 'vrChess';   // TEST v1: 1x1 until you sit down (chessMem)
+  function chessMem(on) { const u = chessM.userData; on = !!on; if (u.memOn === on) return; u.memOn = on; u.cv.width = on ? CHW : 1; u.cv.height = on ? CHH : 1;
+    try { u.tex.dispose(); } catch (e) {} if (on) u.tex.needsUpdate = true; try { VC.mem(on); } catch (e) {} S.chessMemN = (S.chessMemN || 0) + 1; }
+  S.chessMem = () => ({ panel: chessM.userData.cv.width, board: VC.board.material.map.image.width, on: !!chessM.userData.memOn, vc: VC.M }); chessM.renderOrder = 1002; chessM.visible = false; scene.add(chessM);
   const CS = { was: 'idle', down: false, hand: null, u: 0, v: 0, drawT: -9, draws: 0, ptr: 0, placed: false, aligns: 0, downEl: null };
   S.chess = CS; S.chessM = chessM; S.backs = { menu: 0, chess: 0, game: 0, nb: 0 };
   // v17 (t403u): IMMERSIVE chess (vrchess.js) replaces the painted-page panel once the game is up: own scene around you, own board
@@ -776,7 +948,7 @@ export function setupVR(A) {
   // before the step: seat the headset. Returns true while the chess table has you (sitting, playing, standing up).
   function chessPre() { const C = chessT(), now = C ? C.state : 'idle', ch = now !== CS.was;
     if (ch) { if (CS.was === 'idle' && S.head) { turnRig(-Math.PI / 2 - S.head.yaw); CS.aligns++; }   // face the board (+x) once
-      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; immOff(); }
+      if (now === 'idle') { chessUp(); chessM.visible = false; CS.placed = false; immOff(); chessMem(false); } else chessMem(true);
       CS.was = now; }
     if (now !== 'idle' && S.head && (ch || now === 'sit' || now === 'stand')) moveRig(monkey.position.x - S.head.x, monkey.position.z - S.head.z);   // the headset rides the sit / stand tween
     return now !== 'idle'; }
@@ -814,13 +986,15 @@ export function setupVR(A) {
     VC.frameUpdate(w, A, dt); }
   // the nearest thing the ray points at: a sign, the kiosk, the Neon Bricks window
   function pickTarget(ray) { let best = null; const take = (d, p, act, id, max = RAY_MAX) => { if (d < max && (!best || d < best.d)) best = { d, p: p.clone(), act, id }; };
-    for (const g of signs) { if (!g.m.visible) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
+    for (const g of signs) { if (!g.m || !g.m.visible) continue; if (g.show && !g.show()) continue; const t = rectHit(ray, g.m); if (t != null) take(t, ray.at(t, new THREE.Vector3()), g.act, g.id, SIGN_MAX); }
     const K = kiosk(); if (K && K.K && (!A.tp || A.tp.where === 1)) { if (!kioskBox) kioskBox = new THREE.Box3().setFromObject(K.K); const p = ray.intersectBox(kioskBox, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('tickets'), 'kiosk'); }
     const gk = A.shop && A.shop.grok; if (gk && A.tp && A.tp.where === 2 && !grokAway()) { gk.getWorldPosition(_sph.center); _sph.center.y += 1.0; _sph.radius = 0.9; const p = ray.intersectSphere(_sph, _hit); if (p) take(p.distanceTo(ray.origin), p, () => uiOpen('shop'), 'shop', SIGN_MAX); }   // the clerk himself
     const n = nbApi(); if (n && !n.playing && (!A.tp || A.tp.where === 1)) { const b = nbBox(); const p = b && ray.intersectBox(b, _hit); if (p) take(p.distanceTo(ray.origin), p, nbStart, 'nbWindow'); }
     if (chessFree()) { const p = ray.intersectBox(chessBox(), _hit); if (p) take(p.distanceTo(ray.origin), p, chessGo, 'chessTable'); }   // v12: the chess table itself
     return best; }
-  function signsUpdate() { const h = S.head; for (const g of signs) { const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
+  function signsUpdate() { const h = S.head; for (const g of signs) {
+    if (g.keep) { if (!g.m) g.m = padLabel(g.name); if (g.m && g.m.material && g.m.material.color) { const hv = S.presenting && g.show() && S.hoverTarget === g.id; g.m.material.color.setHex(hv ? 0xffffff : 0xffffff); g.m.userData.hl = hv; } continue; }
+    const show = S.presenting && g.show(); const w = show ? g.where() : null; g.m.visible = !!w;
     if (w) { const hv = S.hoverTarget === g.id || (g.id === 'tickets' && S.hoverTarget === 'kiosk') || (g.id === 'nb' && S.hoverTarget === 'nbWindow') || (g.id === 'shop' && S.hoverTarget === 'shop') || (g.id === 'chess' && S.hoverTarget === 'chessTable'); g.m.material.color.setHex(hv ? 0xffffff : 0xb8b8c8); g.m.userData.hl = hv;
       g.m.position.set(w[0], w[1], w[2]); if (h) { g.m.rotation.set(0, Math.atan2(h.x - w[0], h.z - w[2]), 0); g.m.scale.setScalar(Math.min(3, Math.max(1, Math.hypot(h.x - w[0], h.z - w[2]) / 6)) * (hv ? 1.12 : 1)); } } } }   // far signs grow so they stay readable / easy to point at
 
@@ -831,6 +1005,39 @@ export function setupVR(A) {
   S.rt = { xr: 0, bad: 0, last: '' };
   function rtCheck(rt) { if (rt && rt.isXRRenderTarget) S.rt.xr++; else { S.rt.bad++; S.rt.last = rt ? 'other' : 'null'; } }
 
+  // ---------- vrtest-v8 (Dave t466u: "fix the delay when the player first enters the VR") ----------
+  // Tapping PLAY before the background pre-warm had finished started the session with nothing compiled: the first XR frame compiled the
+  // arcade synchronously (~150 programs = a multi-second freeze, more stalls on the first beam). Now, if the pre-warm is still running, the
+  // headset shows a dark 'PREPARING VR' card (nothing else is drawn, no input, no movement) while the pre-warm finishes in the background,
+  // compiles asynchronously and draws each area once; then the world appears already warm. Safety: the card lifts after 45 s regardless.
+  const VEIL = S.veil = { on: false, t0: 0, shows: 0, ms: 0, hidden: [] };
+  const veilM = panel(0.9, 0.3, 768, 256); veilM.name = 'vrVeil'; veilM.visible = false; veilM.renderOrder = 2000; veilM.material.depthTest = false; scene.add(veilM);
+  // v10 (Dave t475u: "it will freeze on 60% with black screen while I can hear the arcade running"): v9's number only ever showed 0 / 50 / 60 %
+  // (60 = 'some shader still linking'), and the wait for the driver's parallel link had no cap, so a link that never reported ready kept the card
+  // up until the 45 s safety. Now: the number follows the real step (compile i/n 0-50 %, link 50-80 %, first draw 80-99 %), the link wait is
+  // capped (see runJob), the card lifts after 20 s whatever happens, and ?warmlog=1 shows the step on the card.
+  const VEIL_MAX = 20000;
+  function veilPct(where) { const P = PW.prog, c = PW.cur; if (S.areaWarm(where)) return 100; if (!c || !P || c.area !== where || c.kind !== 'vis') return c && c.area === where ? 2 : 1;
+    const f = P.n ? Math.min(1, P.i / P.n) : 1; return Math.min(99, Math.round(P.ph === 'compile' ? 50 * f : P.ph === 'draw' ? 80 + 19 * f : 50 + 30 * f)); }
+  function veilFrame() { if (!VEIL.on) return; const where = (A.tp && A.tp.where) || 1, now = performance.now();
+    if (S.areaWarm(where) || now - VEIL.t0 > VEIL_MAX || !S.presenting) { if (!S.areaWarm(where) && S.presenting) { VEIL.timedOut = (VEIL.timedOut || 0) + 1; logW('card timeout after ' + VEIL_MAX + ' ms at ' + JSON.stringify(PW.prog || null)); } veilOff(); return; }
+    const pct = veilPct(where); VEIL.pct = pct;
+    camera.updateMatrixWorld(true); camera.getWorldQuaternion(veilM.quaternion); camera.getWorldPosition(veilM.position); veilM.position.add(_v.set(0, 0, -1.4).applyQuaternion(veilM.quaternion));
+    if (dbg().warmlog) { const P = PW.prog || {}, c = PW.cur || {}, sl = PW.slices[0];
+      drawPanel(veilM, ['PREPARING VR ' + pct + '%', (P.ph || c.kind || 'wait') + ' ' + (c.area || '-') + ':' + (c.kind || '-') + ' ' + (P.i || 0) + '/' + (P.n || 0), ((now - VEIL.t0) / 1000).toFixed(1) + 's cap ' + (PW.linkCapped || 0) + ' max ' + (sl ? sl[0] + 'ms ' + sl[1] : '-')]); }
+    else drawPanel(veilM, ['PREPARING VR', pct + '%']); }
+  // v10 (t475u/t476u "have the arcade play after the loading", "the greeting and grok entering too"): while the card is up, all arcade sound is held
+  // (the shared AudioContext is suspended, room music target 0) and the greeting, Grok's visit, the attract demos and the arcade's own clocks wait
+  // (window.__gaHoldAV). When the card lifts: sound resumes, the room music fades in, the greeting and Grok follow a moment after the reveal.
+  function holdAV(on) { if (!!window.__gaHoldAV === !!on) return; window.__gaHoldAV = !!on; VEIL.holds = (VEIL.holds || 0) + (on ? 1 : 0);
+    try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred || window.__gaHoldAV ? Promise.resolve() : r0()); ac.__gaHold = r0; }
+        if (on && ac.state === 'running') { ac.suspend(); S.acHeld = true; } else if (!on && S.acHeld) { S.acHeld = false; if (!S.blurred) ac.__gaHold(); } } } catch (e) {}
+    try { window.__music && window.__music.tick && window.__music.tick(); } catch (e) {}   // music target 0 at once, not on its next 120 ms tick
+    if (!on) { window.__gaRevealAt = performance.now(); logW('reveal: arcade audio + sim released'); } }
+  S.holdAV = holdAV;
+  function veilOff() { VEIL.on = false; VEIL.ms = Math.round(performance.now() - VEIL.t0); veilM.visible = false; holdAV(false); }
+  function veilHide() { const H = VEIL.hidden; H.length = 0; for (const c of scene.children) if (c !== veilM && c.visible && !c.isLight) { H.push(c); c.visible = false; } veilM.visible = true; }
+  function veilShow() { for (const c of VEIL.hidden) c.visible = true; VEIL.hidden.length = 0; veilM.visible = false; }
   // ---------- session ----------
   renderer.xr.addEventListener('sessionstart', () => {
     session = renderer.xr.getSession(); renderer.xr.setReferenceSpace(null); baseRef = renderer.xr.getReferenceSpace();
@@ -839,25 +1046,43 @@ export function setupVR(A) {
     for (const k in A.keys) A.keys[k] = false; st.joy.on = false; st.joy.x = st.joy.y = 0;
     S.rig = { x: monkey.position.x, y: monkey.position.y, z: monkey.position.z, yaw: st.yaw }; applyRig();
     try { renderer.xr.setFoveation(1); } catch (e) {}
-    document.body.classList.add('vr'); hud.visible = true; fill.visible = true; uiClose(); kioskBox = null;
+    document.body.classList.add('vr'); hud.visible = !S.hudHidden; fill.visible = true; uiClose(); kioskBox = null; closeFireMenu();
     try { const n = nbApi(); if (n && n.playing) n.setZoomAmt(0); } catch (e) {}   // VR: Neon Bricks never zooms
-    S.warmReq = PW.done ? null : 'start'; S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
+    if (!S.areaWarm((A.tp && A.tp.where) || 1) && !dbg().noveil && window.__cullFor) { VEIL.on = true; VEIL.t0 = performance.now(); VEIL.shows++; holdAV(true); logW('card up at VR entry'); }
+    S.warmReq = PW.done || VEIL.on || PW.busy || S.areaWarm((A.tp && A.tp.where) || 1) ? null : 'start';   // v9: a running sliced pre-warm is never replaced by a one-frame compile S.warmWhere = A.tp ? A.tp.where : 0; S.warmShop = !!A.shop; if (PW.done) for (const a of PW.areas) LS.done.add(a.sig);   // v18: pre-warmed = nothing to compile on entry
     try { if (!A.shop && window.__arcade && window.__arcade.loadShop) window.__arcade.loadShop(); } catch (e) {}   // t358u: load the shop now, not on the first beam
     renderer.setAnimationLoop((t, f) => A.frame(t, f));
+    S.blurred = false; S.vis = session.visibilityState || 'visible';
+    try { session.addEventListener('visibilitychange', onXRVis); session.addEventListener('end', onXREnd); } catch (e) {}
   });
+  // vrtest-v5 (Dave t461u: "the right Meta button shows a way to close the game but the controllers are not working"): when the Quest
+  // system overlay is up the session is 'visible-blurred' (or 'hidden'): the input sources belong to the system. We stop reading them,
+  // let go of everything held in a cabinet game (no stuck button / pointer), stop haptics, stop pumping game pages and suspend our audio,
+  // then pick it all up again on 'visible'. The 'end' event (Quit from the overlay) releases the same things even if three's sessionend is late.
+  function setBlur(on, why) { on = !!on; if (S.blurred === on) return; S.blurred = on; S.blurN = (S.blurN || 0) + (on ? 1 : 0); S.blurWhy = why;
+    if (on) { try { releaseAll(); } catch (e) {} IN.left = IN.right = null; for (const k in A.keys) A.keys[k] = false; st.vrMove = null; S.vrFly = false; S.vrFire = false;
+      try { if (st.fly) st.fly.hold = false; } catch (e) {} try { const rf = window.__roomFire; if (rf && rf.setHeld) rf.setHeld(false); } catch (e) {}
+      try { for (const src of (session && session.inputSources) || []) { const h = src.gamepad && src.gamepad.hapticActuators && src.gamepad.hapticActuators[0]; if (h && h.reset) h.reset(); } } catch (e) {}
+      try { const ac = window.__unlockAC; if (ac) { if (!ac.__gaHold) { const r0 = ac.resume.bind(ac); ac.resume = () => (S.blurred || window.__gaHoldAV ? Promise.resolve() : r0()); ac.__gaHold = r0; }   // music / cabinet loops / PA call resume() every frame: hold them while blurred
+          if (ac.state === 'running') { ac.suspend(); S.acSuspended = true; } } } catch (e) {} }
+    else { try { const ac = window.__unlockAC; if (ac && S.acSuspended && !window.__gaHoldAV) { (ac.__gaHold || ac.resume.bind(ac))(); } } catch (e) {} S.acSuspended = false; } }
+  function onXRVis() { const v = session ? session.visibilityState : 'hidden'; S.vis = v; setBlur(v !== 'visible', v); }
+  function onXREnd() { setBlur(true, 'end'); try { releaseAll(); } catch (e) {} S.xrEnded = (S.xrEnded || 0) + 1; }
+  S.setBlurForTest = (on) => setBlur(on, 'test');
   renderer.xr.addEventListener('sessionend', () => {
-    renderer.setAnimationLoop(null); releaseAll();
+    renderer.setAnimationLoop(null); if (VEIL.on) veilOff(); else holdAV(false); releaseAll(); S.blurred = false; try { const ac = window.__unlockAC; if (ac && S.acSuspended) ac.resume(); } catch (e) {} S.acSuspended = false;
     S.presenting = false; S.ends++; st.vr = false; st.vrMove = null; session = null;
     if (S.head) st.yaw = S.head.yaw; st.camInit = false; monkey.visible = true;
     renderer.xr.setReferenceSpace(null); baseRef = null;
     if (saved) { Object.assign(camera, saved); camera.updateProjectionMatrix(); }
-    document.body.classList.remove('vr'); uiClose(); for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
+    document.body.classList.remove('vr'); uiClose(); closeFireMenu(); laserEndBeam(); laserGlow(null); S.hudHidden = false; for (const g of signs) g.m.visible = false; fill.visible = false; hud.visible = scr.visible = dot.visible = tpRing.visible = false;
     for (const f of document.querySelectorAll('iframe')) try { f.contentWindow.__gaVRPump && f.contentWindow.__gaVRPump(); } catch (e) {}   // hand frames back to the normal rAF
     mirrorVR(false); avatarHandsOff(); unadoptAll(); LS.done.clear();
     A.resumeFlat();
+    if (S.toTitle) { S.toTitle = false; toTitleFlat(); }
   });
 
-  function pump() { const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
+  function pump() { if (S.blurred) return; const gf = play.frame, cf = window.__chessTable && window.__chessTable.frame; for (const f of document.querySelectorAll('iframe')) { if (f !== gf && f !== cf && (S.frames & 1)) continue; if (f === cf && IM.on) continue;   // v17: immersive chess pumps its page itself, every 4th frame
     try { const w = f.contentWindow; if (w && w.__gaVRPump) S.pumps += w.__gaVRPump(); } catch (e) {} } }
 
   // ---------- t355u: equipped gear in the arcade world (not in a cabinet): JETPACK -> hold A to fly, LASER PISTOL -> B shoots ----------
@@ -867,17 +1092,86 @@ export function setupVR(A) {
   const laserOn = () => { const rf = window.__roomFire; try { return !!(rf && rf.equipped && rf.equipped()); } catch (e) { return false; } };
   S.gear = () => ({ jet: jetOn(), laser: laserOn(), flying: !!S.vrFly, firing: !!S.vrFire, flyFrames: S.flyFrames || 0, laserPulls: S.laserPulls || 0 });
   function gear(ok, dt) { const R = IN.right, rf = window.__roomFire;
-    const jet = jetOn(), fly = !!(ok && jet && R && R.a);
+    const jet = jetOn(), fly = !!(ok && jet && R && R.a && !FM.open && !FM.ateA);
     if (jet || S.vrFly) { if (st.fly) st.fly.hold = fly; if (fly) S.flyFrames = (S.flyFrames || 0) + 1; S.vrFly = fly; }
-    const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown);
-    if (las || S.vrFire || VL.beam || VL.glow) vrLaser(fire, dt, R); S.vrFire = fire; }
-  // ---------- t359u: the laser pistol fires from the RIGHT CONTROLLER (full 3D aim: hand down = shoots down) ----------
-  // roomfire.js aims from the avatar's body and takes no aim, so in VR vr.js runs the trigger cycle itself, with the same numbers as roomfire.js
-  // (hold charges for CHARGE_T s, release = one bolt scaled by the charge, a full charge = a BEAM_T s beam). It uses roomfire's own pieces:
-  // RF.fire() makes the real shot (bolt, zap, shot count, multiplayer zap), then the bolt is moved onto the controller's aim; playerCols() gives
-  // the colours (blue monkey, red alien). The charge glow sits on the controller and grows while you hold B.
-  const VL = { held: false, charge: 0, spent: false, beam: null, beamT: 0, glow: null, last: null, beams: 0, bolts: 0 };
-  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion(), _le = new THREE.Vector3(), _lt = new THREE.Vector3();
+    const las = laserOn(), fire = !!(ok && las && R && R.b && rf && rf.shown && !FM.open);
+    if (las || S.vrFire || VL.beam || (VL.glow && VL.glow.visible) || VL.beamHeld) vrLaser(fire, dt, R); S.vrFire = fire; }
+  // ---------- t359u + vrtest-v14 (t488u/t489u): laser from the RIGHT CONTROLLER, five fire types ----------
+  // roomfire.js aims from the avatar's body, so VR runs the trigger itself: RF.fire() still makes the real bolt (zap, shot count,
+  // multiplayer), then we place it on the controller / muzzle aim. Classic = the original single bolt; the other four types have
+  // their own colour, sound and haptic. Bolts are pooled in roomfire.js; the beam and charge glow are reused (no new lights).
+  const FIRE_KEY = 'galacticarcade.vrFireType';
+  const FIRE_TYPES = [
+    { id: 'classic', name: 'CLASSIC', color: 0x48f2ff, accent: 0x2f8cff },
+    { id: 'pulse', name: 'RAPID PULSE', color: 0xffe14a, accent: 0xffb000 },
+    { id: 'scatter', name: 'SCATTER SHOT', color: 0xff6a22, accent: 0xff3010 },
+    { id: 'charge', name: 'CHARGE SHOT', color: 0xe14bff, accent: 0xffe14a },
+    { id: 'beam', name: 'CONTINUOUS', color: 0x2dff8a, accent: 0x00c853 }
+  ];
+  const FM = { open: false, hover: 0, type: 'classic', group: null, warm: [], stickArmed: true, ateA: false, picks: 0, opens: 0 };
+  try { const v = localStorage.getItem(FIRE_KEY); if (FIRE_TYPES.some(t => t.id === v)) FM.type = v; } catch (e) {}
+  FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type));
+  const fireSpec = id => FIRE_TYPES.find(t => t.id === (id || FM.type)) || FIRE_TYPES[0];
+  function setFireType(id) { const t = fireSpec(id); if (!t) return; FM.type = t.id; FM.hover = FIRE_TYPES.indexOf(t); try { localStorage.setItem(FIRE_KEY, t.id); } catch (e) {} if (FM.group) drawFireMenu(); }
+  function fireCols(id) { const t = fireSpec(id); if (t.id === 'classic') return laserCols(); const c = laserCols(); return { a: t.color, b: t.accent, char: c.char, kind: t.id }; }
+  function drawFireIcon(g, id, x, y, s, col) {
+    g.strokeStyle = col; g.fillStyle = col; g.lineWidth = Math.max(2, s * 0.1); g.lineCap = 'round'; g.lineJoin = 'round';
+    if (id === 'classic') { g.beginPath(); g.moveTo(x - s * 0.45, y); g.lineTo(x + s * 0.5, y); g.stroke(); g.beginPath(); g.arc(x + s * 0.5, y, s * 0.14, 0, 7); g.fill(); }
+    else if (id === 'pulse') { for (let i = 0; i < 3; i++) { const px = x - s * 0.4 + i * s * 0.32; g.beginPath(); g.moveTo(px, y); g.lineTo(px + s * 0.18, y); g.stroke(); g.beginPath(); g.arc(px + s * 0.18, y, s * 0.08, 0, 7); g.fill(); } }
+    else if (id === 'scatter') { for (let i = -2; i <= 2; i++) { g.beginPath(); g.moveTo(x - s * 0.2, y); g.lineTo(x + s * 0.5, y + i * s * 0.22); g.stroke(); } }
+    else if (id === 'charge') { g.beginPath(); g.arc(x, y, s * 0.22, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, s * 0.38, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, s * 0.12, 0, 7); g.fill(); }
+    else { g.beginPath(); g.moveTo(x - s * 0.5, y); g.lineTo(x + s * 0.55, y); g.lineWidth = s * 0.22; g.stroke(); g.lineWidth = s * 0.1; g.beginPath(); g.moveTo(x - s * 0.5, y - s * 0.18); g.lineTo(x + s * 0.45, y - s * 0.18); g.moveTo(x - s * 0.5, y + s * 0.18); g.lineTo(x + s * 0.45, y + s * 0.18); g.stroke(); } }
+  function drawFireMenu() {
+    if (!FM.cv) return; const g = FM.cv.getContext('2d'), W = FM.cv.width, H = FM.cv.height, n = FIRE_TYPES.length, row = (H - 70) / n;
+    g.clearRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, 'rgba(8, 28, 48, 0.55)'); bg.addColorStop(1, 'rgba(4, 10, 24, 0.72)');
+    g.fillStyle = bg; g.fillRect(8, 8, W - 16, H - 16);
+    g.strokeStyle = 'rgba(80, 230, 255, 0.85)'; g.lineWidth = 4; g.strokeRect(10, 10, W - 20, H - 20);
+    g.fillStyle = '#7dffff'; g.font = '900 36px "Courier New",monospace'; g.textAlign = 'center'; g.fillText('LASER', W / 2, 48);
+    g.font = '800 22px "Courier New",monospace'; g.fillStyle = 'rgba(180, 240, 255, 0.7)'; g.fillText('A SELECT  ·  CLICK CLOSE', W / 2, 70);
+    for (let i = 0; i < n; i++) {
+      const t = FIRE_TYPES[i], y = 86 + i * row, on = i === FM.hover, sel = t.id === FM.type, hex = '#' + t.color.toString(16).padStart(6, '0');
+      if (on) { g.fillStyle = 'rgba(80, 230, 255, 0.28)'; g.fillRect(20, y, W - 40, row - 6); g.strokeStyle = '#7dffff'; g.lineWidth = 3; g.strokeRect(20, y, W - 40, row - 6); }
+      else if (sel) { g.strokeStyle = hex; g.lineWidth = 2; g.strokeRect(22, y + 2, W - 44, row - 10); }
+      drawFireIcon(g, t.id, 58, y + row * 0.42, 28, on ? '#e8ffff' : hex);
+      g.textAlign = 'left'; g.font = (on ? '900 ' : '800 ') + '30px "Courier New",monospace'; g.fillStyle = on ? '#e8ffff' : sel ? hex : 'rgba(200, 240, 255, 0.82)';
+      g.fillText(t.name, 96, y + row * 0.48 + 10);
+      if (sel) { g.textAlign = 'right'; g.font = '900 26px "Courier New",monospace'; g.fillStyle = hex; g.fillText('●', W - 36, y + row * 0.48 + 10); } }
+    if (FM.tex) FM.tex.needsUpdate = true; }
+  function makeFireMenu() {
+    if (dbg().nofiretypes) return;
+    if (FM.group) return;
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 640; FM.cv = cv;
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace; tex.premultiplyAlpha = false; FM.tex = tex;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, fog: false });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 0.225), mat); mesh.name = 'vrFireMenu'; mesh.renderOrder = 1002; mesh.frustumCulled = false;
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(0.188, 0.233), new THREE.MeshBasicMaterial({ color: 0x0a2030, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false, side: THREE.DoubleSide, fog: false }));
+    back.position.z = -0.002; back.renderOrder = 1001; back.frustumCulled = false;
+    const group = new THREE.Group(); group.name = 'vrFireHolo'; group.add(back); group.add(mesh); group.visible = false; scene.add(group);
+    FM.group = group; FM.mesh = mesh; FM.warm.push(mesh, back); drawFireMenu(); }
+  function openFireMenu() { if (dbg().nofiretypes) return; makeFireMenu(); FM.open = true; FM.hover = Math.max(0, FIRE_TYPES.findIndex(t => t.id === FM.type)); FM.stickArmed = true; FM.opens++; drawFireMenu(); S.fireMenuOpens = FM.opens; }
+  function closeFireMenu() { FM.open = false; if (FM.group) FM.group.visible = false; }
+  function placeFireMenu() {
+    if (!FM.group) return; const show = !!(S.presenting && FM.open && !VEIL.on && !S.blurred); FM.group.visible = show; if (!show) return;
+    const rc = ctrlFor('right'); if (!rc || !rc.userData.src) { FM.group.visible = false; return; }
+    rc.updateMatrixWorld(true); FM.group.position.set(0, 0.16, -0.05).applyMatrix4(rc.matrixWorld);
+    if (S.head) FM.group.lookAt(S.head.x, S.head.y, S.head.z); else { rc.getWorldQuaternion(_q); FM.group.quaternion.copy(_q); } }
+  function fireMenuInput(L, R) {
+    FM.ateA = false;
+    if (L && L.stickDown) { S.hudHidden = !S.hudHidden; S.hudToggles = (S.hudToggles || 0) + 1; if (L.src) pulse(L.src, 0.35, 20); }
+    const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open) && !(A.nb && A.nb.playing) && !nkPlaying();
+    if (R && R.stickDown && walk && !dbg().nofiretypes) { if (FM.open) closeFireMenu(); else openFireMenu(); if (R.src) pulse(R.src, 0.45, 28); }
+    if (!FM.open) { FM.stickArmed = true; return; }
+    if (R && R.aDown) { setFireType(FIRE_TYPES[FM.hover].id); FM.picks++; FM.ateA = true; FM.lastPick = FM.type; closeFireMenu(); if (R.src) pulse(R.src, 0.7, 35); return; }
+    if (!R) return;
+    const ax = R.x || 0, ay = R.y || 0, mag = Math.hypot(ax, ay);
+    if (mag < 0.35) { FM.stickArmed = true; return; }
+    if (!FM.stickArmed || mag < 0.55) return;
+    const step = Math.abs(ay) >= Math.abs(ax) ? (ay > 0 ? 1 : -1) : (ax > 0 ? 1 : -1);   // WebXR stick y+: down / toward the player = next option
+    FM.hover = (FM.hover + step + FIRE_TYPES.length) % FIRE_TYPES.length; FM.stickArmed = false; drawFireMenu(); if (R.src) pulse(R.src, 0.25, 15); }
+  const VL = { held: false, charge: 0, spent: false, beam: null, beamMesh: null, beamT: 0, beamHeld: false, glow: null, last: null, beams: 0, bolts: 0, pulseT: 0 };
+  const CHARGE_FIRE_T = 1.25, PULSE_GAP = 0.09;
+  const _lo = new THREE.Vector3(), _ld = new THREE.Vector3(), _lq = new THREE.Quaternion(), _le = new THREE.Vector3(), _lt = new THREE.Vector3(), _fan = new THREE.Vector3(), _fanQ = new THREE.Quaternion(), _fanAx = new THREE.Vector3();
   function laserAim() { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null;
     const c = ctrls[i], g = grips[i]; c.updateMatrixWorld(true); c.getWorldQuaternion(_lq); _ld.set(0, 0, -1).applyQuaternion(_lq).normalize();   // pointing direction = the controller's ray
     (g && g.visible !== false ? (g.updateMatrixWorld(true), _lo.setFromMatrixPosition(g.matrixWorld)) : _lo.setFromMatrixPosition(c.matrixWorld)).addScaledVector(_ld, 0.07);   // origin = just in front of the grip
@@ -889,34 +1183,77 @@ export function setupVR(A) {
     const u = monkey.userData || {}; if (u.char === 'alien') { const eye = monkey.getObjectByName('botEye') || u.bot; if (eye) { monkey.updateMatrixWorld(true); eye.getWorldPosition(_le); _lt.copy(_lo).addScaledVector(_ld, 20); _ld.copy(_lt).sub(_le).normalize(); _lo.copy(_le).addScaledVector(_ld, 0.12); return { o: _lo, d: _ld, alien: true }; } }
     return { o: _lo, d: _ld }; }
   function laserCols() { const rf = window.__roomFire; try { return rf.playerCols(); } catch (e) { return { a: 0x2f8cff, b: 0x0a3cff, char: 'monkey' }; } }
-  function laserGlow(k, aim, col) { if (k == null && !VL.glow) return; if (!VL.glow) { VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); }
+  function ensureLaserFX() {
+    if (dbg().nofiretypes) return;
+    if (!VL.glow) { const col = fireCols('charge'); VL.glow = new THREE.Mesh(new THREE.SphereGeometry(0.03, 16, 12), new THREE.MeshBasicMaterial({ color: col.a, transparent: true, opacity: 0.8, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      VL.glow.name = 'vrLaserCharge'; VL.glow.renderOrder = 7; VL.glow.frustumCulled = false; VL.glow.visible = false;
+      const halo = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.3, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      halo.name = 'vrLaserHalo'; VL.glow.add(halo); scene.add(VL.glow); FM.warm.push(VL.glow, halo); }
+    if (!VL.beamMesh) { const L = 28, col = fireCols('beam'), g = new THREE.Group(); g.name = 'vrLaserBeam';
+      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.a, toneMapped: false, depthWrite: false, fog: false }));
+      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.5, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      for (const m of [core, glow]) { m.rotation.x = Math.PI / 2; m.position.z = L / 2; m.renderOrder = 6; m.frustumCulled = false; g.add(m); }
+      g.visible = false; scene.add(g); VL.beamMesh = g; FM.warm.push(core, glow); }
+    makeFireMenu(); }
+  function laserGlow(k, aim, col) { ensureLaserFX(); if (!VL.glow) return;
     const on = k != null && !!aim; VL.glow.visible = on; if (!on) return;
     VL.glow.position.copy(aim.o); VL.glow.scale.setScalar(0.5 + k * 2.2); VL.glow.material.color.setHex(col.a); VL.glow.children[0].material.color.setHex(col.b);
     VL.glow.material.opacity = 0.5 + k * 0.45; VL.glow.children[0].material.opacity = 0.18 + k * 0.4 + Math.sin(S.frames * 0.5) * 0.05 * k; }
-  function laserBeam(aim, col) { const L = 28; if (!VL.beam) { const g = new THREE.Group(); g.name = 'vrLaserBeam';
-      const core = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.a, toneMapped: false, depthWrite: false, fog: false }));
-      const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, L, 10, 1, true), new THREE.MeshBasicMaterial({ color: col.b, transparent: true, opacity: 0.45, toneMapped: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-      for (const m of [core, glow]) { m.rotation.x = Math.PI / 2; m.position.z = L / 2; m.renderOrder = 6; m.frustumCulled = false; g.add(m); } scene.add(g); VL.beam = g; VL.beamT = 3; VL.beams++; S.vrBeams = VL.beams; }
-    if (aim) { VL.beam.position.copy(aim.o); VL.beam.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), beam: true }; } }
-  function laserEndBeam() { if (!VL.beam) return; scene.remove(VL.beam); VL.beam.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } }); VL.beam = null; VL.beamT = 0; }
-  function vrLaser(held, dt, R) { const rf = window.__roomFire, aim = laserAim(), col = laserCols(), CT = (rf && rf.CHARGE_T) || 4;
-    if (VL.beam) { VL.beamT -= dt; laserBeam(aim, col); if (R && S.frames % 6 === 0) pulse(R.src, 0.5, 20); if (VL.beamT <= 0) laserEndBeam(); }
-    if (held && !VL.held) { VL.charge = 0; VL.spent = !!VL.beam; S.laserPulls = (S.laserPulls || 0) + 1; if (R) pulse(R.src, 0.4, 30); }
-    if (held && !VL.spent) { VL.charge += dt; const k = Math.min(1, VL.charge / CT); laserGlow(k, aim, col); if (R && S.frames % 8 === 0) pulse(R.src, 0.1 + k * 0.5, 15);
-      if (VL.charge >= CT) { VL.spent = true; laserGlow(null); laserBeam(aim, col); } }
-    else laserGlow(null);
-    if (!held && VL.held && !VL.spent && aim && rf && rf.fire) {   // release: the real shot, then put the bolt on the controller's aim
-      // t362u: roomfire's own multiplayer zap would carry the flat facing; hold it, then send the shot along the controller's aim
-      const M = window.__mp, z0 = M && M.zap; let zh = null; if (z0) M.zap = (o, d, c) => { zh = c; return true; };
-      const k = Math.min(0.999, VL.charge / CT); let L = null; try { L = rf.fire({ fromRelease: true, k }); } finally { if (z0) M.zap = z0; }
-      if (L && z0 && zh) { try { if (z0(aim.o.toArray(), aim.d.toArray(), zh, k)) MPV.zaps++; } catch (e) {} }
-      if (L && L.mesh) { L.mesh.position.copy(aim.o); L.mesh.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); L.dir.copy(aim.d); L.o = aim.o.toArray();
-        if (rf.last) { rf.last.o = aim.o.toArray(); rf.last.d = aim.d.toArray(); } VL.bolts++; VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), k, char: col.char }; if (R) pulse(R.src, 0.7, 40); } }
+  function laserBeam(aim, col, opts) { ensureLaserFX(); const g = VL.beamMesh, first = !VL.beam; g.children[0].material.color.setHex(col.a); g.children[1].material.color.setHex(col.b);
+    g.visible = true; VL.beam = g;
+    if (opts && opts.held) VL.beamHeld = true;
+    else if (first) { VL.beamHeld = false; VL.beamT = 3; VL.beams++; S.vrBeams = VL.beams; }
+    if (aim) { g.position.copy(aim.o); g.lookAt(aim.o.x + aim.d.x, aim.o.y + aim.d.y, aim.o.z + aim.d.z); VL.last = { o: aim.o.toArray(), d: aim.d.toArray(), beam: true, kind: FM.type }; } }
+  function laserEndBeam() { if (VL.beamMesh) VL.beamMesh.visible = false; VL.beam = null; VL.beamT = 0; VL.beamHeld = false; stopBeamHum(); }
+  let beamHum = null;
+  function stopBeamHum() { if (!beamHum) return; try { const ac = window.__unlockAC; if (ac && beamHum.g) { const t = ac.currentTime; beamHum.g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06); if (beamHum.o) beamHum.o.stop(t + 0.08); if (beamHum.o2) beamHum.o2.stop(t + 0.08); } } catch (e) {} beamHum = null; }
+  function startBeamHum() { stopBeamHum(); try { if (window.__muted || (window.__mute && window.__mute.on) || localStorage.getItem('neonarcade.mute') === '1') return; const ac = window.__unlockAC || (window.__unlockAC = new (window.AudioContext || window.webkitAudioContext)()); if (!ac) return; if (ac.state === 'suspended' && ac.resume) ac.resume().catch(() => {});
+      const t = ac.currentTime, o = ac.createOscillator(), o2 = ac.createOscillator(), f = ac.createBiquadFilter(), g = ac.createGain();
+      o.type = 'sawtooth'; o.frequency.value = 280; o2.type = 'sine'; o2.frequency.value = 560; f.type = 'lowpass'; f.frequency.value = 900; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.06, t + 0.08);
+      o.connect(f); o2.connect(f); f.connect(g); g.connect(ac.destination); o.start(t); o2.start(t); beamHum = { o, o2, g }; } catch (e) { beamHum = null; } }
+  function shootAimed(aim, opts, R) {
+    const rf = window.__roomFire; if (!rf || !rf.fire || !aim) return null;
+    const dir = opts.dir || aim.d, o = aim.o.toArray(), d = dir.toArray ? dir.toArray() : dir;
+    const M = window.__mp, z0 = M && M.zap; let zh = null; if (z0) M.zap = (oo, dd, c) => { zh = c; return true; };
+    let L = null; try { L = rf.fire(Object.assign({ fromRelease: true, o, d }, opts)); } finally { if (z0) M.zap = z0; }
+    if (L && z0 && zh) { try { if (z0(L.o, L.dir.toArray(), zh, opts.k || 0)) MPV.zaps++; } catch (e) {} }
+    if (L) { VL.bolts++; VL.last = { o: L.o, d: L.dir.toArray(), k: L.k, char: (L.hue === 'red' ? 'alien' : 'monkey'), kind: opts.kind || FM.type }; }
+    return L; }
+  function vrLaser(held, dt, R) {
+    const rf = window.__roomFire, aim = laserAim(), kind = FM.type, col = fireCols(kind);
+    if (VL.beam && !VL.beamHeld && kind !== 'beam') { VL.beamT -= dt; laserBeam(aim, col); if (R && S.frames % 6 === 0) pulse(R.src, 0.5, 20); if (VL.beamT <= 0) laserEndBeam(); }
+    if (VL.beamHeld && kind !== 'beam') laserEndBeam();
+    if (kind === 'classic') {
+      laserGlow(null); if (held && !VL.held) { S.laserPulls = (S.laserPulls || 0) + 1; shootAimed(aim, { k: 0, kind: 'classic' }, R); if (R) pulse(R.src, 0.55, 28); } }
+    else if (kind === 'pulse') {
+      laserGlow(null);
+      if (held && aim) { if (!VL.held) { VL.pulseT = 0; S.laserPulls = (S.laserPulls || 0) + 1; } VL.pulseT -= dt;
+        if (VL.pulseT <= 0) { VL.pulseT = PULSE_GAP; shootAimed(aim, { k: 0, kind: 'pulse', color: col.a, cool: PULSE_GAP, force: true, life: 0.32 }, R); if (R) pulse(R.src, 0.25, 14); } } }
+    else if (kind === 'scatter') {
+      laserGlow(null);
+      if (held && !VL.held && aim) { S.laserPulls = (S.laserPulls || 0) + 1; const n = 5, spread = 0.14;
+        _fanAx.set(0, 1, 0); if (Math.abs(aim.d.dot(_fanAx)) > 0.95) _fanAx.set(1, 0, 0);
+        for (let i = 0; i < n; i++) { _fanQ.setFromAxisAngle(_fanAx, (i - (n - 1) / 2) * spread); _fan.copy(aim.d).applyQuaternion(_fanQ).normalize();
+          shootAimed(aim, { k: 0, kind: 'scatter', color: col.a, dir: _fan.clone(), silent: i > 0, force: i > 0, noCool: i > 0 }, R); }
+        if (R) pulse(R.src, 0.8, 40); } }
+    else if (kind === 'charge') {
+      if (held && !VL.held) { VL.charge = 0; VL.spent = false; S.laserPulls = (S.laserPulls || 0) + 1; if (R) pulse(R.src, 0.35, 24); try { if (rf && rf.startChargeSnd) rf.startChargeSnd(); } catch (e) {} }
+      if (held) { VL.charge += dt; const k = Math.min(1, VL.charge / CHARGE_FIRE_T); laserGlow(k, aim, col); if (R && S.frames % 8 === 0) pulse(R.src, 0.1 + k * 0.55, 15); try { if (rf && rf.tickChargeSnd) rf.tickChargeSnd(k); } catch (e) {} }
+      else { laserGlow(null); try { if (rf && rf.stopChargeSnd) rf.stopChargeSnd(); } catch (e) {}
+        if (VL.held && !VL.spent && aim) { const k = Math.min(0.999, Math.max(0.08, VL.charge / CHARGE_FIRE_T)); shootAimed(aim, { k, kind: 'charge', color: col.a, fromRelease: true }, R); if (R) pulse(R.src, 0.4 + k * 0.6, 50); } } }
+    else if (kind === 'beam') {
+      laserGlow(null);
+      if (held && aim) { if (!VL.held || !VL.beamHeld) { S.laserPulls = (S.laserPulls || 0) + 1; laserBeam(aim, col, { held: true }); VL.beams++; S.vrBeams = VL.beams; try { if (rf && rf.zapKind) rf.zapKind('beam', col.char === 'alien' ? 'red' : 'cyan'); } catch (e) {} startBeamHum(); if (R) pulse(R.src, 0.6, 30); }
+        else { laserBeam(aim, col, { held: true }); if (R && S.frames % 6 === 0) pulse(R.src, 0.4, 18); } }
+      else if (VL.beamHeld) laserEndBeam(); }
     VL.held = held; }
+  ensureLaserFX();
+  S.setFireType = setFireType;
+  S.fireMenu = () => ({ open: FM.open, hover: FM.hover, type: FM.type, types: FIRE_TYPES.map(t => t.id), visible: !!(FM.group && FM.group.visible),
+    hudHidden: !!S.hudHidden, hudVisible: hud.visible, picks: FM.picks, opens: FM.opens, lastPick: FM.lastPick || null,
+    pos: FM.group && FM.group.visible ? FM.group.position.toArray() : null, labels: FIRE_TYPES.map(t => t.name), colors: FIRE_TYPES.map(t => t.color) });
   S.vrLaser = () => ({ ctrl: (() => { const i = ctrls.findIndex(c => c.userData.hand === 'right' && c.userData.src); if (i < 0) return null; const c = ctrls[i]; c.updateMatrixWorld(true); const q = c.getWorldQuaternion(new THREE.Quaternion()); return { d: new THREE.Vector3(0, 0, -1).applyQuaternion(q).toArray(), o: new THREE.Vector3().setFromMatrixPosition((grips[i] || c).matrixWorld).toArray() }; })(),
-    eye: (() => { const e = monkey.getObjectByName('botEye'); if (!e || (monkey.userData || {}).char !== 'alien') return null; monkey.updateMatrixWorld(true); return e.getWorldPosition(new THREE.Vector3()).toArray(); })(), held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
+    eye: (() => { const e = monkey.getObjectByName('botEye'); if (!e || (monkey.userData || {}).char !== 'alien') return null; monkey.updateMatrixWorld(true); return e.getWorldPosition(new THREE.Vector3()).toArray(); })(), held: VL.held, charge: VL.charge, bolts: VL.bolts, beams: VL.beams, beam: !!VL.beam, beamHeld: !!VL.beamHeld, type: FM.type, last: VL.last, glow: VL.glow && VL.glow.visible ? { color: VL.glow.material.color.getHex(), halo: VL.glow.children[0].material.color.getHex(), scale: VL.glow.scale.x, at: VL.glow.position.toArray() } : null,
     aim: (() => { const a = laserAim(); return a ? { o: a.o.toArray(), d: a.d.toArray() } : null; })() });
   // ---------- t358u: warm-up so walking / turning / beaming doesn't freeze ----------
   // The flat game compiles its shaders for the post-processing target (linear, no tone mapping); the headset draws straight into the XR
@@ -941,37 +1278,55 @@ export function setupVR(A) {
   const effVis = o => { for (let x = o; x; x = x.parent) if (!x.visible) return false; return true; };
   function adopt(l) { if (PIN.lights.has(l) || !l.parent) return; if (!PIN.holder) { PIN.holder = new THREE.Group(); PIN.holder.name = 'vrPinnedLights'; scene.add(PIN.holder); }
     const home = l.parent; l.userData.vrHome = { parent: home, pos: l.position.clone(), quat: l.quaternion.clone(), scale: l.scale.clone() }; PIN.holder.attach(l); PIN.lights.add(l); }
+  // vrtest-v7 (t464u, real-Quest freezes at Grok's counter and the top of the golf stairs): the mini golf's 14 point lights (basement 9 +
+  // stair lamps 5) went in and out of the shop's light list (basement shown from 8 m, lamps on from 3 m), so the shop flipped between
+  // three light sets (10 / 19 / 24 point lights) = three full program sets switched in one frame each. In the shop they now ride the pinned
+  // holder all the time (drawn at intensity 0 while off / the basement is hidden): ONE fixed light count, one program set, warmed once.
+  // ?golflights=old restores the old switching (for comparing on the headset).
+  function golfPin(on) { const g = scene.getObjectByName('golfStairs'); if (!g || dbg().golfold) return; const ls = []; g.traverse(o => { if (o.isLight && !o.isAmbientLight && !o.isHemisphereLight) ls.push(o); });
+    for (const l of [...PIN.lights]) if (l.userData.vrGolf && !on) { const h = l.userData.vrHome; if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; }
+      if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; PIN.lights.delete(l); }
+    if (on) for (const l of ls) if (!PIN.lights.has(l)) { adopt(l); l.userData.vrGolf = true; }
+    PIN.golf = on; }
+  // pinned whenever the shop's white room is drawn this frame (main.js culls it at the beam cut), so the cut never sees the shop with 10 lights
+  function golfWant() { const wr = A.tp && A.tp.whiteRoom; return wr ? effVis(wr) : !!(A.tp && A.tp.where === 2); }
+  S.golfPin = golfPin;
   function pinScan() { if (!PIN.seeded) { PIN.seeded = true; const ds = []; scene.traverse(o => { if (o.isLight && o.name === 'dsSpot') ds.push(o); }); ds.forEach(adopt); }   // known blinker: Dead Signal station spot (its group is culled by distance)
-    const area = A.tp ? A.tp.where : 0; if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
+    const area = A.tp ? A.tp.where : 0; if (!PIN.staging) { const gw = golfWant(); if (gw !== !!PIN.golf) golfPin(gw); }
+    if (area !== PIN.lastArea || (A.tp && A.tp.state !== 'idle')) { PIN.lastArea = area; PIN.areaT = S.frames; PIN.seen.clear(); return; }
     if (S.frames % 15 !== 0 && PIN.seen.size) return; const flips = [];
     scene.traverse(o => { if (!o.isLight || o.isAmbientLight || o.isHemisphereLight || PIN.lights.has(o)) return; const v = effVis(o), was = PIN.seen.get(o); if (was !== undefined && was !== v) flips.push(o); PIN.seen.set(o, v); });
     if (S.frames - PIN.areaT > 60 && flips.length && flips.length < 3) for (const l of flips) adopt(l); }   // a light blinking on its own (not a whole room being culled)
   function pinLights() { for (const l of PIN.lights) { const h = l.userData.vrHome; if (!h || !h.parent) continue; h.parent.updateMatrixWorld(); _v.copy(h.pos).applyMatrix4(h.parent.matrixWorld); l.position.copy(_v);
       const on = l.visible && effVis(h.parent); if (!on) { l.userData.vrPinI = l.intensity; l.userData.vrPinV = l.visible; l.intensity = 0; l.visible = true; PIN.pins++; } } }
   function unpinLights() { for (const l of PIN.lights) if (l.userData.vrPinI != null) { l.intensity = l.userData.vrPinI; l.visible = l.userData.vrPinV; l.userData.vrPinI = null; } }
-  function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); }
+  function unadoptAll() { unpinLights(); for (const l of PIN.lights) { const h = l.userData.vrHome; if (h && h.parent) { h.parent.add(l); l.position.copy(h.pos); l.quaternion.copy(h.quat); l.scale.copy(h.scale); } l.userData.vrHome = null; } PIN.lights.clear(); PIN.seen.clear(); PIN.golf = false; }
   S.pinned = () => [...PIN.lights].map(l => l.name || l.type);
   function warmCheck() {
-    if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop) S.warmReq = S.warmReq || 'shop'; }
+    if (!!A.shop !== S.warmShop) { S.warmShop = !!A.shop; if (A.shop && !PW.busy && !PW.done) S.warmReq = S.warmReq || 'shop'; }
     if (S.warmReq && S.frames > 1) { const why = S.warmReq; S.warmReq = null; pinScan(); pinLights(); warmXR(why); unpinLights(); } }
   // ---------- per frame: before the arcade step (input -> movement) ----------
   function pre(dt, xf) {
     S.frames++; poll(); if (S.rigDirty) { applyRig(); S.rigDirty = false; }
+    veilFrame(); if (VEIL.on) { st.vrMove = null; S.walkStart = null; S.turnRate = 0; return; }
+    if (S.blurred) { st.vrMove = null; S.walkStart = null; S.turnRate = 0; S.blurFrames = (S.blurFrames || 0) + 1; return; }   // vrtest-v5: overlay up: no movement / game input
     unpinLights(); if (xf) warmCheck();
     const ref = renderer.xr.getReferenceSpace(), vp = xf && ref ? xf.getViewerPose(ref) : null;
     if (vp) { const p = vp.transform.position, o = vp.transform.orientation; _e.setFromQuaternion(_q.set(o.x, o.y, o.z, o.w), 'YXZ'); S.head = { x: p.x, y: p.y, z: p.z, yaw: _e.y, pitch: _e.x }; S.posed = true; }
     const walk = play.mode === 'walk' && !(A.tp && A.tp.locked) && !(A.shop && A.shop.open);
     S.turnRate = 0;
     S.walkStart = null; st.vrMove = null;
+    const L = IN.left, R = IN.right;
+    fireMenuInput(L, R);
     if (chessPre()) { gear(false, dt); if (S.head) st.yaw = S.head.yaw; return; }   // v12: seated at the chess table: no walking / turning
     gear(walk && !(A.nb && A.nb.playing), dt);
     if (!walk || !S.head) return;
     // roomscale: your real steps move the player too, through the same collision (a wall or cabinet pushes the world back)
     const h = S.head, q = _v.set(h.x, monkey.position.y, h.z); A.collide(q); moveRig(q.x - h.x, q.z - h.z); monkey.position.x = q.x; monkey.position.z = q.z;
-    const L = IN.left, R = IN.right;
     const nbOn = !!(A.nb && A.nb.playing);
     // t350u smooth turn: rate = 90 deg/s * ((|x| - 0.15) / 0.85)^2, nothing inside the deadzone, no snapping. Off while Neon Bricks takes the sticks.
-    if (R && !nbOn) { const ax = Math.abs(R.x);
+    // vrtest-v14: the fire-type hologram owns the right stick while it is open (no turn / no teleport from that stick).
+    if (R && !nbOn && !FM.open) { const ax = Math.abs(R.x);
       if (ax > TURN_DZ) { const k = Math.min(1, (ax - TURN_DZ) / (1 - TURN_DZ)), rate = -Math.sign(R.x) * TURN_MAX * k * k, a = rate * dt;
         turnRig(a); S.turnRate = rate; S.turnSum += Math.abs(a); S.turnTime += dt; S.turnMaxStep = Math.max(S.turnMaxStep, Math.abs(a)); } }
     st.yaw = S.head.yaw;
@@ -982,6 +1337,7 @@ export function setupVR(A) {
 
   // ---------- per frame: after the arcade step (follow the player, rays, the game screen, HUD) ----------
   function post(dt) {
+    if (blOn()) blStep();
     if (S.walkStart) { moveRig(monkey.position.x - S.walkStart.x, monkey.position.z - S.walkStart.z, monkey.position.y - S.rig.y); }
     // t350u: the teleporter moves the player (walk onto the pad, then the cut to the other pad): the headset goes with them
     if (A.tp && A.tp.locked && S.head) { const dx = monkey.position.x - S.head.x, dz = monkey.position.z - S.head.z; if (dx * dx + dz * dz > 1e-6) { moveRig(dx, dz); S.tpFollow = (S.tpFollow || 0) + 1; applyRig(); S.rigDirty = false; } if (UI.open) uiClose(); }   // v18: the new reference space now, so the very next headset frame is already at the destination
@@ -991,7 +1347,7 @@ export function setupVR(A) {
     // t353u mirror: the shop's Reflector only renders for the main camera, but in VR three hands it the per-eye XR cameras, so it never
     // rendered (black). Kick it here, before the frame's render, with the main camera (three keeps it at the head pose). The Reflector
     // itself turns XR off for its own pass and restores the render target, so this is XR-safe (same lesson as the black-room fix).
-    avatarHands(); fpGun(); nkCtrl(); mpStep(); mirrorFrame();
+    avatarHands(); fpGun(); nkCtrl(); mpStep(); mirrorFrame(); if (dbg().nogrok && A.shop && A.shop.grok) A.shop.grok.visible = false;
     signsUpdate(); S.hoverTarget = null; UI.msgT = Math.max(0, UI.msgT - dt);
     if (UI.open && S.head && Math.hypot(S.head.x - uiM.position.x, S.head.z - uiM.position.z) > 4) uiClose();   // walked away
     const nbOn = !!(nbApi() && nbApi().playing);
@@ -1060,7 +1416,7 @@ export function setupVR(A) {
       gameInput(w, aimScreen, dt);
     } else { if (Object.keys(S.held).length || G.ptrDown) releaseAll(); G.placed = false; G.rect = null; S.gripT = 0; }
     // t353u: a ray never passes through a VR button / panel / sign / screen: cut it at the nearest one it crosses
-    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
+    const nPw = Object.keys(pwM).length; if (!S._surf || S._surfN !== signs.length + nPw) { S._surf = [uiM, chessM, ...signs.map(g => g.m).filter(Boolean), back, bar, ...Object.values(pwM)]; S._surfN = signs.length + nPw; } const surf = S._surf;
     for (const c of ctrls) { if (!c.userData.src) continue; const ray = rayOf(c); let t = c.userData.ray.scale.z;
       for (const m of surf) { const h = rectHit(ray, m, t); if (h != null && h < t) t = h; } c.userData.ray.scale.z = t; c.userData.rayLen = t; c.userData.rayO = ray.origin.toArray(); }
     fpRayPost();
@@ -1068,16 +1424,17 @@ export function setupVR(A) {
     const T = play.tickets ? play.tickets.total : 0, lc = ctrlFor('left') || ctrlFor('right');
     if (lc && lc.userData.src) { lc.updateMatrixWorld(true); hud.position.set(0, 0.07, 0.02).applyMatrix4(lc.matrixWorld); hud.quaternion.copy(lc.getWorldQuaternion(_q)).multiply(HUD_TILT); }
     else if (S.head) { const h = S.head; hud.position.set(h.x - Math.sin(h.yaw) * 0.7, h.y - 0.45, h.z - Math.cos(h.yaw) * 0.7); hud.rotation.set(-0.5, h.yaw, 0, 'YXZ'); }
+    hud.visible = !!(S.presenting && !S.hudHidden); placeFireMenu(); if (padBoard) padBoard.visible = !!(PADINFO && S.presenting && !S.hudHidden);
     if (play.lastToast && play.lastToast !== S._toast) { S._toast = play.lastToast; S.msg = play.lastToast; S.msgT = 2.5; }
     S.msgT = Math.max(0, S.msgT - dt);
-    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: BEAM TO SHOP', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
+    const hv = S.hover && S.hover.m, cost = hv ? (hv.cost || 1) : 0, TG = { ward: 'TRIGGER: ACCESSORIES', tickets: 'TRIGGER: BUY TICKETS', kiosk: 'TRIGGER: BUY TICKETS', beamShop: 'TRIGGER: SHOP', beamNK: 'TRIGGER: NEON KNOCKOUT', beamArcade: 'TRIGGER: BEAM TO ARCADE', shop: 'TRIGGER: PRIZE SHOP', nb: 'TRIGGER: PLAY NEON BRICKS', nbWindow: 'TRIGGER: PLAY NEON BRICKS', chatClerk: 'TRIGGER: CHAT WITH GROK', chatVisitor: 'TRIGGER: CHAT WITH GROK', chess: 'TRIGGER: PLAY CHESS WITH GROK', golfPay: 'TRIGGER: PAY 5 TICKETS · MINI GOLF', chessTable: 'TRIGGER: PLAY CHESS WITH GROK' };
     const CTs = chessOn ? chessT() : null, chessLine = CTs ? (CTs.state === 'play' ? 'TRIGGER: MOVE A PIECE · GRIP: STAND UP' : CTs.state === 'stand' ? 'STANDING UP' : CTs.gstate === 'seated' || CTs.gstate === 'sitdown' ? 'GROK SITS DOWN · GRIP: STAND UP' : 'GROK IS COMING · A: SKIP · GRIP: STAND UP') : null;
     const GA = golfA(), golfLine = GA && GA.below && S.head ? (GA.rolling ? 'ROLLING…' : GA.aiming && GA.vr ? 'LET GO: PUTT · POWER ' + Math.round((GA.power || 0) * 100) + '% · GRIP: CANCEL' : GA.vrNear(S.head.x, S.head.z) ? 'POINT WHERE TO PUTT · HOLD TRIGGER TO AIM' : null) : null;
     const line2 = S.msgT > 0 ? S.msg : chessLine ? chessLine : golfLine ? golfLine : nbOn ? 'STICK MOVE · A ROTATE · B DROP · HOLD GRIP LEAVE' : hv ? 'TRIGGER: PLAY ' + (NAMES[hv.key] || hv.key.toUpperCase()) + ' · ' + cost + (cost === 1 ? ' TICKET' : ' TICKETS') : S.hover && S.hover.target ? TG[S.hover.target] : inGame ? 'HOLD GRIP TO LEAVE' : UI.open ? 'TRIGGER: PRESS · GRIP: BACK' : 'TRIGGER: TELEPORT / PLAY · Y: MENU';
     const fly = st.fly, jb = jetOn() && fly ? { v: fly.e, low: fly.e <= 0.18 } : null; S.hudBar = jb ? Math.round(fly.e * 100) : null;   // t358u: main.js's real jetpack energy (st.fly.e, 0..1)
     if (!!jb !== !!hud.userData.bar) { hud.userData.bar = !!jb; hud.scale.set(1, jb ? 1.3 : 1, 1); }
     batteryInit(); const bat = BAT.supported && BAT.level != null ? { pct: Math.round(BAT.level * 100), charging: BAT.charging } : null;
-    drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({}, jb ? { bar: jb } : {}, bat ? { bat } : {}));
+    padInfoUpdate(performance.now()); drawPanel(hud, [T + (T === 1 ? ' TICKET' : ' TICKETS'), line2], Object.assign({ status: hudStatus(performance.now()) }, jb ? { bar: jb } : {}, bat ? { bat } : {}));
     if (inGame) { const m = play.cur, sub = play.sub, map = MAPS[m && m.key] || MAPS.default, c = m ? (m.cost || 1) : 0;
       const top = sub === 'demo' ? (m.credits > 0 ? 'A: START  ·  CREDIT ' + m.credits : (T >= c ? 'A: INSERT ' + c + ' TICKET' + (c > 1 ? 'S' : '') : 'NEED ' + c + ' TICKETS · YOU HAVE ' + T)) : contCan(w) ? 'B/Y: CONTINUE · ' + play.continueCost + ' TICKETS' : map.help;
       drawPanel(bar, [S.msgT > 0 ? S.msg : top, T + ' TICKETS  ·  HOLD GRIP TO LEAVE'], { c0: '#ffffff', border: '#ff3fd2' }); }
@@ -1099,59 +1456,165 @@ export function setupVR(A) {
   // is marked done, so the cut, the arrival and the session start find everything ready. Phones / computers (no immersive-vr) skip all of it.
   const PW = S.prewarm = { done: false, busy: false, areas: [], ms: 0, programs: 0, textures: 0, err: null, startedAt: 0 };
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
-  function stageArea(area, fn) { const T = A.tp, nkRoot = scene.getObjectByName('nkStudio'), P = area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : T.PAD1;
+  function stageArea(area, fn) { const T = A.tp, nkRoot = scene.getObjectByName('nkStudio'), P = area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : area === 4 ? { x: 0, z: (A.Z2 || -40) + 3 } : T.PAD1;
     const pos = new THREE.Vector3(P.x, 1.6, P.z), fv = fill.visible, nkv = nkRoot ? nkRoot.visible : false, mv = monkey.visible, cp = camera.position.clone(), cq = camera.quaternion.clone();
     const fr = new THREE.Frustum(); camera.position.copy(pos); camera.updateMatrixWorld(true);
     fr.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     const wasAdopted = PIN.lights.size;
-    try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); pinLights(); return fn(); }
-    finally { unpinLights(); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
+    try { window.__cullFor(pos, fr); fill.visible = true; if (nkRoot) nkRoot.visible = area === 3; pinScan(); PIN.staging = true; golfPin(area === 2); pinLights(); return fn(); }
+    finally { unpinLights(); PIN.staging = false; golfPin(!!S.presenting && golfWant()); if (!S.presenting && !wasAdopted) { unadoptAll(); PIN.seeded = false; }
       fill.visible = fv; if (nkRoot) nkRoot.visible = nkv; monkey.visible = mv; camera.position.copy(cp); camera.quaternion.copy(cq); camera.updateMatrixWorld(true);
       const f2 = new THREE.Frustum(); f2.setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); window.__cullFor(S.presenting && S.head ? new THREE.Vector3(S.head.x, S.head.y, S.head.z) : camera.position.clone(), f2); } }
   // after the compile: draw the staged area once into a 2x2 corner of the default framebuffer (the headset's program variants), looking
   // four ways from the pad, so the GPU driver builds its draw state and the meshes' vertex buffers are uploaded before the first real frame.
   // Reflector passes are switched off for it (the headset doesn't draw them either); the next normal frame repaints those pixels.
-  const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300);
-  function drawWarm(area) { if (S.presenting) return; stageArea(area, () => { const refl = []; scene.traverse(o => { if (o.isReflector && o.visible) { refl.push(o); o.visible = false; } });
-      const vp = new THREE.Vector4(), sc = new THREE.Vector4(), st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(vp); renderer.getScissor(sc);
-      try { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true);
-        _wc.position.copy(camera.position);
-        for (let k = 0; k < 4; k++) { _wc.rotation.set(-0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws = (PW.draws || 0) + 1; }
-        const tw = area === 2 ? MV.twin : null;   // the shop mirror's own pass (its half-float target, xr off) as the headset draws it
-        if (tw) { const rt = tw.getRenderTarget(), mv = monkey.visible, xe = renderer.xr.enabled; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(rt); rt.scissor.set(0, 0, 2, 2); rt.scissorTest = true; rt.viewport.set(0, 0, 2, 2);
-            for (let k = 0; k < 4; k++) { _wc.rotation.set(-0.15, k * Math.PI / 2, 0, 'YXZ'); _wc.updateMatrixWorld(true); renderer.render(scene, _wc); PW.draws++; } }
-          finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } } }
+  // ---------- vrtest-v9 (Dave t468u: start-screen lag, PREPARING VR ~30 s on the Quest; t469u: the first shop -> arcade beam froze) ----------
+  // The v18 pre-warm compiled the WHOLE scene (every material of every room, ~150 programs) for each area's light set in one call, drew each
+  // area 4-8 times in one frame and uploaded 6 textures per frame: long frames on the start screen, and the PREPARING VR card waited for all of it.
+  // Now everything is sliced into small jobs run inside a per-frame time budget (start screen / flat 5 ms, under the VR card 14 ms, in VR 3 ms;
+  // at least one job per frame), shaders are only issued (KHR_parallel_shader_compile links them on driver threads) and polled for readiness:
+  //   gate  (the card waits only for this): the meshes you can see in the area you are in (deduped by program inputs), compiled + linked,
+  //         drawn once per direction into a 2x2 corner (driver state + vertex buffers);
+  //   then  the rest, in order: the shop (with the golf basement + lamps, its mirror pass), room 2, the Neon Knockout studio, every other
+  //         material under each of those light sets (hidden UI / props), the textures, and a simulated arcade -> shop -> arcade round trip
+  //         (the arcade drawn again from the pad after the shop: what froze on the first return).
+  // A beam whose destination isn't warm yet holds at the cut (max 4 s) while that area's jobs run first with a big budget.
+  const _wc = new THREE.PerspectiveCamera(100, 1, 0.05, 300), _vp = new THREE.Vector4(), _sc = new THREE.Vector4();
+  const areaPos = area => { const T = A.tp; return area === 2 ? T.PAD2 : area === 3 ? T.PAD3 : area === 4 ? { x: 0, z: (A.Z2 || -40) + 3 } : T.PAD1; };
+  function golfStage(area) { const G = window.__minigolf; return area === 2 && G && G.warmStage && !dbg().golfold ? G.warmStage(true, true) : null; }
+  // one 2x2 draw of the staged area: dir 0-3 = level, 4-7 = from the golf stairs looking down (shop), 8-11 = the shop mirror's own pass
+  // one 2x2 draw of part of the staged area: meshes list[i..i+n) only (camera + lights on a spare layer 30), level view from the pad;
+  // mirror = the shop mirror's own target. Small chunks per frame keep the GPU work of a first draw (vertex buffers, driver state) small.
+  function drawChunk(area, list, i, n, mirror) { if (S.presenting && !VEIL.on && !PW.holdFor) return i + n; const xe = renderer.xr.enabled; renderer.xr.enabled = false; const on = [], lit = [];
+    try { stageArea(area, () => { const undoG = golfStage(area), st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear; renderer.getViewport(_vp); renderer.getScissor(_sc);
+      try { for (let q = i; q < Math.min(list.length, i + n); q++) { const o = list[q]; if (!o.layers.isEnabled(30)) { o.layers.enable(30); on.push(o); } }
+        scene.traverse(o => { if (o.isLight && !o.layers.isEnabled(30)) { o.layers.enable(30); lit.push(o); } });
+        _wc.position.copy(camera.position); _wc.rotation.set(-0.15, 0, 0, 'YXZ'); _wc.updateMatrixWorld(true); _wc.layers.set(30);
+        const fc = []; for (const o of on) if (o.frustumCulled) { o.frustumCulled = false; fc.push(o); }
+        try { const tw = mirror ? MV.twin : null;
+          if (tw) { const rt = tw.getRenderTarget(); renderer.setRenderTarget(rt); rt.scissor.set(0, 0, 2, 2); rt.scissorTest = true; rt.viewport.set(0, 0, 2, 2); try { renderer.render(scene, _wc); } finally { rt.scissorTest = false; rt.scissor.set(0, 0, rt.width, rt.height); rt.viewport.set(0, 0, rt.width, rt.height); } }
+          else { renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true); renderer.render(scene, _wc); }
+          PW.draws = (PW.draws || 0) + 1; } finally { for (const o of fc) o.frustumCulled = true; } }
       catch (e) { PW.err = 'draw ' + e; }
-      finally { renderer.setScissorTest(st0); renderer.setScissor(sc); renderer.setViewport(vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; for (const o of refl) o.visible = true; } }); }
-  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
-    try {
-      try { if (window.__arcade && window.__arcade.loadShop) await window.__arcade.loadShop(); } catch (e) {}
-      try { if (window.__loadNK) await window.__loadNK(); } catch (e) {}   // the studio's code + scene now, not during the first beam
-      await nextFrame();
-      for (const area of [1, 2, 3]) { if (area === 3 && !scene.getObjectByName('nkStudio')) continue;
-        const p0 = renderer.info.programs ? renderer.info.programs.length : 0, a0 = performance.now(); let job = null, sig = '';
-        stageArea(area, () => { LS.t = -1e9; sig = lightSig(); LS.done.add(sig); const prev = renderer.getRenderTarget(); renderer.setRenderTarget(null);
-          try { camera.updateMatrixWorld(true); job = renderer.compileAsync ? renderer.compileAsync(scene, camera) : (renderer.compile(scene, camera), null); } finally { renderer.setRenderTarget(prev); }
-          if (area === 2) { const t = mirrorTwin(); if (t) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(t.getRenderTarget()); renderer.compile(scene, camera); } catch (e) {} finally { renderer.xr.enabled = xe; renderer.setRenderTarget(prev); monkey.visible = mv; } } } });
-        if (job) await job; await nextFrame();
-        drawWarm(area); await nextFrame();
-        PW.areas.push({ area, sig, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - a0) }); }
-      // link + read uniforms a handful of programs per frame (the first draw would otherwise do it)
-      const progs = (renderer.info.programs || []).slice(); for (let i = 0; i < progs.length; i++) { try { progs[i].getUniforms(); } catch (e) {} if (i % 12 === 11) await nextFrame(); }
-      // upload every texture (hidden rooms too), a few per frame
-      const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
+      finally { for (const o of on) o.layers.disable(30); for (const o of lit) o.layers.disable(30); renderer.setScissorTest(st0); renderer.setScissor(_sc); renderer.setViewport(_vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; if (undoG) undoG(); } }); }
+    finally { renderer.xr.enabled = xe; }
+    return i + n; }
+  const GEO = { seen: new WeakSet(), mat: null };
+  function geoChunk(objs) { if (!GEO.mat) GEO.mat = new THREE.RawShaderMaterial({ vertexShader: 'attribute vec3 position; uniform mat4 modelViewMatrix, projectionMatrix; void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: 'precision lowp float; void main() { gl_FragColor = vec4(0.0); }' });
+    const xe = renderer.xr.enabled, st0 = renderer.getScissorTest(), prev = renderer.getRenderTarget(), ac = renderer.autoClear, ov = scene.overrideMaterial, shown = [], on = [], fc = [];
+    renderer.xr.enabled = false; renderer.getViewport(_vp); renderer.getScissor(_sc);
+    try { for (const o of objs) { let p = o; while (p) { if (!p.visible) { p.visible = true; shown.push(p); } p = p.parent; } if (!o.layers.isEnabled(30)) { o.layers.enable(30); on.push(o); } if (o.frustumCulled) { o.frustumCulled = false; fc.push(o); } }
+      _wc.position.copy(camera.position); _wc.rotation.set(-0.15, 0, 0, 'YXZ'); _wc.updateMatrixWorld(true); _wc.layers.set(30); scene.overrideMaterial = GEO.mat;
+      renderer.setRenderTarget(null); renderer.autoClear = false; renderer.setViewport(0, 0, 2, 2); renderer.setScissor(0, 0, 2, 2); renderer.setScissorTest(true); renderer.render(scene, _wc); }
+    catch (e) { PW.err = 'geo ' + e; }
+    finally { scene.overrideMaterial = ov; for (const o of shown) o.visible = false; for (const o of on) o.layers.disable(30); for (const o of fc) o.frustumCulled = true;
+      renderer.setScissorTest(st0); renderer.setScissor(_sc); renderer.setViewport(_vp); renderer.setRenderTarget(prev); renderer.autoClear = ac; renderer.xr.enabled = xe; } }
+  // draw a whole visible list in chunks (one chunk per frame), plus the mirror pass for the shop
+  async function drawList(area, list, mirror) { for (let i = 0; i < list.length;) { i = drawChunk(area, list, i, 24, false); if (PW.prog && PW.prog.ph === 'draw') PW.prog.i = Math.min(i, list.length); await frame(); }
+    if (mirror && MV.twin) { const ml = list.filter(o => !o.isReflector); for (let i = 0; i < ml.length;) { i = drawChunk(area, ml, i, 24, true); await frame(); } } }
+  function drawAllNow(area) { const l = LISTS[area] || []; for (let i = 0; i < l.length;) i = drawChunk(area, l, i, 1e9, false); if (area === 2 && MV.twin) drawChunk(area, l, 0, 1e9, true); }
+  // program inputs that matter for dedupe: the material(s), instancing / skinning / batching, vertex colours, morph targets
+  const progKey = o => { const ms = Array.isArray(o.material) ? o.material : [o.material], g = o.geometry; return ms.map(m => m && m.uuid).join(',') + (o.isInstancedMesh ? 'I' : '') + (o.isSkinnedMesh ? 'S' : '') + (o.isBatchedMesh ? 'B' : '') + (o.isPoints ? 'P' : o.isLine ? 'L' : o.isSprite ? 'Sp' : '') + (g && g.attributes && g.attributes.color ? 'c' : '') + (g && g.morphAttributes ? Object.keys(g.morphAttributes).length : ''); };
+  function meshList(area, visibleOnly, skip) { const out = [], keys = new Set(); stageArea(area, () => { const undoG = golfStage(area);
+      try { const add = o => { if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite) || !o.material || o.isReflector) return; const k = progKey(o); if (keys.has(k) || (skip && skip.has(k))) return; keys.add(k); out.push(o); };
+        if (visibleOnly) { scene.traverseVisible(add); for (const o of (FM.warm || [])) add(o); } else scene.traverse(add); } finally { if (undoG) undoG(); } }); return { list: out, keys }; }
+  // compile meshes[i..] under the staged area's lights until the slice budget runs out (always at least one); returns the next index
+  function compileSome(area, list, i, budget, mirror) { const t0 = performance.now(); let j = i; const fake = { traverse: cb => { for (let q = j0; q < j1; q++) cb(list[q]); }, traverseVisible() {} }; let j0 = i, j1 = i;
+    stageArea(area, () => { const undoG = golfStage(area), prev = renderer.getRenderTarget(); LS.t = -1e9; const sig = lightSig(); LS.done.add(sig); PW.lastSig = sig;
+      try { camera.updateMatrixWorld(true); renderer.setRenderTarget(null);
+        while (j < list.length && (j === i || performance.now() - t0 < budget)) { j0 = j; j1 = j + 1; const ms = renderer.compile(fake, camera, scene); for (const m of ms) PW.pending.add(m);
+          if (mirror && MV.twin) { const xe = renderer.xr.enabled, mv = monkey.visible; try { monkey.visible = true; renderer.xr.enabled = false; renderer.setRenderTarget(MV.twin.getRenderTarget()); renderer.compile(fake, camera, scene); } finally { renderer.xr.enabled = xe; monkey.visible = mv; renderer.setRenderTarget(null); } }
+          j++; PW.jobs++; } }
+      catch (e) { PW.err = 'compile ' + e; j = Math.max(j, i + 1); }
+      finally { renderer.setRenderTarget(prev); if (undoG) undoG(); } });
+    return j; }
+  // poll KHR_parallel_shader_compile completion (three's isReady) without blocking; true when everything issued so far is linked
+  function ready(budget) { const t0 = performance.now(); for (const m of PW.pending) { if (performance.now() - t0 > budget) return false; let r = true; try { const p = renderer.properties.get(m).currentProgram; r = !p || p.isReady() !== false; } catch (e) {} if (r) PW.pending.delete(m); } return PW.pending.size === 0; }   // v10: a null status (deleted / errored program) never turns true: count it as done
+  const budget = () => PW.holdFor ? 20 : S.presenting ? (VEIL.on ? 14 : 4) : 5;
+  // v10: ?warmlog=1 prints each pre-warm step to the console and shows the current step + timings on the PREPARING VR card (S.warmLog() returns the log)
+  PW.log = []; function logW(m) { const t = Math.round(performance.now() - (PW.startedAt || 0)); PW.log.push(t + 'ms ' + m); if (PW.log.length > 80) PW.log.shift(); if (dbg().warmlog) console.log('[warm] ' + t + 'ms ' + m); }
+  S.warmLog = () => PW.log.slice();
+  PW.slices = []; let _sl = 0;   // the longest pre-warm slices (ms, job) for the tests
+  function frame() { const n = performance.now(); if (_sl) { const d = n - _sl, c = PW.cur ? PW.cur.area + ':' + PW.cur.kind : '?'; if (PW.slices.length < 8 || d > PW.slices[PW.slices.length - 1][0]) { PW.slices.push([Math.round(d), c]); PW.slices.sort((a, b) => b[0] - a[0]); PW.slices.length = Math.min(8, PW.slices.length); } }
+    return new Promise(r => { const go = () => { _sl = performance.now(); r(); }; if (S.presenting && session) session.requestAnimationFrame(go); else requestAnimationFrame(go); }); }
+  // the job list: [name, area, kind, ...]
+  function buildJobs(first) { const J = []; const areas = [first, ...[1, 2, 4, 3].filter(a => a !== first)];
+    for (const a of areas) J.push({ area: a, kind: 'vis', gate: a === first });
+    J.push({ area: first, kind: 'rest' }); for (const a of areas) if (a !== first && a !== 4) J.push({ area: a, kind: 'rest' });
+    J.push({ kind: 'icons' }, { kind: 'tex' }, { kind: 'geo' }, { kind: 'trip' }); return J; }
+  async function runJob(job) { const a = job.area, t0 = performance.now(), p0 = renderer.info.programs ? renderer.info.programs.length : 0;
+    if (a === 2) { const q = performance.now(); try { if (A.loadShop) await A.loadShop(); } catch (e) {} try { mirrorTwin(); } catch (e) {} PW.loadShopMs = Math.round(performance.now() - q); _sl = performance.now(); }
+    if (a === 3) { const q = performance.now(); try { if (window.__loadNK) await window.__loadNK(); } catch (e) {} PW.loadNKMs = Math.round(performance.now() - q); _sl = performance.now(); if (!scene.getObjectByName('nkStudio')) return; }
+    if (job.kind === 'vis' || job.kind === 'rest') {
+      const { list, keys } = meshList(a, job.kind === 'vis', job.kind === 'rest' ? PW.seenKeys[a] : null); if (job.kind === 'vis') PW.seenKeys[a] = keys;
+      let i = 0; PW.prog = { a, kind: job.kind, ph: 'compile', i: 0, n: list.length }; logW('start ' + a + ':' + job.kind + ' meshes ' + list.length);
+      while (i < list.length) { i = compileSome(a, list, i, budget(), a === 2 && job.kind === 'vis'); PW.prog.i = i; await frame(); }
+      // v10 (Dave t475u: the card sat at 60% on the Quest): wait for the driver's parallel link, but never forever. After LINK_CAP (3 s under the card,
+      // 8 s otherwise) the rest are linked ONE PER FRAME (a synchronous getUniforms), so the card keeps drawing and its number keeps moving.
+      { const tR = performance.now(), n0 = PW.pending.size; PW.prog = { a, kind: job.kind, ph: 'link', i: 0, n: n0 };
+        while (!ready(budget())) { PW.prog.i = n0 - PW.pending.size; if (performance.now() - tR > (VEIL.on ? 3000 : 8000)) break; await frame(); }
+        if (PW.pending.size) { const left = [...PW.pending]; PW.linkCapped = (PW.linkCapped || 0) + left.length; logW('link cap: ' + left.length + ' of ' + n0 + ' not reported ready after ' + Math.round(performance.now() - tR) + ' ms; linking one per frame');
+          PW.prog = { a, kind: job.kind, ph: 'link1', i: 0, n: left.length };
+          let tF = performance.now(); for (const m of left) { const t1 = performance.now(); try { const p = renderer.properties.get(m).currentProgram; if (p) p.getUniforms(); } catch (e) {} PW.pending.delete(m); PW.prog.i++; const d = performance.now() - t1; if (d > (PW.link1Max || 0)) PW.link1Max = Math.round(d); if (performance.now() - tF > 6) { await frame(); tF = performance.now(); } } }   // shared programs are already linked: several per frame while under 6 ms, a slow real link gets a frame to itself
+        logW('linked ' + a + ':' + job.kind + ' ' + n0 + ' in ' + Math.round(performance.now() - tR) + ' ms'); }
+      if (job.kind === 'vis') { LISTS[a] = list; PW.prog = { a, kind: job.kind, ph: 'draw', i: 0, n: list.length }; if (S.presenting && !VEIL.on) PW.needDraw.add(a); else await drawList(a, list, a === 2); logW('drawn ' + a + ' at ' + Math.round(performance.now() - PW.startedAt) + ' ms'); }   // in VR (card gone) the one draw waits for the beam's cut
+      PW.areas.push({ area: a === 4 ? 'room2' : a, kind: job.kind, sig: PW.lastSig, meshes: list.length, programs: (renderer.info.programs ? renderer.info.programs.length : 0) - p0, ms: Math.round(performance.now() - t0) });
+      if (job.kind === 'vis') PW.warm.add(a); }
+    else if (job.kind === 'icons') {   // vrtest-v15 (t491u): slice the prize/accessory atlas under the card / start screen, never at a beam
+      if (dbg().noatlas) { PW.icons = { n: 0, ms: 0, left: 0, skipped: 1 }; return; }
+      const sh = window.__shop || A.shop; try { if (sh && sh.queueIcons) sh.queueIcons(); } catch (e) {}
+      let t = performance.now(); const n0 = sh && sh.iconsPending ? sh.iconsPending() : 0; PW.prog = { a: 2, kind: 'icons', ph: 'bake', i: 0, n: n0 };
+      while (sh && sh.iconsPending && sh.iconsPending()) {
+        if (S.presenting && !VEIL.on) break;   // card already down: don't hitch live VR; leftovers wait for the start screen / a later veil
+        const ib = Math.max(40, budget());
+        if (!(sh.bakeIcons(ib).did) && sh.iconsPending()) { await frame(); t = performance.now(); continue; }
+        PW.prog.i = n0 - sh.iconsPending(); if (performance.now() - t > budget()) { await frame(); t = performance.now(); } }
+      PW.icons = { n: n0, ms: Math.round(performance.now() - t0), left: sh && sh.iconsPending ? sh.iconsPending() : 0 }; }
+    else if (job.kind === 'tex') { const seen = new Set(); scene.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : null; if (!ms) return;
         for (const m of ms) for (const k of ['map', 'emissiveMap', 'alphaMap', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'lightMap', 'envMap', 'bumpMap']) { const x = m[k]; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); }
         if (o.material && o.material.uniforms) for (const u of Object.values(o.material.uniforms)) { const x = u && u.value; if (x && x.isTexture && !x.isRenderTargetTexture && !x.isVideoTexture && x.image) seen.add(x); } });
-      let n = 0; for (const x of seen) { try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (++n % 6 === 0) await nextFrame(); }
-      PW.programs = PW.areas.reduce((a, b) => a + b.programs, 0); PW.done = true;
-    } catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
-    PW.busy = false; PW.ms = Math.round(performance.now() - t0); }
+      let t = performance.now(); for (const x of seen) { const props = renderer.properties.get(x); if (props && props.__webglTexture && props.__version === x.version) continue; try { renderer.initTexture(x); PW.textures++; } catch (e) {} if (performance.now() - t > budget()) { await frame(); t = performance.now(); } } }
+    else if (job.kind === 'geo') { if (S.presenting && !VEIL.on) return;   // vrtest-v10 (Chief v256 45ecbdf, sliced): upload the geometry of everything still hidden
+      // (golf basement, Grok visitor, ticket FX, ...) so it isn't first uploaded mid-session. One raw override program (no lights in its key), 48 meshes a
+      // frame into a 2x2 scissor; Chief's version unhid the whole scene for one full render, which would add light sets and a long frame here.
+      const list = []; scene.traverse(o => { if (!(o.isMesh || o.isPoints || o.isLine) || !o.geometry || o.isReflector || o.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) return;
+        let p = o, hid = false; while (p) { if (!p.visible) { hid = true; break; } p = p.parent; } if (hid && !GEO.seen.has(o.geometry)) { GEO.seen.add(o.geometry); list.push(o); } });
+      const g0 = renderer.info.memory.geometries; let t = performance.now();
+      for (let i = 0; i < list.length; i += 48) { geoChunk(list.slice(i, i + 48)); if (performance.now() - t > budget()) { await frame(); t = performance.now(); } }
+      PW.geo = { meshes: list.length, uploaded: renderer.info.memory.geometries - g0, ms: Math.round(performance.now() - t0) }; }
+    else if (job.kind === 'trip') { if (S.presenting && !VEIL.on) return;   // arcade -> shop -> arcade, one direction per frame (the first return froze on the Quest)
+      for (const ar of [1, 2, 1]) await drawList(ar, LISTS[ar] || [], false); PW.trip = true; } }
+  const LISTS = {}; PW.warm = new Set(); PW.pending = new Set(); PW.seenKeys = {}; PW.jobs = 0; PW.holdFor = 0;
+  PW.needDraw = new Set();
+  S.areaWarm = a => (PW.done || PW.warm.has(a)) && !PW.needDraw.has(a);
+  // a beam whose destination area isn't warm yet holds at the cut (max 4 s) while that area's jobs run first with a 16 ms budget
+  { const hold = { t: 0 }; const T = () => A.tp; const hook = () => { const tp = T(); if (!tp || tp.holdCut) return !!tp; tp.holdCut = dd => { const a = dd === 'shop' ? 2 : dd === 'nk' ? 3 : 1;
+      if (S.presenting && PW.needDraw.has(a) && PW.warm.has(a)) { PW.needDraw.delete(a); PW.holdFor = a; drawAllNow(a); PW.holdFor = 0; PW.cutDraws = (PW.cutDraws || 0) + 1; return true; }   // compiled in VR, drawn once now at the cut
+      if (!S.presenting || S.areaWarm(a) || !PW.busy) { PW.holdFor = 0; hold.t = 0; return false; }
+      if (!hold.t) { hold.t = performance.now(); PW.holds = (PW.holds || 0) + 1; } if (performance.now() - hold.t > 8000) { PW.holdFor = 0; hold.t = 0; return false; }
+      PW.holdFor = a; return true; }; return true; };
+    const iv = setInterval(() => { if (hook()) clearInterval(iv); }, 500); }
+  async function prewarm() { if (PW.busy || PW.done || !A.tp || !window.__cullFor) return; if (dbg().nowarm) { PW.done = true; PW.ms = 0; return; } PW.busy = true; PW.startedAt = performance.now(); const t0 = performance.now();
+    try { const first = A.tp.where || 1; PW.queue = buildJobs(first);
+      while (PW.queue.length) {
+        const tp = A.tp, beaming = !!(tp && tp.state !== 'idle');
+        // v17 (t494u): during a beam, only the destination's jobs may run (shop pad pre-warms shop, NK pad pre-warms NK)
+        if (beaming && S.presenting) { const a = tp.dest === 'shop' ? 2 : tp.dest === 'nk' ? 3 : 1;
+          const h = PW.queue.findIndex(j => j.area === a);
+          if (h < 0) { await frame(); continue; }
+          const job = PW.queue.splice(h, 1)[0]; PW.cur = job; await runJob(job); if (job.gate) PW.gateMs = Math.round(performance.now() - t0); continue; }
+        let k = 0; if (PW.holdFor) { const h = PW.queue.findIndex(j => j.kind === 'vis' && j.area === PW.holdFor); if (h >= 0) k = h; }
+        const job = PW.queue.splice(k, 1)[0]; PW.cur = job; await runJob(job); if (job.gate) PW.gateMs = Math.round(performance.now() - t0); }
+      PW.programs = renderer.info.programs ? renderer.info.programs.length : 0; PW.done = true; }
+    catch (e) { PW.err = String(e && e.stack || e).slice(0, 300); }
+    PW.busy = false; PW.cur = null; PW.ms = Math.round(performance.now() - t0); }
   S.prewarmRun = prewarm;
   { const kick = setInterval(() => { if (PW.done || PW.busy) { if (PW.done) clearInterval(kick); return; } if (window.__noPrewarm) return; const ST = window.__arcade && window.__arcade.stats; if (S.supported && ST && ST.frames > 5 && A.tp) prewarm(); }, 500); }
-  function prerender() { pinScan(); pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
+  function prerender() { pinScan(); if (!PIN.golf && window.__minigolf && window.__minigolf.lampsOff && !dbg().golfold) window.__minigolf.lampsOff();   // v9: beam-cut frames (monkey at the shop pad, arcade still drawn) counted the lamps = an unwarmed 28-light set
+    pinLights(); if (S.frames > 1 && !S.warmReq) { const sig = lightSig(); if (!LS.done.has(sig)) { LS.done.add(sig); warmXR('lights ' + sig); } } }
   { const b0 = scene.onBeforeRender, a0 = scene.onAfterRender;   // pin right before three gathers the lights, unpin right after the frame's render
-    scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) prerender(); };
-    scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
+    scene.onBeforeRender = function () { if (b0) b0.apply(this, arguments); if (renderer.xr.isPresenting && !S.inMirror) { if (VEIL.on) veilHide(); else prerender(); } };
+    scene.onAfterRender = function () { if (a0) a0.apply(this, arguments); if (VEIL.hidden.length) veilShow(); if (renderer.xr.isPresenting && !S.inMirror) unpinLights(); }; }
   function contCan(w) { try { const C = w && w.__gaContinue, m = play.cur; return !!(play.sub === 'play' && m && m.cont && C && C.can && C.can()); } catch (e) { return false; } }
 
   function gameInput(w, aim, dt) {

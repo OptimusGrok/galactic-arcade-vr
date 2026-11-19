@@ -61,12 +61,15 @@ export function detectTier(opt = {}) {
 export function qualityForTier(tier, { mobile = false, powerSave = false } = {}) {
   // t854u / v232: texMax = longest image edge after downsample; cabScale shrinks cabinet canvases;
   // mips off saves ~33% GPU memory; shopCell is the prize-atlas cell (atlas is 16x16 cells).
-  if (tier === 'low') return { dpr: 1, refl: 0, bloom: 0, post: false, samples: 0, cabDemos: false, aniso: 1, fps: 30, warm: false, windowQ: 0.28, rtFloat: false, texMax: 384, cabScale: 0.5, mips: false, shopCell: 64, shopLab: 0.5, nbW: 256, nbH: 320, previewDpr: 1, stone: 256 };
-  if (tier === 'mid' && powerSave) return { dpr: 1.25, refl: 0.22, bloom: 0.28, post: true, samples: 0, cabDemos: true, aniso: 2, fps: 30, warm: true, windowQ: 0.5, rtFloat: false, texMax: 640, cabScale: 0.75, mips: true, shopCell: 96, shopLab: 0.75, nbW: 384, nbH: 480, previewDpr: 1.25, stone: 512 };
-  if (tier === 'mid') return { dpr: 1.5, refl: 0.35, bloom: 0.5, post: true, samples: 0, cabDemos: true, aniso: 4, fps: 60, warm: true, windowQ: 0.75, rtFloat: false, texMax: 768, cabScale: 0.75, mips: true, shopCell: 96, shopLab: 0.75, nbW: 384, nbH: 480, previewDpr: 1.25, stone: 512 };
-  if (powerSave) return { dpr: mobile ? 1.25 : 1.5, refl: mobile ? 0.22 : 0.35, bloom: 0.28, post: true, samples: 0, cabDemos: true, aniso: 4, fps: 30, warm: true, windowQ: 0.75, rtFloat: false, texMax: 768, cabScale: 0.85, mips: true, shopCell: 128, shopLab: 1, nbW: 512, nbH: 640, previewDpr: 1.25, stone: 512 };
-  if (mobile) return { dpr: 1.5, refl: 0.35, bloom: 0.5, post: true, samples: 2, cabDemos: true, aniso: 4, fps: 60, warm: true, windowQ: 0.75, rtFloat: false, texMax: 0, cabScale: 1, mips: true, shopCell: 128, shopLab: 1, nbW: 512, nbH: 640, previewDpr: 1.5, stone: 1024 };
-  return { dpr: 2, refl: 0.6, bloom: 0.5, post: true, samples: 4, cabDemos: true, aniso: 8, fps: 60, warm: true, windowQ: 1, rtFloat: true, texMax: 0, cabScale: 1, mips: true, shopCell: 128, shopLab: 1, nbW: 512, nbH: 640, previewDpr: 1.5, stone: 1024 };
+  // vrtest-v10 (Chief v256 1a2bc35): high / mobile / powerSave use mid's shopCell/shopLab so the shop prize atlas and labels are not 2K wide.
+  // vrtest-v10 (Chief v256 9bbb3b8): posterScale/posterMax cap room posters (high uses mid's 0.75 / 768).
+  if (tier === 'low') return { dpr: 1, refl: 0, bloom: 0, post: false, samples: 0, cabDemos: false, aniso: 1, fps: 30, warm: false, windowQ: 0.28, rtFloat: false, texMax: 384, cabScale: 0.5, mips: false, shopCell: 64, shopLab: 0.5, nbW: 256, nbH: 320, previewDpr: 1, stone: 256, posterScale: 0.5, posterMax: 384 };
+  if (tier === 'mid' && powerSave) return { dpr: 1.25, refl: 0.22, bloom: 0.28, post: true, samples: 0, cabDemos: true, aniso: 2, fps: 30, warm: true, windowQ: 0.5, rtFloat: false, texMax: 640, cabScale: 0.75, mips: true, shopCell: 96, shopLab: 0.75, nbW: 384, nbH: 480, previewDpr: 1.25, stone: 512, posterScale: 0.75, posterMax: 768 };
+  if (tier === 'mid') return { dpr: 1.5, refl: 0.35, bloom: 0.5, post: true, samples: 0, cabDemos: true, aniso: 4, fps: 60, warm: true, windowQ: 0.75, rtFloat: false, texMax: 768, cabScale: 0.75, mips: true, shopCell: 96, shopLab: 0.75, nbW: 384, nbH: 480, previewDpr: 1.25, stone: 512, posterScale: 0.75, posterMax: 768 };
+  if (powerSave) return { dpr: mobile ? 1.25 : 1.5, refl: mobile ? 0.22 : 0.35, bloom: 0.28, post: true, samples: 0, cabDemos: true, aniso: 4, fps: 30, warm: true, windowQ: 0.75, rtFloat: false, texMax: 768, cabScale: 0.85, mips: true, shopCell: 96, shopLab: 0.75, nbW: 512, nbH: 640, previewDpr: 1.25, stone: 512, posterScale: 0.75, posterMax: 768 };
+  if (mobile) return { dpr: 1.5, refl: 0.35, bloom: 0.5, post: true, samples: 2, cabDemos: true, aniso: 4, fps: 60, warm: true, windowQ: 0.75, rtFloat: false, texMax: 0, cabScale: 1, mips: true, shopCell: 96, shopLab: 0.75, nbW: 512, nbH: 640, previewDpr: 1.5, stone: 1024, posterScale: 0.75, posterMax: 768 };
+  // vrtest-v10 (Chief 1a9fabe): 8-bit composer targets on high too (rtFloat false); samples / refl / bloom (tier effects) left as they were
+  return { dpr: 2, refl: 0.6, bloom: 0.5, post: true, samples: 4, cabDemos: true, aniso: 8, fps: 60, warm: true, windowQ: 1, rtFloat: false, texMax: 0, cabScale: 1, mips: true, shopCell: 96, shopLab: 0.75, nbW: 512, nbH: 640, previewDpr: 1.5, stone: 1024, posterScale: 0.75, posterMax: 768 };
 }
 
 export function tierQuality() {
@@ -98,14 +101,50 @@ export function flagTex(t, THREE) {
   return t;
 }
 
-// Downsample a loaded image texture to quality.texMax and apply mip/aniso flags.
-export function capLoadedTexture(t, THREE) {
+// Turn off mipmaps without changing magFilter (pixel-art sides can keep Nearest).
+export function skipMips(t, THREE) {
+  if (!t) return t;
+  t.generateMipmaps = false;
+  if (THREE && THREE.LinearFilter) {
+    const near = THREE.NearestFilter && (t.magFilter === THREE.NearestFilter || t.minFilter === THREE.NearestFilter
+      || t.minFilter === THREE.NearestMipmapNearestFilter || t.minFilter === THREE.NearestMipmapLinearFilter);
+    t.minFilter = near ? THREE.NearestFilter : THREE.LinearFilter;
+  }
+  return t;
+}
+
+// After wrapS/wrapT are set: tiling maps keep mipmaps; non-tiling posters skip them (saves ~1/3 GPU).
+// A RepeatWrapping used only to flip (repeat.x < 0) is treated as a poster.
+export function finishCanvasTex(t, THREE) {
+  if (!t) return t;
+  flagTex(t, THREE);
+  const rx = (t.repeat && t.repeat.x) || 1, ry = (t.repeat && t.repeat.y) || 1;
+  const flipOnly = rx < 0 || ry < 0;
+  const tiles = !flipOnly && THREE && (
+    (t.wrapS === THREE.RepeatWrapping && t.wrapT === THREE.RepeatWrapping) ||
+    (t.wrapS === THREE.RepeatWrapping && Math.abs(rx) > 1.01) ||
+    (t.wrapT === THREE.RepeatWrapping && Math.abs(ry) > 1.01)
+  );
+  if (!tiles) skipMips(t, THREE);
+  return t;
+}
+
+// High uses mid's poster budget so room posters (kiosk tickets, painted marquees) are not full-res RGBA.
+export function posterWH(w, h) {
+  const q = tierQuality();
+  const scale = q.posterScale == null ? 1 : q.posterScale;
+  return scaleWH(w, h, scale, q.posterMax || 0);
+}
+
+// Downsample a loaded image texture to quality.texMax (or opt.max) and apply mip/aniso flags.
+// opt = { max, mips: false } overrides the current tier for a specific texture.
+export function capLoadedTexture(t, THREE, opt) {
   if (!t) return t;
   const q = tierQuality();
   const img = t.image;
   const iw = img && (img.width || img.videoWidth) || 0;
   const ih = img && (img.height || img.videoHeight) || 0;
-  const max = q.texMax || 0;
+  const max = (opt && opt.max) || q.texMax || 0;
   if (max && iw && ih && Math.max(iw, ih) > max) {
     try {
       const [w, h] = scaleWH(iw, ih, 1, max);
@@ -114,7 +153,137 @@ export function capLoadedTexture(t, THREE) {
       t.image = c; t.needsUpdate = true;
     } catch (e) {}
   }
-  return flagTex(t, THREE);
+  flagTex(t, THREE);
+  if (opt && opt.mips === false) skipMips(t, THREE);
+  return t;
+}
+
+// Cabinet side art: cap the long edge at 512 (typically 256x512) and skip mipmaps.
+// 12 cabs x two 512x1024 sides with mips was ~51-85 MB; this lands near 12 MB.
+export function capCabSideTexture(t, THREE) {
+  return capLoadedTexture(t, THREE, { max: 512, mips: false });
+}
+
+// t893u: toggle heavy maps / reflectors on the GPU. Off keeps placeholder colours and shrinks
+// render targets to 1x1; on restores the maps (needsUpdate re-uploads) and the RT size.
+// Texture.dispose() frees the WebGL texture but leaves the image/canvas so a later on() can re-upload.
+let THREE_REF = null; export function setStreamThree(T) { THREE_REF = T; }
+const _ph = new Map();
+function placeholderFor(t, T) {
+  if (!T) return null;
+  const key = (t.colorSpace || '') + '|' + (t.flipY ? 1 : 0) + '|' + (t.channel || 0);
+  let p = _ph.get(key); if (p) return p;
+  p = new T.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1); p.colorSpace = t.colorSpace; p.flipY = t.flipY; p.channel = t.channel || 0; p.needsUpdate = true; p.name = 'streamPlaceholder';
+  _ph.set(key, p); return p;
+}
+const _streamApis = [];
+// vrtest-v4: texload.js swaps a KTX2 stub for its image fallback; evicted stream slots must restore the fallback, not the empty stub
+export function streamRetarget(from, to) { for (const a of _streamApis) for (const it of a.items) if (it.tex === from) { it.tex = to; it.bmp = null; } }
+export function bindStreamGpu(root, opt = {}) {
+  const minEdge = opt.minEdge == null ? 512 : opt.minEdge;
+  const names = opt.names ? new Set(opt.names) : null;
+  const also = opt.alsoNames ? new Set(opt.alsoNames) : null;
+  const colors = Object.assign({
+    muralLeft: 0x3a2430, muralRight: 0x3a2430, muralSide: 0x2e2030, muralSide2: 0x2e2030,
+    muralTop: 0x2a1828, muralTitle: 0x241828, shelfBoxes: 0xc4a070, priceLabels: 0x1e3378,
+    grokShopSign: 0x0e1638, screen: 0x0a0814
+  }, opt.colors || {});
+  const texSize = t => {
+    if (!t) return 0;
+    if (t.isWebGLRenderTarget) return Math.max(t.width || 0, t.height || 0);
+    const img = t.image || (t.source && t.source.data);
+    return Math.max((img && (img.width || img.videoWidth)) || 0, (img && (img.height || img.videoHeight)) || 0);
+  };
+  const items = [];
+  root.traverse(o => {
+    if (o && typeof o.getRenderTarget === 'function') {
+      const rt = o.getRenderTarget();
+      if (rt && Math.max(rt.width || 0, rt.height || 0) >= 64) items.push({ kind: 'rt', rt, w: rt.width, h: rt.height, name: o.name });
+      return;
+    }
+    if (!o || !o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      for (const slot of ['map', 'emissiveMap']) {
+        const t = mat[slot]; if (!t || t.isWebGLRenderTarget) continue;
+        const sz = texSize(t);
+        if (names && !names.has(o.name)) continue;
+        // include allow-listed meshes even before TextureLoader has set image width (else murals/DS never evict)
+        if (!names && sz < minEdge && !(also && also.has(o.name))) continue;
+        items.push({ kind: 'map', mat, slot, tex: t, name: o.name, color: colors[o.name] || 0x1a1220, orig: mat.color ? mat.color.getHex() : 0xffffff });
+      }
+    }
+  });
+  // vrtest-v2 (Dave t446u freezes): re-uploading a JPEG <img> after dispose() made the browser decode it again ON the main thread inside
+  // texImage2D (~40-60 ms per shop mural at 4x CPU, worse on the Quest). Each streamed <img> is decoded ONCE off the main thread into an
+  // ImageBitmap (createImageBitmap, flipped there, so flipY = false); it is swapped in only while the texture is off the GPU, so a later
+  // upload is a plain copy. Canvases are left alone (they may be redrawn).
+  const stats = { ups: 0, upMs: 0, maxMs: 0, last: 0, bitmaps: 0 };
+  const isImg = im => typeof HTMLImageElement !== 'undefined' && im instanceof HTMLImageElement;
+  const toBitmap = it => {
+    if (it.kind !== 'map' || it.bmp || typeof createImageBitmap !== 'function') return;
+    const im = it.tex.image; if (!isImg(im)) return;
+    const go = () => { if (it.bmp || !im.naturalWidth) return; it.bmp = 'busy';
+      createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        .then(b => { it.bmp = b; stats.bitmaps++; if (!it.onGpu) swapIn(it); }).catch(() => { it.bmp = 'no'; }); };
+    if (im.complete && im.naturalWidth) go(); else im.addEventListener('load', go, { once: true });
+  };
+  const swapIn = it => { const b = it.bmp; if (!b || typeof b === 'string' || it.tex.image === b) return;
+    for (const o of items) if (o.tex === it.tex) o.onGpu = false;   // the same texture can sit in two slots
+    it.tex.image = b; it.tex.flipY = false; };
+  const restore = it => {
+    try {
+      const t0 = performance.now();
+      it.mat[it.slot] = it.tex;
+      if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.orig || 0xffffff);
+      it.tex.needsUpdate = true;
+      const R = opt.renderer || (window.__arcade && window.__arcade.renderer); if (R && R.initTexture) R.initTexture(it.tex);
+      for (const o of items) if (o.tex === it.tex) o.onGpu = true;
+      const ms = performance.now() - t0; stats.ups++; stats.upMs += ms; stats.last = ms; if (ms > stats.maxMs) stats.maxMs = ms;
+      return ms;
+    } catch (e) { return 0; }
+  };
+  for (const it of items) { it.onGpu = true; toBitmap(it); }   // KTX2 (CompressedTexture) items are skipped by toBitmap (no <img>)
+  const api = {
+    on: true,
+    items,
+    queue: [],
+    // TEST v1 (VR): with opt.stagger, set(true) only queues the maps; pump(n) uploads n per frame (placeholder until then), so walking up
+    // to the pad never stalls one headset frame on ~10 uploads. A beam pumps everything at once at the start of the charge.
+    // v2: pump(n, budgetMs): at most n uploads and stop once budgetMs is used (the first always goes); after a slow upload the next frames
+    // rest (one frame per 12 ms spent), so the headset never stacks two slow uploads back to back.
+    stats,
+    pump(n, budgetMs) { if (api.rest > 0) { api.rest--; return api.queue.length; } const t0 = performance.now(), B = budgetMs == null ? 1e9 : budgetMs; let k = 0;
+      while (api.queue.length && k < n) { const it = api.queue.shift(); if (it.kind !== 'rt') { if (it.tex.image !== it.bmp) swapIn(it); restore(it); } k++; if (performance.now() - t0 >= B) break; }
+      const ms = performance.now() - t0; api.rest = ms > 12 ? Math.min(6, Math.floor(ms / 12)) : 0; return api.queue.length; },
+    rest: 0,
+    set(on) {
+      on = !!on;
+      if (on === api.on) return api;
+      api.on = on;
+      api.queue.length = 0;
+      for (const it of items) {
+        try {
+          toBitmap(it);   // TextureLoader sets .image only once the file has loaded, so try again here
+          if (on && opt.stagger && it.kind !== 'rt') { api.queue.push(it); continue; }
+          if (it.kind === 'rt') { it.rt.setSize(on ? it.w : 1, on ? it.h : 1); continue; }
+          // VR test build: swap in a 1x1 placeholder of the same kind instead of null, so the material keeps its shader program
+          // (a null map changes USE_MAP -> a shader compile on every stream in/out, the v18 beam stall). On: re-upload right away.
+          if (on) { swapIn(it); restore(it); }
+          else {
+            it.mat[it.slot] = placeholderFor(it.tex, THREE_REF || opt.THREE);
+            if (it.slot === 'map' && it.mat.color) it.mat.color.setHex(it.color);
+            try { it.tex.dispose(); } catch (e) {}
+            it.onGpu = false; swapIn(it);
+          }
+        } catch (e) {}
+      }
+      return api;
+    }
+  };
+  _streamApis.push(api);
+  return api;
 }
 
 export function persistTier(name) {
@@ -140,8 +309,13 @@ export function memSnapshot({ THREE, renderer, scene, composer, extras = {} } = 
   const seen = new Set();
   let texBytes = 0, texN = 0, rtBytes = 0, rtN = 0, geoN = 0, geoBytes = 0;
   const bppOf = typ => (T && (typ === T.HalfFloatType || typ === T.FloatType)) ? 8 : 4;
+  let ktxBytes = 0, ktxN = 0;
   const addTex = t => {
     if (!t || seen.has(t)) return; seen.add(t);
+    // vrtest-v4: format-aware. A compressed (KTX2/Basis -> ASTC / ETC2 / BC) texture's GPU size is its mip chain's data, ~1 byte per
+    // pixel for UASTC targets, not width x height x 4.
+    if (t.isCompressedTexture) { let b = 0; for (const mp of (t.mipmaps || [])) b += (mp && mp.data && mp.data.byteLength) || 0;
+      if (!b && t.image && t.image.width) b = t.image.width * t.image.height; texBytes += b; ktxBytes += b; texN++; ktxN++; return; }
     const img = t.image;
     const w = (img && (img.width || img.videoWidth)) || t.image && t.image.data && t.source && 0 || (img && img.data ? Math.sqrt(img.data.length / 4) : 0) || 0;
     const h = (img && (img.height || img.videoHeight)) || w;
@@ -195,7 +369,7 @@ export function memSnapshot({ THREE, renderer, scene, composer, extras = {} } = 
     dpr, drawingBuffer: [dbw, dbh],
     maxTex: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
     info: r ? { tex: r.info.memory.textures, geo: r.info.memory.geometries, prog: (r.info.programs || []).length, calls: r.info.render.calls, tris: r.info.render.triangles } : null,
-    texMB: +(texBytes / 1e6).toFixed(2), texN,
+    texMB: +(texBytes / 1e6).toFixed(2), texN, ktxMB: +(ktxBytes / 1e6).toFixed(2), ktxN,
     rtMB: +(rtBytes / 1e6).toFixed(2), rtN,
     geoMB: +(geoBytes / 1e6).toFixed(2), geoN,
     lights, lightsOn,

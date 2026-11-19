@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
-import { capLoadedTexture, flagTex, tierQuality } from './tier.js';
+import { bindStreamGpu, capLoadedTexture, finishCanvasTex, flagTex, skipMips, tierQuality } from './tier.js';
 
 let api_sky = null;
 export const SHOP_HALF = 14;
@@ -36,6 +36,7 @@ const byId = Object.fromEntries(ITEMS.map(i => [i.id, i]));
 import chat from './grokchat.js';
 import { NK_GLOVES, ownsGlove, grantGlove, wearGlove, gloveIcon, gloveState } from './nkgloves.js';   // v16: Neon Knockout glove skins (worn in the studio)
 import { setupChessTable, CHESS } from './chesstable.js';   // VR edition: chess table between the wardrobe and the pool tables   // t810u: CHAT with Grok (shared panel + offline knowledge base)
+import { loadPicture } from './texload.js';   // vrtest-v4 (t911u port): KTX2/Basis pictures with image fallback
 export function buildGrokClerk() {
   const canvasTex = (w, h, draw) => {
     let ww = w, hh = h; const max = (tierQuality().texMax || 0);
@@ -45,7 +46,7 @@ export function buildGrokClerk() {
     }
     const c = document.createElement('canvas'); c.width = ww; c.height = hh; const g = c.getContext('2d');
     if (ww !== w || hh !== h) { g.scale(ww / w, hh / h); draw(g, w, h); } else draw(g, ww, hh);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return { t, c, g };
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); return { t, c, g };
   };
   const grok = new THREE.Group(); grok.name = 'grokClerk';
   // t639u look, cheaper path: Lambert (not Standard) + low-poly + merged per limb/material; castShadow off
@@ -110,12 +111,26 @@ export function buildGrokClerk() {
 export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const W = tp.whiteRoom, WXp = W.position.x, H0 = 12, K = SHOP_HALF / H0;
   const getMonkey = () => monkey || (window.__arcade && window.__arcade.monkey);
+  // t487u: v12's 0.8x whites were hard to see in VR (MeshBasic toneMapped:false + emissive still clipped).
+  // Another 30% on top of v12: 0.8 * 0.7 = 0.56 of the original, applied to ALL shop-room whites.
+  // Colours / emissive only — the shop's fixed 24-light set (one PointLight at 40 * 1.3) is unchanged.
+  // vrtest-v16 (t492u): ?olddim=1 restores the v12 0.8x dim on the original v12 surfaces only (window / price
+  // shelves / Grok's counter / floor glow), and skips the v13 all-room / accessories-shelf / candy-stand pass.
+  const OLDDIM = /[?&]olddim=1\b/.test(location.search), NOATLAS = /[?&]noatlas=1\b/.test(location.search);
+  const WHITE_K = OLDDIM ? 0.8 : 0.56, FLOOR_GLOW_K = 0.5, EMISSIVE_K = OLDDIM ? 1 : 0.56;
+  const dimC = (hex, k = WHITE_K) => new THREE.Color().setRGB(((hex >> 16) & 255) / 255 * k, ((hex >> 8) & 255) / 255 * k, (hex & 255) / 255 * k, THREE.SRGBColorSpace);
+  const dimNew = (hex) => dimC(hex, OLDDIM ? 1 : WHITE_K);   // surfaces first dimmed in v13; ?olddim=1 leaves them undimmed
   // ---------- enlarge the white room: stretch the existing floor / ceiling / wall planes ----------
+  const dimmedMats = new Set();
   for (const o of [...W.children]) {
     if (o.isPointLight) { o.distance = 24; o.intensity *= 1.3; continue; }
     if (!o.isMesh || !o.geometry.parameters || o.geometry.type !== 'PlaneGeometry') continue;
-    if (Math.abs(Math.abs(o.rotation.x) - Math.PI / 2) < 1e-3) { o.scale.set(K, K, 1); if (o.position.y > 1) o.visible = false; }   // floor / ceiling (flat ceiling hidden: the curved glass roof replaces it)
-    else { o.position.x *= K; o.position.z *= K; o.scale.x = K; }                       // walls
+    if (Math.abs(Math.abs(o.rotation.x) - Math.PI / 2) < 1e-3) { o.scale.set(K, K, 1); if (o.position.y > 1) { o.visible = false; o.name = o.name || 'shopRoomCeiling'; } else o.name = o.name || 'shopRoomFloor'; }   // floor / ceiling (flat ceiling hidden: the curved glass roof replaces it)
+    else { o.position.x *= K; o.position.z *= K; o.scale.x = K; o.name = o.name || 'shopRoomWall'; }                       // walls
+    if (!OLDDIM) for (const m of [].concat(o.material).filter(Boolean)) {
+      if (!m.color || dimmedMats.has(m)) continue;   // four walls share one material — dim once
+      dimmedMats.add(m); m.color.copy(dimC(m.color.getHex()));
+    }
   }
   const G = new THREE.Group(); G.name = 'prizeShop'; W.add(G);
   const HS = SHOP_HALF;
@@ -140,7 +155,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     }
     const c = document.createElement('canvas'); c.width = ww; c.height = hh; const g = c.getContext('2d');
     if (ww !== w || hh !== h) { g.scale(ww / w, hh / h); draw(g, w, h); } else draw(g, ww, hh);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return { t, c, g };
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); return { t, c, g };
   };
 
   // ---------- plush / toy builders (local origin = bottom centre, facing +z) ----------
@@ -272,7 +287,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   }
   let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const basic = c => new THREE.MeshBasicMaterial({ color: c, toneMapped: false });
-  const ledM = basic(0x3d7bff), ledM2 = basic(0xa64dff), ledC = basic(0x40e8ff), litM = basic(0xffffff);
+  const ledM = basic(0x3d7bff), ledM2 = basic(0xa64dff), ledC = basic(0x40e8ff), litM = basic(dimC(0xffffff));
   const ledB = [], ledP = [], ledCy = [], lit = [];
   const setUV = (g, u0, u1, v0, v1) => { const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * (u1 - u0), v0 + uv.getY(k) * (v1 - v0)); return g; };
   const mg = geos => mergeGeometries(geos.some(g => !g.index) ? geos.map(g => g.index ? g.toNonIndexed() : g) : geos);
@@ -281,14 +296,14 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // ---------- SHOP SHELL: one big square room - back wall partition (full height), the white room's own flat ceiling + side walls, neon trim only ----------
   const ZW = -3.2, SXW = HS, CH = 8.5, ZF = HS, shell = [];
   part(shell, BOX, 0xf7f8fb, 0, CH / 2, ZW - 0.05, 2 * HS, CH, 0.1);                                        // back wall (full width, floor to ceiling)
-  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopShell');
+  mesh(shell, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimNew(0xffffff) }), 'shopShell');
   // ---------- CORNICE: white soffit band where the walls meet the vault, flush downlight strips + cyan neon (nothing hangs) ----------
   const cor = [];
   for (const sd of [-1, 1]) { part(cor, BOX, 0xf4f6fa, sd * (SXW - 0.3), CH - 0.18, (ZW + ZF) / 2, 0.6, 0.36, ZF - ZW); lit.push(new THREE.BoxGeometry(0.16, 0.02, ZF - ZW - 1.0).translate(sd * (SXW - 0.38), CH - 0.37, (ZW + ZF) / 2));
     ledCy.push(new THREE.BoxGeometry(0.03, 0.03, ZF - ZW).translate(sd * (SXW - 0.6), CH - 0.02, (ZW + ZF) / 2)); ledP.push(new THREE.BoxGeometry(0.04, 0.04, ZF - ZW).translate(sd * (SXW - 0.03), 0.06, (ZW + ZF) / 2)); }
   for (const zz of [ZW + 0.3, ZF - 0.3]) { part(cor, BOX, 0xf4f6fa, 0, CH - 0.18, zz, 2 * SXW, 0.36, 0.6); ledCy.push(new THREE.BoxGeometry(2 * SXW, 0.03, 0.03).translate(0, CH - 0.02, zz + (zz < 0 ? 0.3 : -0.3))); }
   for (let i = 0; i < 9; i++) { const xx = -SXW + 2 + i * (2 * SXW - 4) / 8; lit.push(new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12).translate(xx, CH - 0.37, ZW + 0.3), new THREE.CylinderGeometry(0.09, 0.09, 0.02, 12).translate(xx, CH - 0.37, ZF - 0.3)); }
-  mesh(cor, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopCornice');
+  mesh(cor, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopCornice');
   // ---------- CURVED GLASS ROOF: half-circle barrel vault (radius = half the room width) springing from the side-wall tops, front to back.
   // Clear glass onto deep space: dense twinkling stars + soft purple / blue / teal nebula, thin silver curved ribs and straight purlins. Half-disc glass ends close it.
   const VR = SXW, VL = ZF - ZW, VZ = (ZW + ZF) / 2;
@@ -313,7 +328,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
         if (uCap < .5) { rib = line(vU.y * 6., .018); pur = line(vU.x * 12., .012); }
         else { vec2 p = vec2(vU.x * 2. - 1., vU.y); float r = length(p), a = atan(p.y, p.x); rib = line(r * 3., .01) * step(r, 1.) * step(.1, r) + step(.985, r); pur = 0.; }
         col += vec3(.55,.75,1.) * .045 * smoothstep(.5, 0., abs(fract(vU.x * 3. + vU.y * .7) - .5));                     // faint glass sheen
-        col = mix(col, vec3(.86,.89,.94), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
+        col = mix(col, vec3(${OLDDIM ? '.86,.89,.94' : '.482,.498,.526'}), max(rib, pur * .85)); gl_FragColor = vec4(col, 1.); }` });
   { const vg = new THREE.CylinderGeometry(VR, VR, VL, 72, 1, true, -Math.PI / 2, Math.PI).rotateX(-Math.PI / 2).translate(0, CH, VZ);
     const sk = new THREE.Mesh(vg, skyMat); sk.name = 'shopSkylight'; sk.frustumCulled = false; G.add(sk); api_sky = skyMat;
     const capM = skyMat.clone(); capM.uniforms = { uT: skyMat.uniforms.uT, uCap: { value: 1 } };
@@ -322,9 +337,9 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     // silver arch at each end + the spring-line rails
     const rim = [new THREE.TorusGeometry(VR - 0.04, 0.07, 6, 72, Math.PI).translate(0, CH, ZW + 0.06), new THREE.TorusGeometry(VR - 0.04, 0.07, 6, 72, Math.PI).translate(0, CH, ZF - 0.06)];
     for (const sd of [-1, 1]) rim.push(new THREE.BoxGeometry(0.14, 0.1, VL).translate(sd * (VR - 0.07), CH + 0.02, VZ));
-    add(rim, new THREE.MeshBasicMaterial({ color: 0xdfe4ec }), 'shopRoofRim'); }
+    add(rim, new THREE.MeshBasicMaterial({ color: dimC(0xdfe4ec) }), 'shopRoofRim'); }
   // ---------- MURALS: painted straight onto the walls, edge to edge, floor to ceiling ----------
-  const loadT = f => { const t = new THREE.TextureLoader().load(new URL('./tex/' + f, import.meta.url).href, tex => capLoadedTexture(tex, THREE)); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t; };
+  const loadT = f => loadPicture(THREE, 'tex/' + f, { max: 1024, mips: false });
   const SW = 9.2, MB = 0.0, MT = CH - 0.06, MHh = MT - MB, xE = SW / 2 + 0.15, TB = 5.08, zm = ZW + 0.012;
   const mat = f => new THREE.MeshBasicMaterial({ map: loadT(f), toneMapped: false });
   add([setUV(new THREE.PlaneGeometry(HS - xE, MHh), 0.38, 1, 0, 1).translate(-(HS + xE) / 2, MB + MHh / 2, zm)], mat('shop_mural_left.jpg'), 'muralLeft');      // back wall left of the shelves
@@ -338,9 +353,9 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const SD = 0.55, Z0 = ZW + SD / 2 + 0.02, SY = [0.42, 1.2, 1.98, 2.76, 3.54], TOP = 5.0, BAYS = 4, BW = SW / BAYS;
   const frame = [], plushes = [], gp = [], toys = [], cards = [], pools = [];
   const back = canvasTex(64, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, '#eef2ff'); r.addColorStop(0.5, '#ffffff'); r.addColorStop(1, '#f4f0ff'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-  { const bp = new THREE.Mesh(new THREE.PlaneGeometry(SW, TOP), new THREE.MeshBasicMaterial({ map: back.t, toneMapped: false })); bp.position.set(0, TOP / 2, ZW + 0.02); G.add(bp);
+  { const bp = new THREE.Mesh(new THREE.PlaneGeometry(SW, TOP), new THREE.MeshBasicMaterial({ map: back.t, color: dimC(0xffffff), toneMapped: false })); bp.name = 'shelfBack'; bp.position.set(0, TOP / 2, ZW + 0.02); G.add(bp);
     const blu = canvasTex(64, 256, (g, w, h) => { const r = g.createLinearGradient(0, 0, 0, h); r.addColorStop(0, '#9fd8ff'); r.addColorStop(0.6, '#d8f0ff'); r.addColorStop(1, '#eef6ff'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
-    const gb = new THREE.Mesh(new THREE.PlaneGeometry(SW / BAYS - 0.08, TOP - SY[4]), new THREE.MeshBasicMaterial({ map: blu.t, toneMapped: false })); gb.name = 'grokBayGlow'; gb.position.set(-SW / 2 + SW / BAYS * 1.5, (TOP + SY[4]) / 2, ZW + 0.024); G.add(gb); }
+    const gb = new THREE.Mesh(new THREE.PlaneGeometry(SW / BAYS - 0.08, TOP - SY[4]), new THREE.MeshBasicMaterial({ map: blu.t, color: dimC(0xffffff), toneMapped: false })); gb.name = 'grokBayGlow'; gb.position.set(-SW / 2 + SW / BAYS * 1.5, (TOP + SY[4]) / 2, ZW + 0.024); G.add(gb); }
   const UX = Array.from({ length: BAYS + 1 }, (_, i) => -SW / 2 + i * BW);
   for (const ux of UX) { part(frame, BOX, 0xffffff, ux, TOP / 2, Z0, 0.08, TOP, SD); part(frame, BOX, 0xd8dde6, ux, TOP / 2, Z0 + SD / 2 + 0.004, 0.09, TOP, 0.01); ledB.push(new THREE.BoxGeometry(0.03, TOP, 0.02).translate(ux, TOP / 2, Z0 + SD / 2 + 0.014)); }
   part(frame, BOX, 0xffffff, 0, TOP + 0.05, Z0, SW + 0.1, 0.1, SD + 0.04); part(frame, BOX, 0xffffff, 0, SY[0] / 2, Z0, SW, SY[0], SD);
@@ -354,8 +369,8 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const poolT = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 40, 4, 64, 64, 64); r.addColorStop(0, 'rgba(255,246,225,.75)'); r.addColorStop(1, 'rgba(255,246,225,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
   for (let b = 0; b < BAYS; b++) { const x = (UX[b] + UX[b + 1]) / 2; pools.push(new THREE.PlaneGeometry(BW * 0.95, 1.4).translate(x, SY[4] + 0.75, ZW + 0.03));
     for (let s = 0; s < 4; s++) pools.push(new THREE.PlaneGeometry(BW * 0.9, 0.7).translate(x, SY[s] + 0.42, ZW + 0.03)); }
-  add(pools, new THREE.MeshBasicMaterial({ map: poolT.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'shelfLightPools', 1);
-  mesh(frame, new THREE.MeshBasicMaterial({ vertexColors: true }), 'shopShelfFrame');
+  add(pools, new THREE.MeshBasicMaterial({ map: poolT.t, transparent: true, opacity: WHITE_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'shelfLightPools', 1);
+  mesh(frame, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimC(0xffffff) }), 'shopShelfFrame');
   const LZ = Z0 + SD / 2 + 0.016, LBW = BW - 0.16;
   // top shelf: big seated monkey plushes + 2 Grok plushes (the silver clerk from Dave's video) in bay 2
   const MON = { monkeyBrown: [0x6e4120, 0xe2b98a], monkeyGold: [0xb87a2a, 0xf4d8a8], monkeySpace: [0x5e50a0, 0xdcd0f6] };
@@ -416,6 +431,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
       const K3 = 1.32, sp = SPAN[id] * K3; let x = x0 + sp / 2 + (r ? sp * 0.5 : 0), v = r * 3 + b;
       while (x < x1 - sp / 2 + 0.01) { toyJobs.push([id, x, y, z, K3 * (0.92 + rnd() * 0.12), v++, (rnd() - 0.5) * 0.6 + (id === 'roadster' || id === 'dino' ? -0.5 : 0)]); x += sp + rnd() * 0.02; } }
     label(it || { id: id, name: 'Mars Roadster Car', price: byId.roadster.price }, (UX[b] + UX[b + 1]) / 2, SY[s] - 0.1, LZ, 0, LBW); });
+  capLoadedTexture(atl.t, THREE, { max: 1024, mips: false }); if (atl.t.image) atl.c = atl.t.image;
   add(sprBox, new THREE.MeshStandardMaterial({ map: atl.t, roughness: 0.45, emissive: 0xffffff, emissiveMap: atl.t, emissiveIntensity: 0.22 }), 'shelfBoxes');
   mesh(mfr, new THREE.MeshBasicMaterial({ vertexColors: true }), 'marsBoxFrames');
   const toyMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, emissive: 0x2e2e32 });
@@ -453,10 +469,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     part(cand, CYL, 0xffffff, x, yb + 0.25, z, 0.014, 0.5, 0.014);
     const cg = setUV(new THREE.CircleGeometry(R0, 22), 0, 1, 0, 1); const uv = cg.attributes.uv; for (let q = 0; q < uv.count; q++) uv.setX(q, (t + uv.getX(q)) / 3); cg.rotateY(Math.PI / 2); cg.translate(x + 0.02, yb + 0.55 + (j % 2) * 0.1, z); pops.push(cg); }
   const cm = (geos, mat, name, ro) => { const m = new THREE.Mesh(mergeGeometries(geos), mat); m.name = name; if (ro) m.renderOrder = ro; CG.add(m); return m; };
-  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
+  cm(cand, new THREE.MeshBasicMaterial({ vertexColors: true, color: dimNew(0xffffff) }), 'candyStand'); cm(sweets, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }), 'candySweets');
   cm(pops, new THREE.MeshBasicMaterial({ map: sw.t, side: THREE.DoubleSide, toneMapped: false }), 'swirlPops'); cm(cLed, ledM, 'candyLed');
-  cm(jars, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
-  cm(lids, new THREE.MeshBasicMaterial({ color: 0xe4e8ef }), 'jarLids');
+  cm(jars, new THREE.MeshBasicMaterial({ color: dimNew(0xffffff), transparent: true, opacity: 0.04, depthWrite: false, side: THREE.DoubleSide }), 'candyJars', 2);
+  cm(lids, new THREE.MeshBasicMaterial({ color: dimNew(0xe4e8ef) }), 'jarLids');
 
   // ---------- CHECKOUT (right front): curved white counter, cyan base glow, till + register, chunky Grok behind ----------
   const QX = 4.45, QZ = -1.95, RO = 1.95, RI = 1.4, A0 = Math.PI * 0.9, A1 = Math.PI * 1.62;
@@ -464,21 +480,22 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     return new THREE.ExtrudeGeometry(sh, { depth: h, bevelEnabled: false, curveSegments: 28 }).rotateX(-Math.PI / 2); };
   const counterMat = new THREE.MeshStandardMaterial({ color: 0x0e1638, roughness: 0.35, emissive: 0x060a20 });   // shared with the wardrobe island
   add([ring(RO, RI, 1.0).translate(QX, 0.04, QZ)], counterMat, 'checkoutCounter');
-  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, emissive: 0xb0b4bc }), 'checkoutTop');
-  { const AL = A1 - A0, CW = 2048, CHh = 256, ft = canvasTex(CW, CHh, (g, w, h) => { g.fillStyle = '#0e1638'; g.fillRect(0, 0, w, h);
+  add([ring(RO + 0.08, RI - 0.05, 0.06).translate(QX, 1.04, QZ)], new THREE.MeshStandardMaterial({ color: dimC(0xffffff), roughness: 0.2, emissive: dimC(0xb0b4bc), emissiveIntensity: EMISSIVE_K }), 'checkoutTop');
+  { const AL = A1 - A0, ss = Math.max(0.5, tierQuality().shopLab || 1), CW = Math.round(2048 * ss), CHh = Math.round(256 * ss);
+    const ft = canvasTex(CW, CHh, (g, w, h) => { g.setTransform(w / 2048, 0, 0, h / 256, 0, 0); g.fillStyle = '#0e1638'; g.fillRect(0, 0, 2048, 256);
       const neon = (c, blur, lw, fn) => { g.save(); g.strokeStyle = c; g.shadowColor = c; g.shadowBlur = blur; g.lineWidth = lw; g.lineCap = 'round'; g.beginPath(); fn(); g.stroke(); g.restore(); };
-      for (const [y, c] of [[10, '#40f0ff'], [22, '#c04dff'], [h - 22, '#c04dff'], [h - 10, '#40f0ff']]) for (let k = 0; k < 2; k++) neon(c, 18, 6, () => { g.moveTo(0, y); g.lineTo(w, y); });
-      for (const x of [140, 300, w - 300, w - 140]) for (let k = 0; k < 2; k++) neon(x % 2 ? '#c04dff' : '#40f0ff', 14, 4, () => { g.moveTo(x, 44); g.lineTo(x, h - 44); });
-      const bw = 820, bx = (w - bw) / 2; for (let k = 0; k < 2; k++) neon('#b04dff', 22, 7, () => g.roundRect(bx, 50, bw, h - 100, 40));
+      for (const [y, c] of [[10, '#40f0ff'], [22, '#c04dff'], [256 - 22, '#c04dff'], [256 - 10, '#40f0ff']]) for (let k = 0; k < 2; k++) neon(c, 18, 6, () => { g.moveTo(0, y); g.lineTo(2048, y); });
+      for (const x of [140, 300, 2048 - 300, 2048 - 140]) for (let k = 0; k < 2; k++) neon(x % 2 ? '#c04dff' : '#40f0ff', 14, 4, () => { g.moveTo(x, 44); g.lineTo(x, 256 - 44); });
+      const bw = 820, bx = (2048 - bw) / 2; for (let k = 0; k < 2; k++) neon('#b04dff', 22, 7, () => g.roundRect(bx, 50, bw, 256 - 100, 40));
       g.font = '900 120px Arial Rounded MT Bold, Arial Black, Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.save(); g.shadowColor = '#40f0ff'; g.shadowBlur = 30; g.lineWidth = 12; g.strokeStyle = '#40e8ff'; g.strokeText('GROK SHOP', w / 2, h / 2 + 4); g.shadowBlur = 0; g.lineWidth = 4; g.strokeStyle = '#e8ffff'; g.strokeText('GROK SHOP', w / 2, h / 2 + 4); g.restore(); });
+      g.save(); g.shadowColor = '#40f0ff'; g.shadowBlur = 30; g.lineWidth = 12; g.strokeStyle = '#40e8ff'; g.strokeText('GROK SHOP', 1024, 128 + 4); g.shadowBlur = 0; g.lineWidth = 4; g.strokeStyle = '#e8ffff'; g.strokeText('GROK SHOP', 1024, 128 + 4); g.restore(); });
     const fg = new THREE.CylinderGeometry(RO + 0.006, RO + 0.006, 0.98, 48, 1, true, A0 + Math.PI / 2, AL).translate(QX, 0.53, QZ);
     add([fg], new THREE.MeshBasicMaterial({ map: ft.t, toneMapped: false }), 'grokShopSign');
     const mg2 = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 34, 64, 64, 64); r.addColorStop(0, 'rgba(190,70,255,0)'); r.addColorStop(0.6, 'rgba(190,70,255,.7)'); r.addColorStop(1, 'rgba(190,70,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
-    add([new THREE.PlaneGeometry(2 * RO + 2.0, 2 * RO + 2.0).rotateX(-Math.PI / 2).translate(QX, 0.006, QZ)], new THREE.MeshBasicMaterial({ map: mg2.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'magentaGlow', 1); }
+    add([new THREE.PlaneGeometry(2 * RO + 2.0, 2 * RO + 2.0).rotateX(-Math.PI / 2).translate(QX, 0.006, QZ)], new THREE.MeshBasicMaterial({ map: mg2.t, transparent: true, opacity: FLOOR_GLOW_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }), 'magentaGlow', 1); }
   ledCy.push(ring(RO + 0.03, RO - 0.01, 0.04).translate(QX, 0.02, QZ), ring(RO + 0.1, RO + 0.06, 0.025).translate(QX, 1.04, QZ));
   const glowT = canvasTex(128, 128, (g) => { const r = g.createRadialGradient(64, 64, 30, 64, 64, 64); r.addColorStop(0, 'rgba(40,220,255,0)'); r.addColorStop(0.55, 'rgba(40,220,255,.9)'); r.addColorStop(1, 'rgba(40,220,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 128, 128); });
-  const glowM = new THREE.MeshBasicMaterial({ map: glowT.t, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
+  const glowM = new THREE.MeshBasicMaterial({ map: glowT.t, transparent: true, opacity: FLOOR_GLOW_K, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false });
   { const gl = []; gl.push(new THREE.PlaneGeometry(2 * RO + 1.0, 2 * RO + 1.0).rotateX(-Math.PI / 2).translate(QX, 0.007, QZ)); add(gl, glowM, 'cyanGlow', 1); }   // t568: the 3.6 m halo that sat under the old centre pad (0,0) is gone (pad moved to the corner in t563)
   const cnt = [], at = (a, r) => [QX + Math.cos(a) * r, QZ - Math.sin(a) * r];
   const [tx, tz] = at(Math.PI * 1.02, 1.85), [rx, rz] = at(Math.PI * 1.5, 1.85);
@@ -495,14 +512,14 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
 
   // ---------- glossy floor (fake reflections of the glowing wall, candy and counter) ----------
   { const fl = canvasTex(512, 512, (g, w, h) => { g.clearRect(0, 0, w, h); const X = x => (x + SXW) / (2 * SXW) * w, Zp = z => (z - ZW) / (ZF - ZW) * h;
-      let r = g.createLinearGradient(0, 0, 0, Zp(1.2)); r.addColorStop(0, 'rgba(255,255,255,.9)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(X(-SW / 2), 0, X(SW / 2) - X(-SW / 2), Zp(1.2));
+      let r = g.createLinearGradient(0, 0, 0, Zp(1.2)); r.addColorStop(0, 'rgba(255,255,255,' + (0.9 * WHITE_K).toFixed(2) + ')'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(X(-SW / 2), 0, X(SW / 2) - X(-SW / 2), Zp(1.2));
       for (const [k, ux] of UX.entries()) { r = g.createLinearGradient(0, 0, 0, Zp(0.6)); r.addColorStop(0, k % 2 ? 'rgba(166,77,255,.6)' : 'rgba(61,123,255,.6)'); r.addColorStop(1, 'rgba(61,123,255,0)'); g.fillStyle = r; g.fillRect(X(ux) - 3, 0, 6, Zp(0.6)); }
       for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(${[255, 40, 255, 60][k % 4]},${[60, 200, 40, 120][k % 4]},${[90, 60, 160, 255][k % 4]},.18)`; g.fillRect(X(-5.6 + rnd() * 1.8), Zp(-1.8 + rnd() * 3.6), 10, 26); } });
     const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * SXW, ZF - ZW), new THREE.MeshBasicMaterial({ map: fl.t, transparent: true, depthWrite: false, toneMapped: false }));
     m.rotation.x = -Math.PI / 2; m.position.set(0, 0.004, (ZW + ZF) / 2); m.renderOrder = 1; m.name = 'glossFloor'; G.add(m); }
 
   add(ledB, ledM, 'shopLedBlue'); add(ledP, ledM2, 'shopLedPurple'); add(ledCy, ledC, 'shopLedCyan'); add(lit, litM, 'ceilingLight');
-  lab.t.needsUpdate = true; add(labelGeos, new THREE.MeshBasicMaterial({ map: lab.t, toneMapped: false }), 'priceLabels'); add(cardGeos, new THREE.MeshBasicMaterial({ color: 0x1b1f2e }), 'priceCards');
+  lab.t.needsUpdate = true; capLoadedTexture(lab.t, THREE, { max: 1024, mips: false }); if (lab.t.image) lab.c = lab.t.image; add(labelGeos, new THREE.MeshBasicMaterial({ map: lab.t, toneMapped: false }), 'priceLabels'); add(cardGeos, new THREE.MeshBasicMaterial({ color: 0x1b1f2e }), 'priceCards');
 
   // t563: teleporter pad moved from the room centre to the far-left corner (title wall's car end meets the left wall's Viking end),
   // 2 m clear of both walls. teleport.js reads tp.PAD2 live (proximity button, beam, arrival), so moving the vector + the pad group moves it all.
@@ -512,7 +529,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // pool-play/index.html (a same-origin copy of https://optimusgrok.github.io/pool/) full-screen in an iframe overlay with a ✕. Free for now.
   const PX = 12.1, PZ = 6.0, PZ2 = 10.9, PLW = 0.78, PLL = 1.42, PTY = 0.82;   // table centre (shop-local), felt half-width (x) / half-length (z), felt height
   const pool = new THREE.Group(); pool.name = 'poolTable'; pool.position.set(PX, 0, PZ); G.add(pool);
-  { const tex = (w, h, f) => { const c = document.createElement('canvas'); c.width = w; c.height = h; f(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t; };
+  { const tex = (w, h, f) => { const c = document.createElement('canvas'); c.width = w; c.height = h; f(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); return t; };
     const woodT = tex(512, 64, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#5a2c12'); gr.addColorStop(1, '#3e1c0a'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
       for (let i = 0; i < 70; i++) { g.strokeStyle = `rgba(${20 + Math.random() * 40 | 0},${8 + Math.random() * 12 | 0},0,${0.15 + Math.random() * 0.3})`; g.lineWidth = 0.5 + Math.random() * 1.5; g.beginPath(); let y = Math.random() * h; g.moveTo(0, y); for (let x = 0; x <= w; x += 32) { y += (Math.random() - 0.5) * 2; g.lineTo(x, y); } g.stroke(); } });
     const feltT = tex(128, 128, (g, w, h) => { g.fillStyle = '#17734a'; g.fillRect(0, 0, w, h); const id = g.getImageData(0, 0, w, h), d = id.data; for (let i = 0; i < d.length; i += 4) { const n = (Math.random() - 0.5) * 22; d[i] += n * 0.5; d[i + 1] += n; d[i + 2] += n * 0.6; } g.putImageData(id, 0, 0); });
@@ -630,7 +647,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   const WDS = 1.04, WDX = 1.75, WDZ = 7.5, WDW = 3.1 * WDS, WDD = 0.85 * WDS;   // scale, back-panel x, centre z, half width (along z), depth (toward -x)
   const wd = new THREE.Group(); wd.name = 'wardrobeCorner'; wd.position.set(WDX, 0, WDZ); wd.rotation.y = -Math.PI / 2; wd.scale.setScalar(WDS); G.add(wd);   // local +z faces -x (the pad side), local +x runs toward +z
   { const L = [], neon = [], neonP = [], dark = [], q = (geo, c, x, y, z, sx, sy = sx, sz = sx, rx = 0, ry = 0, rz = 0) => part(L, geo, c, x, y, z, sx, sy, sz, rx, ry, rz);
-    const CHR = 0xd6dbe2, WH = 0xffffff;
+    const CHR = dimNew(0xd6dbe2).getHex(), WH = dimNew(0xffffff).getHex();
     const HOODC = [0x1d2452, 0xd42a2a, 0x2b62e8, 0x2fae3a, 0xf2c418, 0x7a2bd6, 0xff5fb4, 0xff7a1a, 0x13b8a8, 0x202026, 0xe8eaf0];   // player.js HOOD order
     const SHOEC = [[0x8a1e2c, 0xf1e8d6], [0x1f4fbf, 0xeaf0ff], [0x1a1a1e, 0x4a4a52], [0xf2f2f4, 0xd03040], [0x1f9a3a, 0xe8ffe8], [0xff5fb4, 0xffffff], [0xd9a51c, 0x2a1a08], [0x6a24c4, 0x00e5ff]];
     // back panel + plinth
@@ -765,7 +782,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   try { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; } catch (e) {}
   const tts = (text) => { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); if (voice) u.voice = voice; u.lang = (voice && voice.lang) || 'en-US'; u.pitch = 0.95; speechSynthesis.speak(u); } catch (e) {} };
   let talkT = 0, happyT = 0;
-  function say(text) { talkT = Math.max(1.4, text.length * 0.065); happyT = talkT + 1.2; api.said.push(text);
+  function say(text) { talkT = Math.max(1.4, text.length * 0.065); happyT = talkT + 1.2; api.said.push(text); if (api.said.length > 80) api.said.splice(0, api.said.length - 80);
     if (text !== GREET) return;   // t559: buying (and not-enough-tickets) is silent - only the welcome is spoken
     if (window.__muted || (window.__mute && window.__mute.on)) return;
     greet(); }
@@ -818,7 +835,7 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     const b = balance(); if (b < g.price) { say(`The ${g.name} are ${g.price} tickets and you've got ${b}. Win a few more games and come back!`); return false; }
     spend(g.price); grantGlove(id); api.buys++; api.gloveBuys = (api.gloveBuys || 0) + 1; try { window.__announce && window.__announce('buy', { item: g.name, cost: g.price }); } catch (e) {} say(`Great choice! The ${g.name} are yours. Wear them in the Neon Knockout studio!`); fill(); return true; }
   const NK_SHOP = () => { const on = gloveState().on; return NK_GLOVES.map(g => ({ id: 'nk_' + g.id, nk: g.id, name: g.name, price: g.price, owned: ownsGlove(g.id), on: on === g.id })); };
-  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP };
+  const api = { open: false, near: false, said: [], buys: 0, stats, G, grok, extraBounds, camBounds, ITEMS, balance, openShop, closeShop, buy, buyGlove, NK_SHOP, WHITE_K, FLOOR_GLOW_K, EMISSIVE_K, OLDDIM, NOATLAS };
   chat.register('clerk', { open() { if (api.open) closeShop(); happyT = Math.max(happyT, 1.5); return { state: 'shop' }; }, close() {}, talk(text) { talkT = Math.max(talkT, Math.min(4, 0.6 + String(text || '').length * 0.03)); happyT = talkT + 0.6; } });   // t810u
   function openShop() { if (api.open) return; api.open = true; btn.classList.remove('on'); fill(); holo.classList.add('on'); say(GREET);
     const k = window.__arcade && window.__arcade.keys; if (k) for (const c in k) k[c] = false; }
@@ -859,10 +876,10 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     poolApi.open = true; poolApi.opens++; for (const b of poolBtns) b.classList.remove('on'); clearKeys(); if (api.open) closeShop();
     const f = poolApi.frame = document.createElement('iframe'); f.src = POOL_SRC; f.title = '8-Ball Pool'; f.allow = 'autoplay; fullscreen'; poolOv.appendChild(f); poolOv.classList.add('on');
     try { window.__updateTurn && window.__updateTurn(); } catch (e) {}
-    f.addEventListener('load', () => { try { f.contentWindow.focus(); f.contentWindow.addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); closePool(); } }, true); } catch (e) {} });
+    f.addEventListener('load', () => { if (poolApi.frame !== f) return; try { f.contentWindow.focus(); f.contentWindow.addEventListener('keydown', e => { if (e.code === 'Escape') { e.preventDefault(); closePool(); } }, true); } catch (e) {} }, { once: true });
     const cv = window.__arcade && window.__arcade.renderer && window.__arcade.renderer.domElement; if (cv) cv.style.visibility = 'hidden'; }
   function closePool() { if (!poolApi.open) return; poolApi.open = false; poolApi.closes++; poolOv.classList.remove('on'); const f = poolApi.frame; poolApi.frame = null;
-    if (f) { try { f.src = 'about:blank'; } catch (e) {} f.remove(); }   // unload: stops the pool game's render loop + audio
+    if (f) { try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {} try { f.src = 'about:blank'; } catch (e) {} f.remove(); }   // v249 port: release WebGL/audio before unload
     const cv = window.__arcade && window.__arcade.renderer && window.__arcade.renderer.domElement; if (cv) cv.style.visibility = ''; clearKeys(); try { window.focus(); } catch (e) {} try { window.__updateTurn && window.__updateTurn(); } catch (e) {} }
   for (const el of [poolBtn, poolBtn2, poolOv]) { el.addEventListener('pointerdown', stop); el.addEventListener('touchstart', stop, { passive: true }); }
   poolBtns.forEach((b, i) => { b.addEventListener('pointerup', e => { e.stopPropagation(); openPool(i); }); b.addEventListener('click', e => { e.stopPropagation(); openPool(i); }); });
@@ -1079,19 +1096,120 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
     '.pzAway{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.pzAway .pzU{flex:1 1 120px;margin:0;min-height:44px;font-size:13px;letter-spacing:.04em}' +
     '.pzU{display:block;width:100%;min-height:52px;margin-top:10px;padding:0 14px;border-radius:26px;border:2px solid #ff6b8b;background:#3a0614cc;color:#ffe1e8;font:900 16px Arial,sans-serif;letter-spacing:.06em;cursor:pointer;touch-action:manipulation}';
   document.head.appendChild(css2);
-  // t555-557: prize tiles - square picture (rendered once from the held 3D model / box art into a cached dataURL), name ON TOP of the picture
-  const ICON = {}; let iconR = null, iconQ = [], iconT = 0;
-  function iconFor(id) { if (ICON[id]) return ICON[id]; if (!iconQ.includes(id)) iconQ.push(id); clearTimeout(iconT); iconT = setTimeout(drawIcons, 30); return ''; }
-  function drawIcons() { const q = iconQ.splice(0); if (!q.length) return;
-    try { if (!iconR) { const isz = tierQuality().shopCell || 64; iconR = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' }); iconR.setSize(isz, isz, false); iconR.setPixelRatio(1); iconR.outputColorSpace = THREE.SRGBColorSpace; }
-      const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 3); sc.add(dl);
-      const cam = new THREE.PerspectiveCamera(30, 1, 0.01, 20), box = new THREE.Box3(), c = new THREE.Vector3(), sz = new THREE.Vector3();
-      for (const id of q) { let g; try { g = buildHeld(id); } catch (e) { continue; } if (!g) continue; g.rotation.y = -0.5; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
+  // t555-557 + t486u: bake prize + accessory pictures ONCE into a shared atlas canvas (no per-frame renders, no shop lights).
+  // vrtest-v15 (t491u): v13 baked all ~108 icons in one setTimeout on the MAIN renderer (readPixels + toDataURL) — ~2 s on
+  // desktop, worse on the Quest — which could land on the first shop beam. Now: slice a few ms a frame, never during a
+  // beam, prefer the start screen / PREPARING VR card, and encode dataURLs lazily when a 2D list actually needs them.
+  const ICON = {}; let iconR = null, iconQ = [], iconKick = 0;
+  const ATLAS = { cv: null, cells: {}, cell: 128, cols: 16, n: 0, rev: 0, ready: false, pending: 0, bakeMs: 0, bakeN: 0, bakeMax: 0 };
+  if (!NOATLAS) { ATLAS.cv = document.createElement('canvas'); ATLAS.cv.width = ATLAS.cols * ATLAS.cell; ATLAS.cv.height = ATLAS.cols * ATLAS.cell; ATLAS.g = ATLAS.cv.getContext('2d'); ATLAS.g.fillStyle = '#0000'; ATLAS.g.clearRect(0, 0, ATLAS.cv.width, ATLAS.cv.height); }
+  function atlasCell(id) { if (NOATLAS) return { x: 0, y: 0, w: 0, h: 0 }; if (ATLAS.cells[id]) return ATLAS.cells[id]; const i = ATLAS.n++, col = i % ATLAS.cols, row = Math.floor(i / ATLAS.cols);
+    if ((row + 1) * ATLAS.cell > ATLAS.cv.height) { const nxt = document.createElement('canvas'); nxt.width = ATLAS.cv.width; nxt.height = (row + 4) * ATLAS.cell; nxt.getContext('2d').drawImage(ATLAS.cv, 0, 0); ATLAS.cv = nxt; ATLAS.g = nxt.getContext('2d'); }
+    return ATLAS.cells[id] = { x: col * ATLAS.cell, y: row * ATLAS.cell, w: ATLAS.cell, h: ATLAS.cell }; }
+  function atlasStamp(id, src) { if (NOATLAS || !ATLAS.g) return; const r = atlasCell(id); ATLAS.g.clearRect(r.x, r.y, r.w, r.h); ATLAS.g.drawImage(src, r.x, r.y, r.w, r.h); ATLAS.rev++; ATLAS.ready = true; }
+  function encodeIcon(id) { if (NOATLAS || !ATLAS.cv) return ''; if (ICON[id]) return ICON[id]; const r = ATLAS.cells[id]; if (!r) return '';
+    try { const c = document.createElement('canvas'); c.width = r.w; c.height = r.h; c.getContext('2d').drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h); return ICON[id] = c.toDataURL('image/png'); } catch (e) { return ''; } }
+  function iconBlit(g, id, x, y, w, h) { if (NOATLAS || !ATLAS.cv) return false; const r = ATLAS.cells[id]; if (!r) return false; g.drawImage(ATLAS.cv, r.x, r.y, r.w, r.h, x, y, w, h); return true; }
+  function enqueue(id) { if (!id || ICON[id] || ATLAS.cells[id] || iconQ.includes(id)) return; iconQ.push(id); ATLAS.pending = iconQ.length; }
+  function iconTp() { return window.__tp || (window.__arcade && window.__arcade.tp) || null; }
+  function iconBeaming() { const tp = iconTp(); return !!(tp && tp.state && tp.state !== 'idle'); }
+  function iconVeil() { const V = window.__gaVR; return !!(V && V.veil && V.veil.on); }
+  function iconPresenting() { const V = window.__gaVR; return !!(V && V.presenting); }
+  function iconOnStart() { const S = window.__start; return !iconPresenting() && !!document.getElementById('start') && !(S && S.dismissed) && !window.__skipStart; }
+  function iconBudget() { if (iconOnStart()) return 200; if (iconVeil()) return 40; if (iconPresenting()) return 4; return 40; }
+  // Don't steal the XR frame at a beam cut. Under the card / on the start screen we can use a bigger slice.
+  function iconShouldWait() { return iconBeaming() || (iconPresenting() && !iconVeil()); }   // never hitch a live VR frame (beam or walk)
+  function scheduleDraw() { if (iconKick) return; iconKick = requestAnimationFrame(function tick() {
+    iconKick = 0; if (!iconQ.length) return;
+    if (iconShouldWait()) { iconKick = requestAnimationFrame(tick); return; }
+    bakeIcons(iconBudget()); if (iconQ.length) iconKick = requestAnimationFrame(tick); }); }
+  function iconFor(id) { if (NOATLAS) return ''; const u = ICON[id] || encodeIcon(id); if (u) return u; enqueue(id); if (iconQ.length) scheduleDraw(); return ''; }
+  function swatchCanvas(cols) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'), n = cols.length;
+    if (n === 1) { g.fillStyle = '#' + ('00000' + cols[0].toString(16)).slice(-6); g.fillRect(0, 0, c.width, c.height); }
+    else { const grd = g.createLinearGradient(0, 0, c.width, c.height); cols.forEach((h, i) => grd.addColorStop(i / Math.max(1, n - 1), '#' + ('00000' + h.toString(16)).slice(-6))); g.fillStyle = grd; g.fillRect(0, 0, c.width, c.height); }
+    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 4; g.strokeRect(2, 2, c.width - 4, c.height - 4); return c; }
+  function placeholder(id) { const c = document.createElement('canvas'); c.width = c.height = ATLAS.cell; const g = c.getContext('2d'); g.fillStyle = '#1a2030'; g.fillRect(0, 0, c.width, c.height); atlasStamp(id, c); }
+  function queueAllIcons() {
+    if (NOATLAS) { iconQ.length = 0; ATLAS.pending = 0; return; }
+    ITEMS.forEach(it => enqueue(it.id));
+    const CLAW_IDS = ['bear','bunny','duck','frog','cat','octopus','penguin','alien','monkey','grok'];
+    CLAW_IDS.forEach(k => enqueue('claw:' + k));
+    try { const cl = JSON.parse(localStorage.getItem('arcade_clawMachine.collection') || '{}'); for (const k in cl) if (cl[k]) enqueue('claw:' + k); } catch (e) {}
+    Object.keys(HOLDABLES).forEach(id => enqueue(id));
+    NK_GLOVES.forEach(g => enqueue('nk_' + g.id)); enqueue('nk_classic');
+    const gp = window.__gaPlayer; if (gp && gp.allOpts) {
+      ['hat', 'glasses', 'back', 'hand', 'hoodie', 'suit', 'fur', 'shoes'].forEach(k => (gp.allOpts[k] || []).forEach(o => { if (o[0] !== 'none') enqueue(k + ':' + o[0]); })); }
+    if (iconQ.length) scheduleDraw();
+  }
+  function iconCanvasFromRT(main, rt, size) {
+    const buf = new Uint8Array(size * size * 4); main.readRenderTargetPixels(rt, 0, 0, size, size, buf);
+    const c = document.createElement('canvas'); c.width = c.height = size; const img = c.getContext('2d').createImageData(size, size);
+    for (let y = 0; y < size; y++) img.data.set(buf.subarray((size - 1 - y) * size * 4, (size - y) * size * 4), y * size * 4);
+    c.getContext('2d').putImageData(img, 0, 0); return c; }
+  function renderIcon(sc, cam) {
+    const size = ATLAS.cell, A = window.__arcade, main = A && A.renderer;
+    // Prefer the game's renderer only when it isn't in the middle of an XR beam (setRenderTarget + readPixels syncs the GPU).
+    if (main && main.setRenderTarget && !(iconPresenting() && iconBeaming())) {
+      const rt = renderIcon.rt || (renderIcon.rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, stencilBuffer: false }));
+      if (rt.width !== size) rt.setSize(size, size);
+      const prevRT = main.getRenderTarget(), prevCS = main.outputColorSpace, prevC = new THREE.Color(), prevA = main.getClearAlpha();
+      main.getClearColor(prevC);
+      try {
+        main.outputColorSpace = THREE.SRGBColorSpace; main.setClearColor(0x000000, 0);
+        main.setRenderTarget(rt); main.clear(); main.render(sc, cam);
+        return iconCanvasFromRT(main, rt, size);
+      } finally { main.setRenderTarget(prevRT); main.setClearColor(prevC, prevA); main.outputColorSpace = prevCS; }
+    }
+    if (!iconR) { iconR = new THREE.WebGLRenderer({ antialias: false, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power' }); iconR.setSize(size, size, false); iconR.setPixelRatio(1); iconR.outputColorSpace = THREE.SRGBColorSpace; iconR.setClearColor(0x000000, 0); }
+    iconR.render(sc, cam); return iconR.domElement;
+  }
+  let bakeSC = null, bakeCam = null, bakeBox = null, bakeC = null, bakeSz = null;
+  function iconScene() {
+    if (bakeSC) return { sc: bakeSC, cam: bakeCam, box: bakeBox, c: bakeC, sz: bakeSz };
+    bakeSC = new THREE.Scene(); bakeSC.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2)); const dl = new THREE.DirectionalLight(0xffffff, 1.6); dl.position.set(1, 2, 3); bakeSC.add(dl);
+    bakeCam = new THREE.PerspectiveCamera(30, 1, 0.01, 20); bakeBox = new THREE.Box3(); bakeC = new THREE.Vector3(); bakeSz = new THREE.Vector3();
+    return { sc: bakeSC, cam: bakeCam, box: bakeBox, c: bakeC, sz: bakeSz }; }
+  function releaseBakeObj(g, shared) { if (!g) return; if (g.parent) g.parent.remove(g);
+    if (shared) return;   // previewItem clones share the live accessory geometries / materials
+    g.traverse(o => { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); }); }
+  function bakeOne(id, sc, cam, box, c, sz) {
+    if (ATLAS.cells[id]) return;
+    if (id.indexOf('nk_') === 0) { try { const cv = gloveIcon(id.slice(3), ATLAS.cell); if (cv) { atlasStamp(id, cv); return; } } catch (e) {} placeholder(id); return; }
+    const col = id.indexOf(':'), accKeys = { hat:1, glasses:1, back:1, hand:1, hoodie:1, suit:1, fur:1, shoes:1 };
+    if (col > 0 && accKeys[id.slice(0, col)]) {
+      if (!window.__gaPlayer) { iconQ.push(id); return 'retry'; }   // player not ready yet — retry on a later slice
+      const k = id.slice(0, col), v = id.slice(col + 1), gp = window.__gaPlayer, opt = (gp.allOpts[k] || []).find(o => o[0] === v);
+      if (opt && typeof opt[1] === 'number') { atlasStamp(id, swatchCanvas(opt.slice(1, 3))); return; }
+      try { const g = gp.previewItem && gp.previewItem(k, v); if (g) { const yaw = k === 'back' ? 0.8 : -0.45;
+        g.rotation.y = yaw; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
         const r = Math.max(sz.x, sz.y, sz.z) * 0.62 || 0.3; cam.position.set(c.x, c.y + r * 0.35, c.z + r / Math.tan(15 * Math.PI / 180)); cam.lookAt(c);
-        iconR.render(sc, cam); ICON[id] = iconR.domElement.toDataURL('image/png'); sc.remove(g); }
+        const src = renderIcon(sc, cam); atlasStamp(id, src); releaseBakeObj(g, true); return; } } catch (e) {}
+      placeholder(id); return;
+    }
+    let g; try { g = buildHeld(id); } catch (e) { g = null; }
+    if (g) { g.rotation.y = -0.5; sc.add(g); g.updateMatrixWorld(true); box.setFromObject(g); box.getCenter(c); box.getSize(sz);
+      const r = Math.max(sz.x, sz.y, sz.z) * 0.62 || 0.3; cam.position.set(c.x, c.y + r * 0.35, c.z + r / Math.tan(15 * Math.PI / 180)); cam.lookAt(c);
+      const src = renderIcon(sc, cam); atlasStamp(id, src); releaseBakeObj(g, false); return; }
+    placeholder(id);
+  }
+  function iconCheap(id) { if (!id) return true; if (id.indexOf('nk_') === 0) return true; const col = id.indexOf(':'); return col > 0 && { hoodie:1, suit:1, fur:1, shoes:1 }[id.slice(0, col)]; }
+  // Drain the queue for up to budgetMs (always at least one item). Safe to call from the VR pre-warm job.
+  function bakeIcons(budgetMs) {
+    if (NOATLAS) return { did: 0, left: 0, ms: 0 };
+    if (!iconQ.length || iconShouldWait()) return { did: 0, left: iconQ.length, ms: 0 };
+    const t0 = performance.now(), budget = budgetMs == null ? 8 : budgetMs; let did = 0;
+    try {
+      // Stamp every canvas-only tile first so a slice isn't spent on a 3D render while swatches wait.
+      for (let i = 0; i < iconQ.length; ) { if (iconCheap(iconQ[i]) || (iconQ[i].indexOf('nk_') === 0)) { const id = iconQ.splice(i, 1)[0]; bakeOne(id); did++; } else i++; }
+      const { sc, cam, box, c, sz } = iconScene();
+      while (iconQ.length) { const id = iconQ.shift(); if (bakeOne(id, sc, cam, box, c, sz) === 'retry') break; did++; if (performance.now() - t0 >= budget && iconQ.length) break; }
     } catch (e) { console.warn('prize icons', e); }
-    try { if (iconR) { iconR.dispose(); iconR.forceContextLoss(); iconR = null; } } catch (e) {}   // free the extra GL context on phones
-    for (const im of document.querySelectorAll('img[data-ic]')) if (ICON[im.dataset.ic]) im.src = ICON[im.dataset.ic]; }
+    if (!iconQ.length) { try { if (iconR) { iconR.dispose(); iconR.forceContextLoss(); iconR = null; } } catch (e) {} }
+    const ms = performance.now() - t0; ATLAS.bakeMs += ms; ATLAS.bakeN += did; if (ms > ATLAS.bakeMax) ATLAS.bakeMax = ms; ATLAS.pending = iconQ.length;
+    for (const im of document.querySelectorAll('img[data-ic]')) if (!im.src || im.src.indexOf('data:image/gif') === 0) { const u = encodeIcon(im.dataset.ic); if (u) im.src = u; }
+    return { did, left: iconQ.length, ms };
+  }
+  function drawIcons() { bakeIcons(1e9); }   // tests / callers that still expect a full drain
   function slotOf(id) { const h = readHeld(); if (h.R === id) return 'R'; if (h.L === id) return 'L'; return null; }
   function renderChips() { const r = document.getElementById('invPz'); if (!r) return; const p = prizes(), h = readHeld(), ids = ITEMS.map(i => i.id).filter(id => p[id]);
     let away = '';
@@ -1199,6 +1317,9 @@ export function setupShop({ scene, tp, play, monkey, camera, st } = {}) {
   // t632u: lazy-load Grok's arcade visit (2nd look at the pad / random). Own file; no Arcade main.js edit.
   Promise.resolve().then(() => import('./grokvisit.js')).then(m => m.setupGrokVisit({ scene, tp, play, monkey, camera, st })).catch(e => console.warn('grokvisit', e));
   let chessT = null; try { chessT = setupChessTable({ G, WXp, grok, legs: legsG, arms, head, home: { x: QX - 0.15, z: QZ + 0.1, yaw: GYAW, qx: QX, qz: QZ }, play, st, getMonkey, camera, tp, flagTex }); api.chess = chessT; } catch (e) { console.warn('chess table', e); }
-  window.__shop = api;
+  api.iconAtlas = ATLAS; api.iconBlit = iconBlit; api.iconFor = iconFor; api.queueIcons = queueAllIcons; api.bakeIcons = bakeIcons; api.iconsPending = () => iconQ.length; Object.defineProperty(api, 'iconRev', { get: () => ATLAS.rev }); window.__shop = api;
+  if (!NOATLAS) { queueAllIcons(); setTimeout(queueAllIcons, 200); setTimeout(queueAllIcons, 1500); }
+  api.gpu = bindStreamGpu(G, { stagger: true, minEdge: 384, alsoNames: ['muralLeft', 'muralRight', 'muralTop', 'muralSide', 'muralSide2', 'muralTitle', 'shelfBoxes', 'priceLabels', 'grokShopSign'] });
+  api.setGpu = on => api.gpu.set(!!on);
   return api;
 }

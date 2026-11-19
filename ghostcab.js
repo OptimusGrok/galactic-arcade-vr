@@ -1,12 +1,13 @@
 // GHOST 256 cabinet: model (no neon, plain plum trim) + live attract-mode screen from a sandboxed copy of Ghost 256.
 import * as THREE from 'three';
-import { cabWH, flagTex, capLoadedTexture } from './tier.js';
+import { cabWH, flagTex, finishCanvasTex, capLoadedTexture, capCabSideTexture } from './tier.js';
 import { SPROFILE, SW, segFrame, segPlane, bar, sideGeo, mergeGeos, CRT, cabScreenSize, blitCover, makeScreenView } from './strikecab.js';
+import { loadBakedPoster } from './texload.js';
 
 const MOBILE = matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 function tex(w, h, draw, nearest) {
   const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } const g = c.getContext('2d'); g.imageSmoothingEnabled = false; draw(g, w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); if (nearest) t.magFilter = THREE.NearestFilter; return t;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); if (nearest) t.magFilter = THREE.NearestFilter; return t;
 }
 const GHOST = ['....####....', '..########..', '.##########.', '###WW###WW##', '##WWPP##WWPP', '##WWPP##WWPP', '###WW###WW##', '############', '############', '############', '##.###..###.##'.slice(1, 13), '#...##..##...#'.slice(1, 13)];
 function ghost(g, x, y, px, col) {
@@ -23,15 +24,17 @@ function pixelText(g, text, x, y, size, col, ox) { // crisp blocky text via a ti
   if (ox) { draw('#ff2040', -ox); draw('#20e0ff', ox); } draw(col, 0);
 }
 export function ghostSideTexture(flip) {
-  return tex(512, 1024, (g, w, h) => {
+  const t = tex(512, 1024, (g, w, h) => {
     g.fillStyle = '#0b0910'; g.fillRect(0, 0, w, h);
     g.save(); if (flip) { g.translate(w, 0); g.scale(-1, 1); }
     glitch(g, w, h, h * 0.52, 160);
     ghost(g, w * 0.22, h * 0.14, 11, '#ffc81e'); ghost(g, w * 0.3, h * 0.33, 11, '#22d8e8'); ghost(g, w * 0.4, h * 0.53, 11, '#ff6a1a');
     g.restore();
-  }, true);
+  }, true); capCabSideTexture(t, THREE); return t;
 }
-export function ghostMarqueeTexture() {
+export function ghostMarqueeTexture(noBake) {
+  const baked = !noBake && loadBakedPoster(THREE, 'tex/marquee_ghostCabinet_512x160.png', () => ghostMarqueeTexture(true));
+  if (baked) return baked;
   return tex(512, 160, (g, w, h) => {
     g.fillStyle = '#0d0a14'; g.fillRect(0, 0, w, h); glitch(g, w, h, 0, 40);
     g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, w, h);
@@ -51,8 +54,9 @@ export function buildGhostCabinet() {
   const add = (geo, mat, name) => { const m = new THREE.Mesh(geo, mat); m.name = name; g.add(m); return m; };
   const shape = new THREE.Shape(SPROFILE.map(([x, y]) => new THREE.Vector2(x, y)));
   add(new THREE.ExtrudeGeometry(shape, { depth: SW, bevelEnabled: false }).translate(0, 0, -SW / 2), new THREE.MeshPhysicalMaterial({ color: 0x060509, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 }), 'body');
-  const sideMat = flip => { const t = ghostSideTexture(flip); return new THREE.MeshPhysicalMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.3, roughness: 0.3, clearcoat: 0.8 }); };
-  add(sideGeo(1), sideMat(false), 'sidePanelL'); add(sideGeo(-1), sideMat(true), 'sidePanelR');
+  const sideT = ghostSideTexture(false);
+  const sideMat = new THREE.MeshPhysicalMaterial({ map: sideT, emissive: 0xffffff, emissiveMap: sideT, emissiveIntensity: 0.3, roughness: 0.3, clearcoat: 0.8 });
+  add(sideGeo(1), sideMat, 'sidePanelL'); add(sideGeo(-1), sideMat, 'sidePanelR');
   // plain, non-glowing plum trim (no neon)
   const tm = []; for (const z of [-SW / 2 - 0.006, SW / 2 + 0.006]) for (let i = 1; i < SPROFILE.length - 1; i++) { const a = SPROFILE[i], b = SPROFILE[i + 1]; tm.push(bar(new THREE.Vector3(a[0], a[1], z), new THREE.Vector3(b[0], b[1], z), 0.02)); }
   add(mergeGeos(tm), new THREE.MeshStandardMaterial({ color: 0x3a1236, roughness: 0.35, metalness: 0.2 }), 'trim');
@@ -96,7 +100,8 @@ export function startGhostDemo(cab) {
     try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {}
     try { f.src = 'about:blank'; } catch (e) {}
     try { f.remove(); } catch (e) {}
-    d.ready = false; d.running = false; };
+    d.ready = false; d.running = false;
+    d.w = d.gh = d.srcCv = null; };   // vrtest-v10 (Chief 45ecbdf): drop the contentWindow so a detached demo can be GC'd
 
   // t883u: keep the painted attract on the CRT until the iframe has drawn a frame
   f.addEventListener('load', () => {

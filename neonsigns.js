@@ -10,6 +10,8 @@
 // so lettering reads left-to-right from both sides; the claw prongs open/close on a cheap baked-frame loop.
 // Orc Attack’s icon is a detailed neon orc (tusks, horned helmet, axe) in the same dim-glow style as the Viking / Strike icons.
 import { NEON_ATLAS } from './neon_atlas.js';
+import { loadPicture, ktx2For, ktxSupported } from './texload.js';
+import { finishCanvasTex } from './tier.js';
 
 function neonStroke(g, draw, col, w, glow) {
   g.save();
@@ -715,18 +717,12 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
     for (let k = 0; k < iuv.count; k++) iuv.setXY(k, iuv.getX(k) ? iu1 : iu0, iuv.getY(k) ? iv1 : iv0);
     ig.rotateY(Math.atan2(n.x, n.z)); ig.translate(ip.x, ip.y, ip.z); iconQuads.push(ig);
   }
-  const tex = new THREE.TextureLoader().load(opt.src || 'tex/neon_signs.webp', t => { try {
-    if (opt.atlasMax && t.image && t.image.width > opt.atlasMax) {
-      const c = document.createElement('canvas');
-      const r = opt.atlasMax / t.image.width;
-      c.width = opt.atlasMax; c.height = Math.max(1, Math.round(t.image.height * r));
-      c.getContext('2d').drawImage(t.image, 0, 0, c.width, c.height);
-      t.image = c; t.needsUpdate = true;
-    }
-    if (opt.lowMips === false || opt.atlasMax) t.generateMipmaps = false;
-    if (opt.renderer) opt.renderer.initTexture(t);
-  } catch (err) {} if (opt.onLoad) opt.onLoad(t); });
-  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = opt.aniso || 4;
+  // vrtest-v4 (t911u port): KTX2/Basis when the GPU can take it (about 1/4 of the RGBA size on the Quest), else the webp as before
+  const tex = loadPicture(THREE, opt.src || 'tex/neon_signs.webp', { mips: false, max: opt.atlasMax || 0, onLoad: t => {
+    try { if (opt.lowMips === false || opt.atlasMax) { t.generateMipmaps = false; if (THREE.LinearFilter) t.minFilter = THREE.LinearFilter; } if (opt.renderer) opt.renderer.initTexture(t); } catch (err) {}
+    if (opt.onLoad) opt.onLoad(t);
+  }});
+  tex.anisotropy = opt.aniso || 4;
   const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1).multiplyScalar(opt.k || 0.55) });   // t782u: 0.55 (t775u: 0.85, v188: 1.3), dimmer + the atlas itself is sharper / thinner
   mat.name = 'neonSigns';
   const mesh = new THREE.Mesh(mergeGeometries(quads), mat); mesh.name = 'neonSigns'; mesh.renderOrder = 3; mesh.matrixAutoUpdate = false; mesh.updateMatrix();
@@ -735,7 +731,7 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   // wall icons could paint over it ("cut off"); on its own mesh it draws after them (renderOrder 4) and depth-tests against the room.
   if (clawQuads.length) { const cs = new THREE.Mesh(mergeGeometries(clawQuads), mat); cs.name = 'neonClawSign'; cs.renderOrder = 4; cs.matrixAutoUpdate = false; cs.updateMatrix(); cs.frustumCulled = false; mesh.add(cs); mesh.userData.clawSign = cs; if (typeof window !== 'undefined') window.__neonClawSign = cs; }
   if (iconQuads.length) {
-    const itex = new THREE.CanvasTexture(atlas.cv); itex.colorSpace = THREE.SRGBColorSpace; itex.anisotropy = opt.aniso || 4;
+    const itex = new THREE.CanvasTexture(atlas.cv); itex.colorSpace = THREE.SRGBColorSpace; itex.anisotropy = opt.aniso || 4; itex.generateMipmaps = false; itex.minFilter = THREE.LinearFilter;
     try { if (opt.renderer) opt.renderer.initTexture(itex); } catch (err) {}
     const imat = new THREE.MeshBasicMaterial({ map: itex, transparent: true, depthWrite: false, fog: false, color: new THREE.Color(1, 1, 1).multiplyScalar(opt.k || 0.55) });
     imat.name = 'neonIcons';
@@ -749,19 +745,30 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
   if (clawPending) {
     const { iw, ih, ip, n } = clawPending._claw;
     const N = 10, S = 256, period = 3.6;
-    const strip = document.createElement('canvas'); strip.width = S * N; strip.height = S;
-    const sg = strip.getContext('2d');
-    for (let i = 0; i < N; i++) {
-      const t = document.createElement('canvas'); t.width = S; t.height = S;
-      const tctx = t.getContext('2d', { willReadFrequently: true });
-      if (tctx.reset) tctx.reset();
-      drawClawIcon(tctx, S, i / (N - 1));
-      sg.drawImage(t, i * S, 0);
-    }
-    const ctex = new THREE.CanvasTexture(strip);
+    let ctex;
+    const paintStrip = () => {
+      const strip = document.createElement('canvas'); strip.width = S * N; strip.height = S;
+      const sg = strip.getContext('2d');
+      for (let i = 0; i < N; i++) {
+        const t = document.createElement('canvas'); t.width = S; t.height = S;
+        const tctx = t.getContext('2d', { willReadFrequently: true });
+        if (tctx.reset) tctx.reset();
+        drawClawIcon(tctx, S, i / (N - 1));
+        sg.drawImage(t, i * S, 0);
+      }
+      const t = new THREE.CanvasTexture(strip);
+      finishCanvasTex(t, THREE); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.repeat.set(1 / N, 1); return t; };
+    if (ktxSupported() && ktx2For('tex/claw_icon_strip.png')) {
+      // vrtest-v10: the painted strip is also the offline-safe fallback if the KTX2 transcode fails (the claw tick follows ctex: see claw.material.map below)
+      ctex = loadPicture(THREE, 'tex/claw_icon_strip.png', {
+        mips: false, wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
+        repeat: { x: 1 / N, y: 1 }, fallback: paintStrip,
+        onLoad: t => { try { if (opt.renderer) opt.renderer.initTexture(t); } catch (e) {} }
+      });
+    } else ctex = paintStrip();
     ctex.colorSpace = THREE.SRGBColorSpace; ctex.anisotropy = opt.aniso || 4;
     ctex.wrapS = THREE.ClampToEdgeWrapping; ctex.wrapT = THREE.ClampToEdgeWrapping;
-    ctex.repeat.set(1 / N, 1); ctex.offset.set(0, 0); ctex.needsUpdate = true;
+    ctex.repeat.set(1 / N, 1); ctex.offset.set(0, 0); if (!ctex.isCompressedTexture) ctex.needsUpdate = true;   // vrtest-v10: never flag the KTX2 stub (no mip data yet: three's upload threw on mipmaps[0].width)
     try { if (opt.renderer) opt.renderer.initTexture(ctex); } catch (err) {}
     const yaw = Math.atan2(n.x, n.z);
     const mk = back => {
@@ -781,7 +788,7 @@ export function buildNeonSigns(THREE, mergeGeometries, list, opt = {}) {
       const phase = ((t / period) % 1 + 1) % 1;
       const open = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
       const f = Math.min(N - 1, Math.max(0, Math.round(open * (N - 1))));
-      if (f !== claw.userData.frame) { ctex.offset.x = f / N; ctex.needsUpdate = true; }
+      if (f !== claw.userData.frame) { const mp = claw.material.map || ctex; mp.offset.x = f / N; }   // vrtest-v10: offset is a uniform (uvTransform); no texture re-upload per frame
       claw.userData.open = open; claw.userData.frame = f; claw.userData.phase = phase;
     }
     tickClaw(0);

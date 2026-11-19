@@ -1,11 +1,12 @@
 // STRIKE cabinet: detailed model + live attract-mode screen driven from a sandboxed, network-free copy of Strike.
 import * as THREE from 'three';
-import { cabWH, flagTex, capLoadedTexture } from './tier.js';
+import { cabWH, flagTex, finishCanvasTex, capLoadedTexture, capCabSideTexture } from './tier.js';
+import { loadBakedPoster } from './texload.js';
 
 const MOBILE = matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
 function tex(w, h, draw) {
   const c = document.createElement('canvas'); { const sz = cabWH(w, h); c.width = sz[0]; c.height = sz[1]; w = c.width; h = c.height; } draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE); return t;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; finishCanvasTex(t, THREE); return t;
 }
 // ---------- painting helpers ----------
 function burst(g, x, y, r, a = 1) {
@@ -59,7 +60,7 @@ function spaceBg(g, w, h) {
 
 // ---------- textures ----------
 export function sideTexture(flip) {
-  return tex(512, 1024, (g, w, h) => {
+  const t = tex(512, 1024, (g, w, h) => {
     g.save(); if (flip) { g.translate(w, 0); g.scale(-1, 1); }
     spaceBg(g, w, h); stars(g, w, h, 300); streaks(g, w, h, 70, -1.2);
     burst(g, w * 0.25, h * 0.56, 120); burst(g, w * 0.8, h * 0.45, 90); burst(g, w * 0.7, h * 0.86, 130); burst(g, w * 0.15, h * 0.2, 60, 0.8);
@@ -69,9 +70,11 @@ export function sideTexture(flip) {
     logo(g, w * 0.48, h * 0.78, 128, -0.32);
     // border shading
     const v = g.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.55)'); g.fillStyle = v; g.fillRect(0, 0, w, h);
-  });
+  }); return capCabSideTexture(t, THREE);
 }
-export function marqueeTexture() {
+export function marqueeTexture(noBake) {
+  const baked = !noBake && loadBakedPoster(THREE, 'tex/marquee_strikeCabinet_1024x256.png', () => marqueeTexture(true));
+  if (baked) return baked;
   return tex(1024, 256, (g, w, h) => {
     spaceBg(g, w, h); stars(g, w, h, 120); streaks(g, w, h, 40, -0.1);
     burst(g, w * 0.5, h * 0.5, 260, 0.9); burst(g, w * 0.12, h * 0.55, 110); burst(g, w * 0.9, h * 0.4, 120);
@@ -118,7 +121,7 @@ export function makeScreenView(drawAttract) {
   if (drawAttract) drawAttract(c.getContext('2d'), c.width, c.height);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.NoColorSpace;
   t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.generateMipmaps = false;
-  flagTex(t, THREE); return { canvas: c, texture: t };
+  finishCanvasTex(t, THREE); return { canvas: c, texture: t };
 }
 function strikeAttract(g, w, h) {
   spaceBg(g, w, h); stars(g, w, h, 80); streaks(g, w, h, 18, -0.4);
@@ -168,9 +171,10 @@ export function buildStrikeCabinet() {
   const black = new THREE.MeshPhysicalMaterial({ color: 0x050507, roughness: 0.22, metalness: 0.1, clearcoat: 1, clearcoatRoughness: 0.08 });
   add(new THREE.ExtrudeGeometry(shape, { depth: SW, bevelEnabled: false }).translate(0, 0, -SW / 2), black, 'body');
   // side art (mirrored composition, readable lettering on both sides)
-  const sideMat = (flip) => { const t = sideTexture(flip); return new THREE.MeshPhysicalMaterial({ map: t, roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.15, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.32 }); };
-  add(sideGeo(1), sideMat(false), 'sidePanelL');
-  add(sideGeo(-1), sideMat(true), 'sidePanelR');
+  const sideT = sideTexture(false);
+  const sideMat = new THREE.MeshPhysicalMaterial({ map: sideT, roughness: 0.3, clearcoat: 0.8, clearcoatRoughness: 0.15, emissive: 0xffffff, emissiveMap: sideT, emissiveIntensity: 0.32 });
+  add(sideGeo(1), sideMat, 'sidePanelL');
+  add(sideGeo(-1), sideMat, 'sidePanelR');
   // red T-molding along both side profiles + front edge of the top
   const red = new THREE.MeshStandardMaterial({ color: 0xc8101c, roughness: 0.32, metalness: 0.15 });
   const tm = [];
@@ -248,7 +252,8 @@ export function startStrikeDemo(cab) {
     try { if (f.contentWindow && f.contentWindow.__gaRelease) f.contentWindow.__gaRelease(); } catch (e) {}
     try { f.src = 'about:blank'; } catch (e) {}
     try { f.remove(); } catch (e) {}
-    demo.ready = false; demo.running = false; };
+    demo.ready = false; demo.running = false;
+    demo.w = demo.SK = demo.srcCv = null; };   // vrtest-v10 (Chief 45ecbdf): drop the contentWindow so a detached demo can be GC'd
 
   // t883u: keep the painted attract on the CRT until the iframe has drawn a frame (a 4x4 blank looked like a dead screen)
   f.addEventListener('load', () => {

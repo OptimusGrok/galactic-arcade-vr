@@ -5,6 +5,7 @@ import { Reflector } from 'three/addons/objects/Reflector.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { initTexLoader, loadPicture } from './texload.js';   // vrtest-v4 (t911u port): KTX2/Basis pictures, image fallback
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { buildStrikeCabinet, startStrikeDemo, tickStrikeDemo } from './strikecab.js';
 import { buildGhostCabinet, startGhostDemo, tickGhostDemo } from './ghostcab.js';
@@ -36,7 +37,8 @@ import { setupTeleport, WX, NKX, NK_PAD } from './teleport.js';
 import { lavaPaths, PATH_HW } from './lavapaths.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { setupVR } from './vr.js';   // Galactic Arcade VR: WebXR (Meta Quest Browser)
-import { detectTier, probeGPU, qualityForTier, persistTier, installContextLossHandler, memSnapshot, ensureLostOverlay, isSoftwareGL, capLoadedTexture, cabWH, flagTex, tierQuality } from './tier.js';
+import { detectTier, probeGPU, qualityForTier, persistTier, installContextLossHandler, memSnapshot, ensureLostOverlay, isSoftwareGL, capLoadedTexture, cabWH, flagTex, finishCanvasTex, tierQuality, setStreamThree } from './tier.js';
+setStreamThree(THREE);   // TEST v1: stream placeholders
 
 const MOBILE = matchMedia('(pointer:coarse)').matches || /Android|iPhone|iPad/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 0 && matchMedia('(hover: none)').matches);
 // t767u: iPad (incl. iPadOS 'desktop' Safari = MacIntel + multi-touch) plays as held: no landscape lock, no 'turn sideways' hint
@@ -64,7 +66,7 @@ const PS = window.__powerSave = { on: readPowerSave(), key: PS_KEY, fps: TIER.na
 let Q = qualityFor(PS.on); TIER.quality = Q;
 
 // ---------- renderer / scene ----------
-const renderer = new THREE.WebGLRenderer({ antialias: !MOBILE && TIER.name === 'high' && !PS.on, powerPreference: (PS.on || TIER.name === 'low') ? 'low-power' : 'high-performance' }); renderer.localClippingEnabled = true; if (!/[?&]glcheck/.test(location.search)) renderer.debug.checkShaderErrors = false;   // t295u: no sync getProgramInfoLog per shader (~3.9 s of the start-screen freeze at 4x CPU); ?glcheck turns it back on   // teleporter dissolve
+const renderer = new THREE.WebGLRenderer({ antialias: !MOBILE && TIER.name === 'high' && !PS.on, powerPreference: (PS.on || TIER.name === 'low') ? 'low-power' : 'high-performance' }); renderer.localClippingEnabled = true; try { window.__texload = { ok: initTexLoader(renderer, THREE) }; } catch (e) { window.__texload = { ok: false, err: String(e) }; } if (!/[?&]glcheck/.test(location.search)) renderer.debug.checkShaderErrors = false;   // t295u: no sync getProgramInfoLog per shader (~3.9 s of the start-screen freeze at 4x CPU); ?glcheck turns it back on   // teleporter dissolve
 let dpr = Math.min(devicePixelRatio || 1, Q.dpr);
 renderer.setPixelRatio(dpr);
 renderer.setSize(innerWidth, innerHeight, false);   // CSS (100vw x 100dvh) owns the on-screen size; resize() matches the buffer to it
@@ -98,8 +100,9 @@ const C = { pink: 0xff2bd6, mag: 0xff1fa8, cyan: 0x22d8ff, purple: 0x9b4dff, amb
 function canvasTex(w, h, draw, rep) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; flagTex(t, THREE);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep, rep); }
+  finishCanvasTex(t, THREE);
   return t;
 }
 const hexTex = canvasTex(TIER.name === 'low' ? 256 : 512, TIER.name === 'low' ? 256 : 512, (g, w, h) => {
@@ -193,9 +196,18 @@ function setWalls(mode) {
   if (md && !stoneTex) { stoneTex = stoneWallTex(THREE, renderer); stoneTex.repeat.set(4, +(H / 6).toFixed(3)); }   // t773u: plain stone, no stained-glass windows
   if (r2Ready) { const b = room2.getObjectByName('wallBandCyan'); if (b) b.visible = wallsMode === 'current'; }   // room 2's cloned bands follow room 1's
   if (r2Ready) { const hw0 = hall.getObjectByName('hallWallW'), hm = hw0.userData.mat0 || hw0.material; if (!hm.userData.map0) hm.userData.map0 = hm.map;
-    if (md && !hm.userData.stone) { hm.userData.stone = stoneTex.clone(); hm.userData.stone.repeat.set(+(HALL_L / 6).toFixed(3), +(DOOR_H / 6).toFixed(3)); hm.userData.stone.needsUpdate = true; }
-    hm.map = md ? hm.userData.stone : hm.userData.map0; hm.emissiveMap = md ? hm.userData.stone : null; hm.color.setHex(md ? 0x8a8078 : 0x2a1840); hm.emissive.setHex(md ? 0xffffff : 0); hm.emissiveIntensity = md ? 0.55 : 1; hm.roughness = md ? 0.95 : 0.85; hm.needsUpdate = true; }
-  if (v && !vikTex) { vikTex = new THREE.TextureLoader().load('tex/viking_walls.jpg', t => { capLoadedTexture(t, THREE); if (spaceWin) spaceWin.dirty(); }); vikTex.colorSpace = THREE.SRGBColorSpace; vikTex.wrapS = THREE.RepeatWrapping; vikTex.wrapT = THREE.ClampToEdgeWrapping;
+    // t930u: share the 1024 stone texture (do not clone / re-upload). Hall repeat is baked into UVs while medieval is on.
+    const hallGeo = hw0.geometry;
+    if (!hallGeo.userData.uv0) hallGeo.userData.uv0 = hallGeo.attributes.uv.array.slice();
+    const uv = hallGeo.attributes.uv, src = hallGeo.userData.uv0;
+    if (md && stoneTex) {
+      const su = (HALL_L / 6) / stoneTex.repeat.x, sv = (DOOR_H / 6) / stoneTex.repeat.y;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, src[i * 2] * su, src[i * 2 + 1] * sv);
+      uv.needsUpdate = true;
+      hm.userData.stone = stoneTex;
+    } else { uv.array.set(src); uv.needsUpdate = true; }
+    hm.map = md ? stoneTex : hm.userData.map0; hm.emissiveMap = md ? hm.userData.stone : null; hm.color.setHex(md ? 0x8a8078 : 0x2a1840); hm.emissive.setHex(md ? 0xffffff : 0); hm.emissiveIntensity = md ? 0.55 : 1; hm.roughness = md ? 0.95 : 0.85; hm.needsUpdate = true; }
+  if (v && !vikTex) { vikTex = loadPicture(THREE, 'tex/viking_walls.jpg', { onLoad: t => { if (spaceWin) spaceWin.dirty(); }, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
     vikTex.repeat.set(+(2 * HALF / (H * 928 / 576)).toFixed(3), 1); flagTex(vikTex, THREE); }   // one repeat = wall height
   wallMat.map = v ? vikTex : md ? stoneTex : wallTex; wallMat.color.setHex(v ? 0x8a7a70 : md ? 0x8a8078 : 0x2a1840); wallMat.roughness = v || md ? 0.95 : 0.85; wallMat.emissiveMap = v ? vikTex : md ? stoneTex : null; wallMat.emissive.setHex(v || md ? 0xffffff : 0x000000); wallMat.emissiveIntensity = v ? 1.6 : md ? 0.55 : 1; wallBands.forEach(m => { m.visible = !v && !po && !md }); wallMat.needsUpdate = true;   // a little dark so the neon pops
   if (!v && vikTex && TIER.name === 'low') { try { vikTex.dispose(); } catch (e) {} vikTex = null; }
@@ -580,7 +592,7 @@ let carpetTex = null;
 function currentCarpetTex() { return carpetTex || carpetStub; }
 function ensureCarpetTex() {
   if (carpetTex) return carpetTex;
-  carpetTex = new THREE.TextureLoader().load('tex/carpet.webp', t => { capLoadedTexture(t, THREE); if (spaceWin && floorMode === 'carpet') spaceWin.dirty(); });
+  carpetTex = loadPicture(THREE, 'tex/carpet.webp', { onLoad: t => { if (spaceWin && floorMode === 'carpet') spaceWin.dirty(); }, wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping });
   carpetTex.colorSpace = THREE.SRGBColorSpace; carpetTex.wrapS = carpetTex.wrapT = THREE.RepeatWrapping;   // seamless tile (edge-cut figures removed): plain repeat, never mirrored (mirroring put copies head to head)
   carpetTex.repeat.set(3, 3); flagTex(carpetTex, THREE);
   if (floorMats.carpet) { floorMats.carpet.map = floorMats.carpet.emissiveMap = carpetTex; floorMats.carpet.needsUpdate = true; }
@@ -1077,7 +1089,10 @@ function setPlayerChar(kind) {
   if ((monkey.userData.char || 'monkey') === kind) return monkey;
   const tag = monkey.getObjectByName('gaNameTag');
   if (tag) monkey.remove(tag);
-  while (monkey.children.length) monkey.remove(monkey.children[0]);
+  // TEST v1 (v249 t882u port): makeMonkey/makeAlien build fresh geometries; drop the old ones or they stay on the GPU after a swap.
+  const dump = [];
+  while (monkey.children.length) { dump.push(monkey.children[0]); monkey.remove(monkey.children[0]); }
+  for (const o of dump) o.traverse(n => { try { if (n.geometry && n.geometry.dispose) n.geometry.dispose(); } catch (e) {} });
   const neu = kind === 'alien' ? makeAlien() : makeMonkey();
   while (neu.children.length) monkey.add(neu.children[0]);
   monkey.userData = neu.userData;
@@ -1119,7 +1134,8 @@ addEventListener('mousemove', e => {
   if (document.pointerLockElement === cv) { look(e.movementX, e.movementY, 'mouse-lock'); return; }
   if (!mouseDrag) return; if (questStickDrag()) { mouseDrag = { x: e.clientX, y: e.clientY }; return; } look(e.clientX - mouseDrag.x, e.clientY - mouseDrag.y, 'mouse-drag'); mouseDrag = { x: e.clientX, y: e.clientY };
 });
-cv.addEventListener('dblclick', () => { if (!MOBILE) cv.requestPointerLock?.(); });
+cv.addEventListener('dblclick', () => { if (!MOBILE && !QUEST) cv.requestPointerLock?.(); });   // vrtest-v5 (t461u): never lock the pointer on a Quest (the controller ray must stay free for the system UI)
+addEventListener('blur', () => { try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} });
 // Camera distance (Dave): desktop mouse-wheel zoom still persists. On a phone, hold the ZOOM button beside the backpack to ease in; release returns to the default. Default = PR6 wider cam (7.6 landscape / 4.2 portrait).
 const ZOOM_KEY = 'galacticarcade.zoom';
 const DIST_PORTRAIT = 4.2, DIST_WIDE = 7.6, DIST_MIN = 2.0, DIST_MAX = DIST_WIDE * 2;   // max ~2× the wider default
@@ -1362,6 +1378,11 @@ function disposeComposer() {
   composer = null; bloom = null; rt = null; usePost = false;
 }
 if (Q.post) makeComposer();
+// TEST v1 (VR memory): the composer (scene RT + bloom mip chain) is never used inside an XR session (the headset draws the scene
+// directly), so its targets shrink to 1x1 while you are in VR and come back on exit. Passes/programs are kept, so nothing recompiles.
+const vrPost = window.__gaVRPost = { shrinks: 0, restores: 0 };
+renderer.xr.addEventListener('sessionstart', () => { try { if (composer) { composer.setPixelRatio(1); composer.setSize(1, 1); if (bloom) bloom.resolution.set(1, 1); vrPost.shrinks++; } } catch (e) {} });
+renderer.xr.addEventListener('sessionend', () => { try { vrPost.restores++; setTimeout(() => resize(true), 0); } catch (e) {} });
 ensureLostOverlay();
 installContextLossHandler(renderer.domElement, {});
 // iPad Safari fix: setSize used to write inline px width/height from innerWidth/innerHeight at load, which on iPad can be
@@ -1849,6 +1870,63 @@ const LIVE_SCREENS = /[?&]liveScreens=1/.test(location.search);
 const stillDemo = cab => ({ ready: false, frames: 0, running: false, err: null, still: true, texture: cab.userData.viewTex, view: cab.userData.view, attach() {}, detach() {} });
 const demo = LIVE_SCREENS ? startStrikeDemo(strikeCab) : stillDemo(strikeCab), ghostDemo = LIVE_SCREENS ? startGhostDemo(ghostCab) : stillDemo(ghostCab), _v = new THREE.Vector3();
 window.__stillScreens = !LIVE_SCREENS;
+// TEST v1 (Chief's t893u memory cuts, VR port): the shop and room 2 (Dead Signal + its floor mirror) stream their big textures in when you
+// get near (teleporter pad / shop / hallway door) and evict them from the GPU after an 8 s hold with a 2 m deadband. VR: textures are swapped
+// for a 1x1 placeholder (never nulled), so no material changes shader program: no compiles on a beam (v18 pre-warm keeps working), and a
+// beam to the shop starts the upload when the beam starts (tp.locked), before the cut.
+const STREAM = window.__gaStream = { shop: 'off', room2: 'off', wantShop: false, wantRoom2: false, ups: 0, evicts: 0 };
+// vrtest-v2 (Dave t446u: freezes on the start screen and near Grok): longer holds + a wider deadband (no load/evict thrash around the pad
+// or the hallway door), never evict inside the shop, nothing is evicted while the start screen / the VR pre-warm is up, and uploads go
+// one per frame inside a time budget (no 'everything at once' when a beam starts).
+function streamHold(which) { const ms = window.__gaStreamHold; return ms != null ? Math.max(200, +ms) : which === 'shop' ? 30000 : 15000; }
+function streamReady() { const S = window.__start, V = window.__gaVR, pw = V && V.prewarm;
+  return !(S && S.shown && !S.dismissed && document.getElementById('start')) && !(pw && pw.busy); }
+function streamWant() {
+  const m = renderer.xr.isPresenting ? viewPos() : monkey.position, pad = tp && tp.PAD1;   // VR: the head; flat: the player (not the chase camera)
+  const inShop = (tp && tp.where === 2) || m.x > WX - 14;
+  const padD = pad ? Math.hypot(m.x - pad.x, m.z - pad.z) : 99;
+  const locking = !!(tp && tp.locked);
+  // vrtest-v8 (Dave t466u/t467u: "the delay has returned when teleporting", the main VR link has none): in a headset the streamed-out
+  // shop / Dead Signal textures were re-uploaded around the beam (big murals + mipmaps on the Quest GPU) = the beam stall. Main VR never
+  // streams. Now, inside an XR session nothing is evicted: whatever is out streams back in a few per frame right after you enter, while you
+  // stand in the arcade, and stays resident until you leave VR (flat play keeps the memory-saving stream). ?vrstream=1 = old behaviour.
+  if (renderer.xr.isPresenting && !/[?&]vrstream=1\b/.test(location.search)) return { wantShop: true, evictShop: false, wantRoom2: true, evictRoom2: false, vrKeep: true };
+  return { wantShop: inShop || padD < 8 || locking, evictShop: !inShop && padD > 14 && !locking,
+    // v2: room 2 only from room 1's side (the shop sits at x > WX - 14 with its own z range: walking round Grok's counter used to stream
+    // Dead Signal + its floor mirror in and out while you were in the shop)
+    wantRoom2: !inShop && (m.z < -HALF + 5 || (tp && tp.where === 1 && m.z < -HALF)), evictRoom2: inShop || m.z > -HALF + 9 };
+}
+function setRoom2Gpu(on) {
+  on = !!on;
+  try { if (dsCab && dsCab.userData && dsCab.userData.gpu) dsCab.userData.gpu.set(on); } catch (e) {}
+  const mir = room2 && room2.userData && room2.userData.mirror, big = on && !renderer.xr.isPresenting;   // v8: the floor mirror is never drawn in VR: its target stays 1x1 there (no reallocation at the door / a beam)
+  if (mir && typeof mir.getRenderTarget === 'function') { const rt = mir.getRenderTarget();
+    if (rt) { if (!rt.__gaSz) rt.__gaSz = [rt.width, rt.height]; const w = big ? rt.__gaSz[0] : 1, h = big ? rt.__gaSz[1] : 1; if (rt.width !== w || rt.height !== h) try { rt.setSize(w, h); } catch (e) {} } }
+  if ((STREAM.room2 === 'on') !== on) { if (on) { STREAM.ups++; STREAM.ups2 = (STREAM.ups2 || 0) + 1; } else { STREAM.evicts++; STREAM.evicts2 = (STREAM.evicts2 || 0) + 1; } }
+  STREAM.room2 = on ? 'on' : 'off';
+}
+let _shopGpuGen = 0;
+function setShopGpu(on) {
+  on = !!on; const gen = ++_shopGpuGen, was = STREAM.shop === 'on';
+  const note = () => { const now = STREAM.shop === 'on'; if (now !== was) { if (now) STREAM.ups++; else STREAM.evicts++; } };
+  if (on) { const p = loadShop();
+    const apply = () => { if (gen !== _shopGpuGen) return; try { if (shop && shop.gpu) shop.gpu.set(true); } catch (e) {} STREAM.shop = (shop && shop.gpu && shop.gpu.on) ? 'on' : 'off'; note(); };
+    if (shop && shop.gpu) apply(); else if (p && p.then) p.then(apply).catch(() => {}); }
+  else { try { if (shop && shop.gpu) shop.gpu.set(false); } catch (e) {} STREAM.shop = (shop && shop.gpu && shop.gpu.on) ? 'on' : 'off'; note(); }
+}
+const _streamT = { shop: 0, room2: 0 };
+function tickRoomStream(now) {
+  const w = streamWant(); STREAM.wantShop = w.wantShop; STREAM.wantRoom2 = w.wantRoom2;
+  const ready = streamReady(), B = renderer.xr.isPresenting ? 4 : 8;   // ms of uploads per frame (the first upload always goes); a beam charge gets 3 per frame / 2x budget so the shop is ready at the cut
+  if (w.wantShop) { _streamT.shop = 0; setShopGpu(true); try { if (shop && shop.gpu && shop.gpu.pump) STREAM.queued = shop.gpu.pump(tp && tp.locked ? 3 : 1, tp && tp.locked ? B * 2 : B); } catch (e) {} }
+  else if (w.evictShop && ready) { if (!_streamT.shop) _streamT.shop = now; else if (now - _streamT.shop >= streamHold('shop')) setShopGpu(false); }
+  else _streamT.shop = 0;
+  if (w.wantRoom2) { _streamT.room2 = 0; setRoom2Gpu(true); }
+  else if (w.evictRoom2 && ready) { if (!_streamT.room2) _streamT.room2 = now; else if (now - _streamT.room2 >= streamHold('room2')) setRoom2Gpu(false); }
+  else _streamT.room2 = 0;
+  try { const g2 = dsCab && dsCab.userData && dsCab.userData.gpu; if (g2 && g2.queue.length) STREAM.queued2 = g2.pump(1, B); } catch (e) {}
+}
+try { setRoom2Gpu(false); } catch (e) {}
 try { applyLowBudget(); } catch (e) {}
 // t295u start-screen freeze: the two attract-demo iframes (strike-demo ~1.8 s pix + ~1.2 s cityDecor at 4x CPU, ghost-demo) booted on the main
 // thread during the start screen's first frames. Load them only once the start screen is gone (or skipped), one per idle slot.
@@ -1918,7 +1996,7 @@ function frame(now, xrFrame) {
     if (window.__camOverride && window.__camOverride.bloom != null) bloom.strength = window.__camOverride.bloom; } // screenshots / tests
   if (shop) { const gb = golf && golf.below, gx = monkey.position.x, gz = monkey.position.z; shop.update(Math.min(gap / 1000, 0.05)); if (gb) { monkey.position.x = gx; monkey.position.z = gz; } }   // golf basement: the shop's own prop push-out (east wall obstacles, x<=93.6) must not apply under its floor
   winds.update();
-  if (tp && !st.beamed && window.__start && window.__start.dismissed && !(window.__skipStart && !window.__beamTest)) { st.beamed = true; const b = beamSpot(); tp.beamIn(b.x, b.z); }   // t282u: once per session, first Play
+  if (tp && !st.beamed && !window.__gaHoldAV && window.__start && window.__start.dismissed && !(window.__skipStart && !window.__beamTest)) { st.beamed = true; const b = beamSpot(); tp.beamIn(b.x, b.z); }   // t282u: once per session, first Play
   if (tp) tp.update(Math.min(gap / 1000, 0.05), !!document.querySelector('#bPack.on') && !document.querySelector('#inv.on'));
   rrStep(gap / 1000);
   if (nb) { nb.update(Math.min(gap / 1000, 0.05)); nbHud(); nbFade(Math.min(gap / 1000, 0.05)); if (nb.camera(camera)) monkey.visible = false; }   // t779u: ZOOM = full-screen playfield
@@ -1933,11 +2011,13 @@ function frame(now, xrFrame) {
     _frus.setFromProjectionMatrix(_pm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
     cullRooms(_frus);
     if (!nbHold) {   // Neon Bricks fullscreen: room is hidden, skip cabinet attract work
+    try { tickRoomStream(now); } catch (e) {}
     const vis = c => { const sc = c.userData.centre, maxD = PS.on ? PS.cabFar : 18; return (_frus.intersectsSphere(_sph.set(_v.copy(sc).setY(1.2), 1.4)) && camera.position.distanceTo(sc) < maxD) || !!window.__forceDemo; };
     const dts = Math.min(gap / 1000, 0.1);
-    if (draw) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
+    const HOLD = !!window.__gaHoldAV;   // vrtest-v10: PREPARING VR card up: attract demos wait for the reveal
+    if (draw && !HOLD) { tickStrikeDemo(demo, dts, vis(strikeCab)); tickGhostDemo(ghostDemo, dts, vis(ghostCab)); }
     const nearMs = PS.on ? PS.cabNearMs : 120;
-    if (now - (frame.attT || 0) > nearMs) { frame.attT = now; for (const c of [berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, roadsterCab, clawCab, bbCab, rockfallCab, skyTowerCab]) {
+    if (!HOLD && now - (frame.attT || 0) > nearMs) { frame.attT = now; for (const c of [berserkerCab, monkeyCab, orcCab, novaCab, cyberCab, blasterCab, pipCab, roadsterCab, clawCab, bbCab, rockfallCab, skyTowerCab]) {
       if (!(vis(c) && !(c.userData.visit && c.userData.visit.on))) continue;
       if (!LIVE_SCREENS && stillScreen(c)) continue;   // v22: idle screens stay the still painted at build
       if (PS.on && camera.position.distanceTo(c.userData.centre) > PS.cabNear && (now - (c.userData._psTick || 0) < PS.cabFarMs)) continue;
@@ -2010,7 +2090,7 @@ window.__grid = setupGrid({ THREE, scene, camera, cv, HALF, DOOR_W, HALL_L, Z2 }
 // teleporter is used; window.__arcade.shopReady resolves once it is set up (same setupShop call as before, Chief's shop.js unchanged).
 let shopP = null;
 function loadShop() { return shopP || (shopP = import('./shop.js').then(m => { shop = m.setupShop({ scene, tp, play, monkey, camera, st }); AREAS[3] = shop.extraBounds; CAM_AREAS[3] = shop.camBounds; CLIP_AREA[1] = shop.extraBounds; setFloor(floorMode);
-  try { if (window.__shop && window.__shop.reloadPrizes) window.__shop.reloadPrizes(); } catch (e) {} return shop; })); }   // white-room carpet now that the shop has sized the floor
+  try { if (window.__shop && window.__shop.reloadPrizes) window.__shop.reloadPrizes(); } catch (e) {} try { if (shop && shop.gpu && !streamWant().wantShop) shop.gpu.set(false); } catch (e) {} return shop; })); }   // white-room carpet now that the shop has sized the floor
 // v16 (t399u) NEON KNOCKOUT: an arcade copy of Side Scroller Platform's VR boxing game in its own studio far west (x = NKX), reached by
 // the room-1 teleporter's NEON KNOCKOUT button / VR sign. nk/nkgame.js is only imported on the first beam there (lazy: startup unchanged).
 let NK = null, nkP = null; const nkRoot = new THREE.Group(); nkRoot.name = 'nkStudio'; nkRoot.position.set(NKX, 0, 0); nkRoot.visible = false; scene.add(nkRoot);
@@ -2164,7 +2244,7 @@ const opts = setupOpts({ play, kiosk, shield, st, monkey, setFloor, getFloor: ()
 schedule();
 
 // hooks for tests / future art work
-window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHold.lock, k: zoomHold.k }; }, powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow) };
+window.__arcade = { get zoomHoldState() { return { on: zoomHold.on, lock: zoomHold.lock, k: zoomHold.k }; }, powerSave: PS, tier: TIER, mem: () => memSnapshot({ THREE, renderer, scene, composer, extras: { tier: TIER.name, why: TIER.why, gpu: TIER.gpu, post: !!usePost, cabDemos: !!Q.cabDemos, gapAvg: stats.gapAvg, cpuAvg: stats.cpuAvg } }), setTier: name => { if (name !== 'low' && name !== 'mid' && name !== 'high') return TIER; TIER.name = name; TIER.forced = true; persistTier(name); applyQuality(); return TIER; }, animateMonkey: dt => animateMonkey(dt), get window() { return windowMode; }, setWindow, get jumping() { return !!st.jump; }, canJump, LAVA, lavaRespawnPoint, get spaceWin() { return spaceWin; }, get kiosk() { return kiosk; }, setFloor, get floor() { return floorMode; }, floorMats, setWalls, get walls() { return wallsMode; }, wallMat, carpet, mirror, shield, room, room2, Z2, hall, DOOR_W, DOOR_H, HALL_L, berserkerCab, monkeyCab, orcCab, cyberCab, novaCab, blasterCab, pipCab, clawCab, bbCab, rockfallCab, skyTowerCab, roadsterCab, dsCab, play, get paused() { return paused; }, simPause: arcadePause, flyCfg: FLY, jetpackOn: jetpackEquipped, wantWide, joyFrom, joyClear, setDist, loadZoom, saveZoom, defaultDist, zoomHold, tickZoom, zoom: { key: ZOOM_KEY, min: DIST_MIN, max: DIST_MAX, wide: DIST_WIDE, portrait: DIST_PORTRAIT, holdT: ZOOM_HOLD_T }, THREE, scene, camera, renderer, monkey, makeMonkey, makeAlien, setChar: setPlayerChar, tickBot, cabinets, strikeCab, ghostCab, featured, demo, ghostDemo, playables, blockers, st, stats, step, keys, get nearCab() { return nearCab; }, get neonBricks() { return nb; }, nbFade: dt => nbFade(dt), get playerFade() { return PF.k; }, get pfClones() { return PF.clones; }, nbWarm: () => nbWarm(), get randomRoom() { return window.__randomRoom; }, setArt: (i, part, tex, glow) => cabinets[i].userData.setArt(part, tex, glow), stream: STREAM };
 // ---------- Galactic Arcade VR (vr.js): ENTER VR, head tracking, thumbstick / teleport movement, cabinet games on an in-world screen ----------
 VRH = setupVR({ THREE, renderer, scene, camera, monkey, st, play, keys, playables, collide, frame, TIER, QUEST,
   resumeFlat() { rafOn = true; last = performance.now(); schedule(); resize(true); },
