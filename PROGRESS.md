@@ -33,3 +33,9 @@
 - Main-only differences from the test tree: cache galactic-arcade_vr-v27 / prefix galactic-arcade_vr- (index.html head + register scripts, sw.js, quest-pad.js debug, tests), ?v=27, __GA_VR vr27, title "Galactic Arcade", no MEMORY TEST banner. Debug ?flags kept. The v17 stale-player.js fix now only unregisters this edition's own SW scope (not other optimusgrok.github.io apps). sw_reload checks galactic-arcade_vrtest-* caches survive.
 - Icons (icons/make_icons.py): 192 / 512 / 180 are full-size art (outer hexagon ~2% from the top / bottom edges; a pointy-top hexagon is 0.87 as wide as tall); maskable 512 keeps the logo inside the 80% safe circle. Rings are filled bands (mitred corners). The Quest's white tile around web-app icons is drawn by the Quest.
 - Memory, emulated Quest 3 (test/vr_mem.js from the test repo, GA_ROOT, room1 / shop / nk / play=Strike), v26 -> v27: GPU textures 205.7 -> 92.1 MB (-113.6; KTX2 11.6 of it), render targets 16.4 -> 7.8 MB, geometry 19.1 -> 21.0 MB, JS heap ~70-74 -> ~82-87 MB, GPU process RSS -97 to -186 MB. Decoded audio alive after GC: room 1 43.9 -> 16.2, Strike cabinet 58.1 -> 16.4, NK 58.1 -> 2.1 MB. Precache 173 files 15.65 MB -> 184 files 16.72 MB.
+
+## VR v28 (Dave t506u, sw galactic-arcade_vr-v28)
+- Neon Knockout changes from the test link (vrtest-v20, galactic-arcade-vr-test f605014) on the main VR link: SCENERY option (NEON STUDIO /
+  CYBERPUNK ROOFTOP, nk/rooftop.js, galacticarcade.nkScenery, ?norooftop=1) via the SCENERY orb, the Y menu in Neon Knockout and the flat button;
+  NK menu orbs pointable (TRIGGER or A); footprint outline at the stand spot (?nofeet=1). nk/rooftop.js precached. Details: vrtest-v20 notes in the test repo.
+- test/nk_scenery_v20.js + test/vr_start_play.js pass on this build. Emulator: studio 358 draw calls / rooftop 272; worst switch frame 34 ms (median 16.6).
