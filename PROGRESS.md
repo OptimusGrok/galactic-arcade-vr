@@ -39,3 +39,8 @@
   CYBERPUNK ROOFTOP, nk/rooftop.js, galacticarcade.nkScenery, ?norooftop=1) via the SCENERY orb, the Y menu in Neon Knockout and the flat button;
   NK menu orbs pointable (TRIGGER or A); footprint outline at the stand spot (?nofeet=1). nk/rooftop.js precached. Details: vrtest-v20 notes in the test repo.
 - test/nk_scenery_v20.js + test/vr_start_play.js pass on this build. Emulator: studio 358 draw calls / rooftop 272; worst switch frame 34 ms (median 16.6).
+
+## MOVED: this link is now a redirect to https://optimusgrok.github.io/nebula-arcade-vr/ (Galactic Arcade VR renamed to Nebula Arcade)
+- index.html = redirect page (meta refresh + location.replace keeping query + hash + a visible link); it also unregisters this link's own worker and deletes its own caches.
+- sw.js = self-destructing worker: install skipWaiting; activate deletes ONLY this link's caches, unregisters itself, navigates its windows to the new link; fetch = network.
+- The game files are kept in history / the tree, but nothing links to them any more. Development continues in OptimusGrok/nebula-arcade-vr.
